@@ -9,6 +9,8 @@ import {
   expiredKeys,
   imageKey,
   isExpired,
+  isWholeFileRange,
+  isWholeFileResponse,
   mediaUsage,
   parseRange,
   pickEvictions,
@@ -120,6 +122,43 @@ describe('effectiveCap', () => {
 
   it('配额充足则封顶 16GB', () => {
     expect(effectiveCap(100 * 1024 ** 3)).toBe(CAP_BYTES)
+  })
+})
+
+describe('isWholeFileRange', () => {
+  it('无 Range 与 bytes=0- 前缀视为整文件请求', () => {
+    expect(isWholeFileRange(null)).toBe(true)
+    expect(isWholeFileRange('bytes=0-')).toBe(true)
+    expect(isWholeFileRange(' bytes=0- ')).toBe(true)
+    expect(isWholeFileRange('bytes=0-1')).toBe(true)
+    expect(isWholeFileRange('bytes=0-999')).toBe(true)
+  })
+
+  it('起点 > 0 与后缀 Range 不视为整文件', () => {
+    expect(isWholeFileRange('bytes=100-')).toBe(false)
+    expect(isWholeFileRange('bytes=100-999')).toBe(false)
+    expect(isWholeFileRange('bytes=-500')).toBe(false)
+    expect(isWholeFileRange('nonsense')).toBe(false)
+  })
+})
+
+describe('isWholeFileResponse', () => {
+  it('200（无 Content-Range）视为整文件响应', () => {
+    expect(isWholeFileResponse(200, null)).toBe(true)
+  })
+
+  it('206 且 Content-Range 为 0-总长 端点 视为整文件响应（部分 CDN 如此回全量）', () => {
+    expect(isWholeFileResponse(206, 'bytes 0-10437164/10437165')).toBe(true)
+    expect(isWholeFileResponse(206, 'bytes 0-99/100')).toBe(true)
+  })
+
+  it('切片 206、非 0 起点与非法输入不视为整文件响应', () => {
+    expect(isWholeFileResponse(206, 'bytes 0-99/200')).toBe(false)
+    expect(isWholeFileResponse(206, 'bytes 131072-10437164/10437165')).toBe(
+      false,
+    )
+    expect(isWholeFileResponse(206, null)).toBe(false)
+    expect(isWholeFileResponse(403, null)).toBe(false)
   })
 })
 

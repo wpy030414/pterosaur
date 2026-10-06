@@ -96,6 +96,33 @@ export function effectiveCap(quota: number | null | undefined): number {
 }
 
 /**
+ * 判断请求的 `Range` 头是否表达「从 0 起的整文件」语义：无 Range，或 `bytes=0-` / `bytes=0-N`
+ * （部分浏览器会用 `bytes=0-1` 之类的短前缀探测资源，同样应走整文件路径）。
+ * 仅这类请求由 SW 下载并缓存；起点 > 0 的 seek 切片不接管、由浏览器直接请求网络（见 ADR-012 后续修订）。
+ */
+export function isWholeFileRange(rangeHeader: string | null): boolean {
+  if (rangeHeader === null) return true
+  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim())
+  if (!m) return false
+  return m[1] === '0'
+}
+
+/**
+ * 判断响应是否覆盖整个文件（整文件可入缓存）：`200`（无 `Content-Range`），
+ * 或 `206` 且 `Content-Range` 为 `bytes 0-(total-1)/total`——部分 CDN 对无条件请求也回全量 206。
+ */
+export function isWholeFileResponse(
+  status: number,
+  contentRange: string | null,
+): boolean {
+  if (status === 200 && contentRange === null) return true
+  if (status !== 206 || contentRange === null) return false
+  const m = /^bytes 0-(\d+)\/(\d+)$/.exec(contentRange.trim())
+  if (!m) return false
+  return Number(m[1]) + 1 === Number(m[2])
+}
+
+/**
  * 解析 HTTP Range 头，返回闭区间 `[start, end]`；不可满足时返回 `null`。
  * 支持 `bytes=start-end`、`bytes=start-`、`bytes=-suffix` 三种形式。
  */

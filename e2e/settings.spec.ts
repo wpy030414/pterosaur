@@ -22,7 +22,7 @@ async function seedMedia(page: Page, entry: SeedEntry): Promise<void> {
   await page.evaluate(
     ({ db, entry }) =>
       new Promise<void>((resolve, reject) => {
-        const req = indexedDB.open(db, 2)
+        const req = indexedDB.open(db)
         req.onupgradeneeded = () => {
           const d = req.result
           if (!d.objectStoreNames.contains('library'))
@@ -59,7 +59,7 @@ async function seedLibrary(page: Page): Promise<void> {
   await page.evaluate(
     ({ db, key }) =>
       new Promise<void>((resolve, reject) => {
-        const req = indexedDB.open(db, 2)
+        const req = indexedDB.open(db)
         req.onsuccess = () => {
           const d = req.result
           const tx = d.transaction('library', 'readwrite')
@@ -86,7 +86,7 @@ async function storeCounts(
   return page.evaluate(
     (db) =>
       new Promise((resolve) => {
-        const req = indexedDB.open(db, 2)
+        const req = indexedDB.open(db)
         req.onsuccess = () => {
           const d = req.result
           const tx = d.transaction(
@@ -127,7 +127,7 @@ async function mediaKeys(page: Page): Promise<string[]> {
   return page.evaluate(
     (db) =>
       new Promise<string[]>((resolve) => {
-        const req = indexedDB.open(db, 2)
+        const req = indexedDB.open(db)
         req.onsuccess = () => {
           const d = req.result
           const tx = d.transaction('media', 'readonly')

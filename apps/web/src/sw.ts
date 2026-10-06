@@ -1,8 +1,9 @@
 /**
  * 应用 Service Worker（单一 SW，按匹配范围互不相交地承担三类职责）。
  *
- * 1. `/stream/*`（音频代理）：命中缓存按 `Range` 返回 200/206；未命中则**单次下载**整文件，
- *    一路流式返回给 `<audio>`、一路 `clone()` 后写入 IndexedDB。
+ * 1. `/stream/*`（音频代理）：命中缓存按 `Range` 返回 200/206；未命中时仅**整文件请求**
+ *    （无 `Range` / `bytes=0-` 前缀）单次下载整文件并写入 IndexedDB，其余 `Range`（seek）不接管、
+ *    由浏览器直接请求同源接口（见 ADR-012 后续修订）。
  * 2. 封面图片（`destination === 'image'`）：命中缓存直接返回；未命中以 **CORS** 重新拉取
  *    （网易云 CDN 返回 `access-control-allow-origin: *`），把可读字节写入**同一个** IndexedDB
  *    池 —— 与音频**共享 16GB LRU 预算**（见 ADR-013）。封面自写入起 **7 天过期**：命中时若已过期
@@ -26,6 +27,8 @@ import {
   getCached,
   imageKey,
   isExpired,
+  isWholeFileRange,
+  isWholeFileResponse,
   pickEvictions,
   putCached,
   requestPersistentQuota,
@@ -199,6 +202,7 @@ async function notifyNeedLogin(source: MusicSource): Promise<void> {
 
 /** `/stream/*`：音频代理（Range 分段、整文件缓存）。 */
 async function handleStream(
+  event: FetchEventLike,
   request: Request,
   url: URL,
   source: MusicSource,
@@ -233,19 +237,25 @@ async function handleStream(
     return upstream
   }
 
-  // 仅缓存成功且确为音频的响应；502 等直接放行
+  // 仅缓存完整音频响应（200，或部分 CDN 对无条件请求返回的全量 206）；切片 206 与 502 等直接放行
   const contentType = upstream.headers.get('content-type') ?? ''
   if (!upstream.ok || !contentType.startsWith('audio/')) return upstream
-
-  void storeResponse(
-    { key, kind: 'audio', source, trackId: id, level, mime: contentType },
-    upstream.clone(),
-  )
+  if (
+    isWholeFileResponse(upstream.status, upstream.headers.get('content-range'))
+  ) {
+    event.waitUntil(
+      storeResponse(
+        { key, kind: 'audio', source, trackId: id, level, mime: contentType },
+        upstream.clone(),
+      ),
+    )
+  }
   return upstream
 }
 
 /** 封面图片：命中即返；未命中以 CORS 拉取可读字节写入同一 IDB 池，失败则原样放行。 */
 async function handleImage(
+  event: FetchEventLike,
   request: Request,
   url: URL,
   key: string,
@@ -278,9 +288,8 @@ async function handleImage(
     }
   }
 
-  void storeResponse(
-    { key, kind: 'image', mime: contentType },
-    upstream.clone(),
+  event.waitUntil(
+    storeResponse({ key, kind: 'image', mime: contentType }, upstream.clone()),
   )
   return upstream
 }
@@ -311,15 +320,20 @@ sw.addEventListener('fetch', (event) => {
   if (url.origin !== sw.location.origin) {
     // 跨域的封面图片同样接管（见 handleImage）
     if (request.destination === 'image') {
-      event.respondWith(handleImage(request, url, imageKey(url)))
+      event.respondWith(handleImage(event, request, url, imageKey(url)))
     }
     return
   }
 
   const parsed = keyFromStreamUrl(url)
   if (parsed) {
+    // seek 型 Range（起点 > 0 / 后缀）不接管：由浏览器直接请求同源接口。
+    // 若在 SW 内去掉 Range 取整文件应答，seek 将无法完成（seeking 停在
+    // waiting/stalled）；播放侧停滞看门狗只能以重载兜底，且每次重载又触发一次整文件请求
+    if (!isWholeFileRange(request.headers.get('range'))) return
     event.respondWith(
       handleStream(
+        event,
         request,
         url,
         parsed.source,
@@ -332,7 +346,7 @@ sw.addEventListener('fetch', (event) => {
   }
 
   if (request.destination === 'image') {
-    event.respondWith(handleImage(request, url, imageKey(url)))
+    event.respondWith(handleImage(event, request, url, imageKey(url)))
   }
 })
 
