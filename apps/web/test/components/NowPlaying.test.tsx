@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NowPlaying } from '../../src/components/NowPlaying.js'
 import { usePlayer } from '../../src/store/player.js'
+import { useSettings } from '../../src/store/settings.js'
+import { api } from '../../src/api/client.js'
 import { clearCoverRegistry } from '../../src/lib/imageCache.js'
 import { clearLyricCache } from '../../src/lib/lyricCache.js'
 import type { Track } from '@pterosaur/shared/types'
 
-// 沉浸页会拉歌词：mock 掉 api 客户端，避免真实 fetch
+// 沉浸页会拉歌词与音质：mock 掉 api 客户端，避免真实 fetch
 vi.mock('../../src/api/client.js', () => ({
-  api: { lyric: vi.fn().mockResolvedValue({ lines: [], timed: false }) },
+  api: {
+    lyric: vi.fn().mockResolvedValue({ lines: [], timed: false }),
+    quality: vi.fn().mockResolvedValue(null),
+  },
 }))
 
 /**
@@ -85,11 +90,29 @@ async function coverArrives() {
   })
 }
 
+/** 覆盖 matchMedia：`mobile` 决定 `(max-width: 860px)` 是否命中（供移动端封面交互用例）。 */
+function stubMobileMedia(mobile: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: mobile && query.includes('max-width: 860px'),
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   created.length = 0
   clearCoverRegistry()
   clearLyricCache()
+  vi.mocked(api.lyric).mockResolvedValue({ lines: [], timed: false })
+  vi.mocked(api.quality).mockResolvedValue(null)
+  useSettings.setState({ level: 'exhigh', background: null })
+  stubMobileMedia(false)
   usePlayer.setState({
     current: null,
     queue: [],
@@ -215,5 +238,157 @@ describe('NowPlaying 切歌背景防闪', () => {
     await play(B)
     await coverArrives() // whenCoverReady 立即 true，但已在 stable 上，无新层
     expect(bgUrls(container)).toEqual(['url(/b.jpg)'])
+  })
+})
+
+describe('NowPlaying 音频流参数', () => {
+  it('顶部如实展示编解码 / 码率 / 采样率（取代「正在播放」）', async () => {
+    vi.mocked(api.quality).mockResolvedValue({
+      codec: 'flac',
+      br: 1411000,
+      sr: 44100,
+    })
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    await act(async () => {
+      await flushMicrotasks()
+    })
+    // 按当前所设档位（exhigh）发起查询
+    expect(api.quality).toHaveBeenCalledWith('netease', '1', 'exhigh')
+    expect(
+      container.querySelector('[data-testid="nowplaying-stream"]')?.textContent,
+    ).toBe('FLAC · 1411Kbps · 44.1kHz')
+    // 「正在播放」标语已彻底移除
+    expect(container.textContent).not.toContain('正在播放')
+  })
+
+  it('缺失字段省略，只展示可得参数', async () => {
+    vi.mocked(api.quality).mockResolvedValue({ codec: 'AAC', br: 204800 })
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    await act(async () => {
+      await flushMicrotasks()
+    })
+    expect(
+      container.querySelector('[data-testid="nowplaying-stream"]')?.textContent,
+    ).toBe('AAC · 205Kbps')
+  })
+
+  it('解析不到参数（该源不支持 / 不可播）时不渲染', async () => {
+    vi.mocked(api.quality).mockResolvedValue(null)
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    await act(async () => {
+      await flushMicrotasks()
+    })
+    expect(
+      container.querySelector('[data-testid="nowplaying-stream"]'),
+    ).toBeNull()
+  })
+
+  it('按当前所设档位查询（跟随 settings.level 变化）', async () => {
+    useSettings.setState({ level: 'hires' })
+    vi.mocked(api.quality).mockResolvedValue({ codec: 'FLAC', br: 4608000 })
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    await act(async () => {
+      await flushMicrotasks()
+    })
+    expect(api.quality).toHaveBeenCalledWith('netease', '1', 'hires')
+    expect(
+      container.querySelector('[data-testid="nowplaying-stream"]'),
+    ).not.toBeNull()
+  })
+})
+
+describe('NowPlaying 自定义背景不影响沉浸页', () => {
+  it('设置了自定义应用背景时，仍展示封面与封面模糊背景', async () => {
+    useSettings.setState({
+      background: { kind: 'image', mime: 'image/png', accent: '#ffffff' },
+    })
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    await coverArrives()
+    expect(container.querySelector('.nowplaying__cover')).not.toBeNull()
+    expect(container.querySelector('.nowplaying--nocover')).toBeNull()
+    expect(bgUrls(container)).toEqual(['url(/a.jpg)'])
+  })
+})
+
+describe('NowPlaying 移动端专注歌词', () => {
+  it('桌面端（非移动断点）不启用封面点按', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    const art = container.querySelector('.nowplaying__art')!
+    expect(art).not.toHaveClass('nowplaying__art--tap')
+    fireEvent.click(art)
+    expect(container.querySelector('.nowplaying--focus')).toBeNull()
+  })
+
+  it('移动端点封面进入专注态、再点复原', async () => {
+    stubMobileMedia(true)
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    const root = container.querySelector('.nowplaying')!
+    const art = container.querySelector('.nowplaying__art--tap')!
+    expect(root).not.toHaveClass('nowplaying--focus')
+
+    fireEvent.click(art)
+    expect(root).toHaveClass('nowplaying--focus')
+    // 说明：点按后 aria-label 变为「退出专注歌词」
+    expect(container.querySelector('.nowplaying__art--tap')).toHaveAttribute(
+      'aria-label',
+      '退出专注歌词',
+    )
+
+    fireEvent.click(container.querySelector('.nowplaying__art--tap')!)
+    expect(root).not.toHaveClass('nowplaying--focus')
+  })
+
+  it('切歌后复位为初始（非专注）态', async () => {
+    stubMobileMedia(true)
+    const { container } = render(
+      <MemoryRouter>
+        <NowPlaying open exiting={false} />
+      </MemoryRouter>,
+    )
+    await play(A)
+    fireEvent.click(container.querySelector('.nowplaying__art--tap')!)
+    expect(container.querySelector('.nowplaying')).toHaveClass(
+      'nowplaying--focus',
+    )
+
+    await play(B)
+    expect(container.querySelector('.nowplaying')).not.toHaveClass(
+      'nowplaying--focus',
+    )
   })
 })

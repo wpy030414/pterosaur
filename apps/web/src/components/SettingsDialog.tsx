@@ -13,7 +13,7 @@ import {
   RotateCcw,
   Image as ImageIcon,
 } from 'lucide-react'
-import { AUDIO_LEVELS, type AudioLevel } from '@pterosaur/shared/types'
+import { type AudioLevel } from '@pterosaur/shared/types'
 import { useSettingsDialog, confirmDialog } from '../store/ui.js'
 import { useSync } from '../store/sync.js'
 import { useSettings } from '../store/settings.js'
@@ -33,13 +33,23 @@ import './SettingsDialog.css'
 
 type Busy = 'clear' | 'update' | 'reset' | null
 
-/** 音质档位显示名（键与顺序同 shared `AUDIO_LEVELS`）。 */
-const QUALITY_LABELS: Record<AudioLevel, string> = {
-  standard: '标准',
-  higher: '较高',
-  exhigh: '极高',
-  lossless: '无损',
-  hires: 'Hi-Res',
+/**
+ * 音质模式：**只提供两档**（见 ADR-041）。
+ *
+ * - 一般：取流上限 320Kbps（抽象档 `exhigh`，默认）。
+ * - 质量：取流上限 Hi-Res（抽象档 `hires`）。
+ *
+ * 底层仍复用 `AudioLevel` 抽象档（`exhigh` / `hires`），故 `streamUrl`、缓存键、下载链路无需改动。
+ * 档位对应的具体码率**不在 UI 暴露**（描述里也不提），具体在播参数见沉浸页顶部。
+ */
+const QUALITY_MODES = [
+  { level: 'exhigh', label: '一般' },
+  { level: 'hires', label: '质量' },
+] as const
+
+/** 把持久化的抽象档归入两模式之一：无损及以上算「质量」，其余算「一般」（兼容旧值）。 */
+function modeOf(level: AudioLevel): AudioLevel {
+  return level === 'lossless' || level === 'hires' ? 'hires' : 'exhigh'
 }
 
 /**
@@ -204,26 +214,29 @@ export function SettingsDialog() {
         <section className="settings-dialog__section">
           <h3 className="settings-dialog__section-title">音质</h3>
           <p className="settings-dialog__desc">
-            播放与下载的音质档位；该曲不可得时自动降级到最接近的可得档。
+            取流音质；该曲不可得时自动降级。实际在播的流参数见全屏播放页顶部。
           </p>
           <div
             className="settings-dialog__segmented"
             role="radiogroup"
             aria-label="音质"
           >
-            {AUDIO_LEVELS.map((lv) => (
-              <button
-                key={lv}
-                type="button"
-                role="radio"
-                aria-checked={level === lv}
-                className={`settings-dialog__seg-btn${level === lv ? ' settings-dialog__seg-btn--active' : ''}`}
-                onClick={() => setLevel(lv)}
-                data-testid={`quality-${lv}`}
-              >
-                {QUALITY_LABELS[lv]}
-              </button>
-            ))}
+            {QUALITY_MODES.map((m) => {
+              const active = modeOf(level) === m.level
+              return (
+                <button
+                  key={m.level}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`settings-dialog__seg-btn${active ? ' settings-dialog__seg-btn--active' : ''}`}
+                  onClick={() => setLevel(m.level)}
+                  data-testid={`quality-${m.level}`}
+                >
+                  {m.label}
+                </button>
+              )
+            })}
           </div>
         </section>
 
@@ -268,7 +281,10 @@ export function SettingsDialog() {
             onChange={handlePickBackground}
           />
           {bgError && (
-            <p className="settings-dialog__error" data-testid="background-error">
+            <p
+              className="settings-dialog__error"
+              data-testid="background-error"
+            >
               背景保存失败，请重试；若仍失败可刷新页面后再试。
             </p>
           )}

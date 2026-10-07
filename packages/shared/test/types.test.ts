@@ -5,6 +5,8 @@ import {
   sourceOf,
   keyOf,
   isMusicSource,
+  formatQuality,
+  formatSampleRate,
 } from '../src/types.js'
 import type { MusicSource } from '../src/types.js'
 
@@ -82,5 +84,37 @@ describe('isMusicSource', () => {
     expect(isMusicSource('pl-abc')).toBe(false)
     expect(isMusicSource('spotify')).toBe(false)
     expect(isMusicSource(undefined)).toBe(false)
+  })
+})
+
+describe('formatSampleRate', () => {
+  it('整千 Hz 显示为整数 kHz', () => {
+    expect(formatSampleRate(48000)).toBe('48kHz')
+    expect(formatSampleRate(96000)).toBe('96kHz')
+    expect(formatSampleRate(8000)).toBe('8kHz')
+  })
+
+  it('非整千保留一位小数', () => {
+    expect(formatSampleRate(44100)).toBe('44.1kHz')
+    expect(formatSampleRate(22050)).toBe('22.1kHz')
+  })
+})
+
+describe('formatQuality', () => {
+  it('拼接编解码 / 码率 / 采样率', () => {
+    expect(formatQuality({ codec: 'flac', br: 1411000, sr: 44100 })).toBe(
+      'FLAC · 1411Kbps · 44.1kHz',
+    )
+    expect(formatQuality({ codec: 'mp3', br: 320000, sr: 44100 })).toBe(
+      'MP3 · 320Kbps · 44.1kHz',
+    )
+    // B 站实测码率非整 Kbps，四舍五入
+    expect(formatQuality({ codec: 'AAC', br: 204800 })).toBe('AAC · 205Kbps')
+  })
+
+  it('缺失字段按需省略', () => {
+    expect(formatQuality({ br: 320000 })).toBe('320Kbps')
+    expect(formatQuality({ codec: 'FLAC' })).toBe('FLAC')
+    expect(formatQuality({})).toBe('')
   })
 })

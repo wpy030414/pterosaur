@@ -13,6 +13,7 @@ import {
   DEFAULT_SOURCE,
   type MusicSource,
   type ApiResult,
+  type AudioQuality,
   type LoginStatus,
   type Playlist,
   type Track,
@@ -29,6 +30,15 @@ import { broadcast, subscribe } from './syncEvents.js'
  * 网易云地址有时效，TTL 设短一些；命中位会随实际可用候选动态前移（见 streamHandler）。
  */
 const urlCache = new LRUCache<string, string[]>({
+  max: 2000,
+  ttl: 15 * 60 * 1000,
+})
+
+/**
+ * 音质查询缓存：`源|id|档位|凭证指纹` -> 实际音质（只缓存成功结果）。
+ * 与音频地址缓存同容量 / TTL，避免每次重开沉浸页都重新解析上游。
+ */
+const qualityCache = new LRUCache<string, AudioQuality>({
   max: 2000,
   ttl: 15 * 60 * 1000,
 })
@@ -554,6 +564,32 @@ export function createApp() {
   }
   app.get('/api/lyric/:source/:id', lyricHandler)
   app.get('/api/lyric/:id', lyricHandler)
+
+  /**
+   * 查询某曲在给定档位下**实际**得到的音质（含服务端降级），供沉浸页音质 chip。
+   * 结果按 `源|id|档位|凭证指纹` 缓存（与音频地址缓存同 TTL），避免每次重开沉浸页都重解析。
+   */
+  const qualityHandler = async (c: Context) => {
+    const ctx = ctxAdapter(c)
+    if (!ctx) return c.json(fail('未知音源'), 404)
+    if (!ctx.adapter.audioQuality)
+      return c.json(fail('该音源暂不支持音质查询'), 501)
+    const id = c.req.param('id') ?? ''
+    const level = audioLevelOrDefault(c.req.query('level'))
+    const cookie = credentialOf(c, ctx.adapter)
+    const cacheKey = `${ctx.source}|${id}|${level}|${credentialKey(cookie)}`
+    const cached = qualityCache.get(cacheKey)
+    if (cached) return c.json(ok<AudioQuality>(cached))
+    try {
+      const quality = await ctx.adapter.audioQuality(id, cookie, level)
+      if (quality) qualityCache.set(cacheKey, quality)
+      return c.json(ok<AudioQuality | null>(quality))
+    } catch (e) {
+      return c.json(fail(`获取音质失败：${(e as Error).message}`), 502)
+    }
+  }
+  app.get('/api/quality/:source/:id', qualityHandler)
+  app.get('/api/quality/:id', qualityHandler)
 
   /* ============================ 登录 / VIP ============================ */
 

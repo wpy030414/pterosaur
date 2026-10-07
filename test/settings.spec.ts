@@ -218,18 +218,23 @@ test.describe('设置弹窗', () => {
     expect(await favoriteCount(page)).toBe(1)
   })
 
-  test('音质档位可选并持久化', async ({ page }) => {
+  test('音质模式（一般 / 质量）可选并持久化', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('settings-button').click()
     await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible()
 
-    // 默认档位为 exhigh（选中态）
+    // 仅两档；默认「一般」（exhigh）选中，「质量」未选
     await expect(page.getByTestId('quality-exhigh')).toHaveAttribute(
       'aria-checked',
       'true',
     )
-    await page.getByTestId('quality-lossless').click()
-    await expect(page.getByTestId('quality-lossless')).toHaveAttribute(
+    await expect(page.getByTestId('quality-hires')).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+
+    await page.getByTestId('quality-hires').click()
+    await expect(page.getByTestId('quality-hires')).toHaveAttribute(
       'aria-checked',
       'true',
     )
@@ -238,10 +243,10 @@ test.describe('设置弹窗', () => {
       'false',
     )
 
-    // 刷新后仍为无损（localStorage 持久化）
+    // 刷新后仍为「质量」（localStorage 持久化）
     await page.reload()
     await page.getByTestId('settings-button').click()
-    await expect(page.getByTestId('quality-lossless')).toHaveAttribute(
+    await expect(page.getByTestId('quality-hires')).toHaveAttribute(
       'aria-checked',
       'true',
     )

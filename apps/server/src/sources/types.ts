@@ -2,6 +2,7 @@ import type {
   Album,
   Artist,
   AudioLevel,
+  AudioQuality,
   LoginStatus,
   Lyric,
   MusicSource,
@@ -49,6 +50,15 @@ export interface SourceAdapter {
    * `level` 为**抽象音质档位**（见 shared `AudioLevel`），各源自行映射/降级。
    */
   songUrl(id: string, cred?: string, level?: AudioLevel): Promise<string[]>
+  /**
+   * 解析给定档位下**实际**得到的音质（服务端降级后的真实档位 + 码率），供沉浸页音质 chip。
+   * 缺省即该源不支持音质查询，路由回 501。返回 `null` 表示不可播放 / 无法解析。
+   */
+  audioQuality?(
+    id: string,
+    cred?: string,
+    level?: AudioLevel,
+  ): Promise<AudioQuality | null>
   getLyric(id: string, cred?: string): Promise<Lyric>
 
   /* ---- 登录（必选面） ---- */

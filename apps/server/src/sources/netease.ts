@@ -3,11 +3,12 @@ import {
   DEFAULT_AUDIO_LEVEL,
   type Album,
   type Artist,
+  type AudioLevel,
+  type AudioQuality,
   type LoginStatus,
   type Playlist,
   type Track,
   type Lyric,
-  type AudioLevel,
 } from '@pterosaur/shared/types'
 import { parseLrc } from '@pterosaur/shared/lyric'
 import { canonicalNeteaseImage, COVER_LARGE } from '@pterosaur/shared/image'
@@ -425,6 +426,40 @@ export async function songUrl(
   }
 }
 
+/**
+ * 解析给定档位**实际**得到的音频流参数（供沉浸页顶部如实展示，见 ADR-041）。
+ *
+ * `song_url_v1` 会回报**真正落到**的结果：请求高档而该曲不可得时，网易云降级并如实回报
+ * `br` / `sr` / `type`（如请求 `hires` 却只有 320kbps 的曲目会回 `br=320000`、`type=mp3`）。
+ * 故直接采信上游字段，不臆造档位名。
+ */
+export async function audioQuality(
+  id: string,
+  cookie?: string,
+  level: AudioLevel = DEFAULT_AUDIO_LEVEL,
+): Promise<AudioQuality | null> {
+  try {
+    const res = await api.song_url_v1({ id, level, cookie })
+    const d = res?.body?.data?.[0]
+    if (!d?.url) return null
+    const br = typeof d.br === 'number' && d.br > 0 ? d.br : undefined
+    const sr = typeof d.sr === 'number' && d.sr > 0 ? d.sr : undefined
+    return { codec: codecName(d.type ?? d.encodeType, d.url), br, sr }
+  } catch {
+    return null
+  }
+}
+
+/** 由网易云回报的 `type` / `encodeType`（缺失时回退直链后缀）归一为编解码显示名。 */
+function codecName(raw: unknown, url: string): string | undefined {
+  const s = String(raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+  if (s) return s.toUpperCase()
+  const ext = url.split('?')[0].split('.').pop()?.toLowerCase()
+  return ext && /^[a-z0-9]{2,4}$/.test(ext) ? ext.toUpperCase() : undefined
+}
+
 /** 曲目详情（用于补全搜索未覆盖的元数据）。 */
 export async function songDetail(
   ids: string[],
@@ -546,6 +581,7 @@ export const neteaseAdapter: SourceAdapter = {
   albumDetail,
   playlistTracks,
   songUrl,
+  audioQuality,
   songDetail,
   getLyric,
   qrKey,

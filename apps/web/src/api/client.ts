@@ -2,6 +2,8 @@ import type {
   Album,
   ApiResult,
   Artist,
+  AudioLevel,
+  AudioQuality,
   LibraryData,
   LoginStatus,
   Lyric,
@@ -133,6 +135,13 @@ export const api = {
 
   lyric: (source: MusicSource, id: string) =>
     get<Lyric>(`${API_BASE}/lyric/${source}/${encodeURIComponent(id)}`),
+
+  /** 某曲在给定档位下**实际**得到的音质（含降级）；`null` 表示不可播放 / 无法解析。 */
+  quality: (source: MusicSource, id: string, level: AudioLevel) =>
+    get<AudioQuality | null>(
+      `${API_BASE}/quality/${source}/${encodeURIComponent(id)}`,
+      { level },
+    ),
 
   authStatus: (source: MusicSource) =>
     get<LoginStatus>(`${API_BASE}/auth/${source}/status`),

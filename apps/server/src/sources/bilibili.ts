@@ -22,6 +22,7 @@ import {
   DEFAULT_AUDIO_LEVEL,
   type Album,
   type AudioLevel,
+  type AudioQuality,
   type LoginStatus,
   type Lyric,
   type LyricLine,
@@ -237,6 +238,10 @@ export interface BiliAudio {
   backupUrl?: string[]
   bandwidth?: number
   id?: number
+  /** 编解码串，如 `mp4a.40.2`（AAC-LC）。 */
+  codecs?: string
+  /** MIME，如 `audio/mp4`。 */
+  mimeType?: string
 }
 
 /** 从多档音频里挑与目标码率最接近的一条（并列取更高码率）。 */
@@ -302,38 +307,81 @@ export async function songUrl(
   level: AudioLevel = DEFAULT_AUDIO_LEVEL,
 ): Promise<string[]> {
   try {
-    // id 形如 `<bvid>`（整视频取首P）或 `<bvid>:<cid>`（分P 展开后的具体一页）
-    const [bvid, cidRaw] = id.split(':')
-    const cookie = await cookieWithBuvid(cred)
-    let cid = cidRaw ? Number(cidRaw) : undefined
-    if (!cid) {
-      const pl = await bGet<{ cid?: number }[]>(
-        `https://api.bilibili.com/x/player/pagelist?bvid=${encodeURIComponent(bvid)}`,
-        cookie,
-      )
-      cid = pl.data?.[0]?.cid
-    }
-    if (!cid) return []
-
-    const pu = await bGet<PlayurlData>(
-      `https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(
-        bvid,
-      )}&cid=${cid}&fnval=16&fnver=0&fourk=1`,
-      cookie,
-    )
-    const audios = pu.data?.dash?.audio ?? []
-    const picked = pickAudio(audios, level)
-    // DASH：取该档的 baseUrl + 全部 backupUrl；无 dash 时回落老格式 durl
-    const candidates = picked
-      ? [picked.baseUrl, ...(picked.backupUrl ?? [])]
-      : (pu.data?.durl ?? []).map((d) => d.url)
-    return rankAudioUrls(
-      candidates
-        .filter((u): u is string => typeof u === 'string' && u !== '')
-        .map((u) => u.replace(/^http:/, 'https:')),
-    )
+    return (await resolveAudio(id, cred, level)).urls
   } catch {
     return []
+  }
+}
+
+/** 解析音频候选与选中条目（`songUrl` 与 `audioQuality` 共用同一套上游调用）。 */
+async function resolveAudio(
+  id: string,
+  cred: string | undefined,
+  level: AudioLevel,
+): Promise<{ urls: string[]; picked?: BiliAudio }> {
+  // id 形如 `<bvid>`（整视频取首P）或 `<bvid>:<cid>`（分P 展开后的具体一页）
+  const [bvid, cidRaw] = id.split(':')
+  const cookie = await cookieWithBuvid(cred)
+  let cid = cidRaw ? Number(cidRaw) : undefined
+  if (!cid) {
+    const pl = await bGet<{ cid?: number }[]>(
+      `https://api.bilibili.com/x/player/pagelist?bvid=${encodeURIComponent(bvid)}`,
+      cookie,
+    )
+    cid = pl.data?.[0]?.cid
+  }
+  if (!cid) return { urls: [] }
+
+  const pu = await bGet<PlayurlData>(
+    `https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(
+      bvid,
+    )}&cid=${cid}&fnval=16&fnver=0&fourk=1`,
+    cookie,
+  )
+  const audios = pu.data?.dash?.audio ?? []
+  const picked = pickAudio(audios, level)
+  // DASH：取该档的 baseUrl + 全部 backupUrl；无 dash 时回落老格式 durl
+  const candidates = picked
+    ? [picked.baseUrl, ...(picked.backupUrl ?? [])]
+    : (pu.data?.durl ?? []).map((d) => d.url)
+  const urls = rankAudioUrls(
+    candidates
+      .filter((u): u is string => typeof u === 'string' && u !== '')
+      .map((u) => u.replace(/^http:/, 'https:')),
+  )
+  return { urls, picked }
+}
+
+/** 由 `codecs` / `mimeType` 归一为编解码显示名。 */
+function codecName(a: BiliAudio): string | undefined {
+  const c = (a.codecs ?? '').toLowerCase()
+  if (c.startsWith('mp4a')) return 'AAC'
+  if (c.startsWith('ec-3') || c.startsWith('ac-3')) return 'AC3'
+  if (c.startsWith('flac')) return 'FLAC'
+  if (c.startsWith('opus')) return 'OPUS'
+  const m = (a.mimeType ?? '').toLowerCase()
+  if (m.includes('flac')) return 'FLAC'
+  if (m.includes('mp4') || m.includes('aac')) return 'AAC'
+  if (m.includes('mpeg')) return 'MP3'
+  return undefined
+}
+
+/** 解析给定档位**实际**得到的音频流参数（供沉浸页顶部如实展示）：取选中音频条的实测码率与编解码。 */
+export async function audioQuality(
+  id: string,
+  cred?: string,
+  level: AudioLevel = DEFAULT_AUDIO_LEVEL,
+): Promise<AudioQuality | null> {
+  try {
+    const { urls, picked } = await resolveAudio(id, cred, level)
+    if (!urls.length || !picked) return null
+    const bw = picked.bandwidth
+    return {
+      codec: codecName(picked),
+      br: typeof bw === 'number' && bw > 0 ? bw : undefined,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -917,6 +965,7 @@ export const bilibiliAdapter: SourceAdapter = {
   searchSongs,
   albumDetail,
   songUrl,
+  audioQuality,
   getLyric,
   loginStatus,
   cookieHeaderFromSetCookies,

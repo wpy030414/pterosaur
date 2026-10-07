@@ -182,12 +182,14 @@
   min-width: 0;
 }
 
-.nowplaying__header-title span {
+/* 顶部音频流参数（取代原「正在播放」标语）：如实展示编解码 / 码率 / 采样率。 */
+.nowplaying__stream {
   display: block;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .nowplaying__header-title strong {
@@ -209,17 +211,6 @@
   padding-top: 12px;
 }
 
-/* 设了自定义背景时不展示封面：主体收为单栏、面板居中。 */
-.nowplaying--nocover .nowplaying__body {
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-}
-
-.nowplaying--nocover .nowplaying__panel {
-  width: 100%;
-  max-width: 760px;
-}
-
 /* 左：封面 */
 .nowplaying__art {
   display: flex;
@@ -233,7 +224,10 @@
   width: min(46vh, 420px);
   height: min(46vh, 420px);
   box-shadow: var(--shadow-lg);
-  transition: transform var(--dur-slow) var(--ease);
+  transition:
+    transform var(--dur-slow) var(--ease),
+    width var(--dur-slow) var(--ease),
+    height var(--dur-slow) var(--ease);
 }
 
 .nowplaying__cover--playing {
@@ -324,9 +318,12 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* 上下内边距由 JS 按当前行高动态设置，使首/末行也能居中 */
+  /* 上下留白由 JS 写 `--np-lyric-pad`、经下方伪元素撑起（**不再**改本元素 padding）。 */
   padding: 0;
   scroll-behavior: smooth;
+  /* 不把滚动链传给祖先 / 文档：避免 macOS Safari 在滚动到底后触发整页弹性回弹、
+     带动 `position: fixed` 的整页浮层位移（表现为控制区被顶出窗口）。 */
+  overscroll-behavior: contain;
   mask-image: linear-gradient(
     to bottom,
     transparent,
@@ -350,6 +347,18 @@
   width: 0;
   height: 0;
   display: none;
+}
+
+/*
+ * 首 / 末行居中的上下留白：用 `::before/::after` 撑高，而**不是**给滚动容器加 `padding`。
+ * 改容器的 padding 会动到它自身的盒模型，WebKit 下每次重写都可能让容器重新测高、把下方
+ * 控制区顶出视口（核心回归点，见 ADR-041）。高度由 JS 写的 `--np-lyric-pad` 驱动。
+ */
+.nowplaying__lyrics::before,
+.nowplaying__lyrics::after {
+  content: '';
+  display: block;
+  height: var(--np-lyric-pad, 0px);
 }
 
 .nowplaying__lyrics-empty {
@@ -408,7 +417,10 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    /* 底部为控制组预留安全区（刘海屏 / 灵动岛 / 手势条），避免其被系统 UI 遮住 */
     padding: 12px;
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     overflow: hidden;
   }
 
@@ -431,9 +443,32 @@
     height: auto;
   }
 
+  /* 移动端封面默认更大；点按后缩小、并把歌名 / 歌手让给歌词（见 .nowplaying--focus）。
+     尺寸同时受宽度、上限与**可视高度**三者约束：矮屏（横屏 / 小窗口 / 带浏览器 UI）下由高度项
+     收窄，避免大封面把下方进度 / 控制区顶出视口。
+     高度项用 `svh`（「最小视口高」）而**非 `dvh`**：`dvh` 会随移动端地址栏的收放实时变化——
+     滚动歌词时地址栏收起 → dvh 变大 → 封面跟着变大 → 控制区被慢慢挤下去（「慢慢复位」）。
+     `svh` 恒为最小值、不随滚动变化，故布局稳定。 */
   .nowplaying__cover {
-    width: min(52vw, 260px);
-    height: min(52vw, 260px);
+    width: min(64vw, 320px, calc(100vh - 300px));
+    height: min(64vw, 320px, calc(100vh - 300px));
+    width: min(64vw, 320px, calc(100svh - 300px));
+    height: min(64vw, 320px, calc(100svh - 300px));
+    min-width: 88px;
+    min-height: 88px;
+  }
+
+  .nowplaying--focus .nowplaying__cover {
+    width: min(32vw, 150px, calc(100vh - 300px));
+    height: min(32vw, 150px, calc(100vh - 300px));
+    width: min(32vw, 150px, calc(100svh - 300px));
+    height: min(32vw, 150px, calc(100svh - 300px));
+  }
+
+  /* 封面点按态：可点击感（去掉移动端点按高亮）。 */
+  .nowplaying__art--tap {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* panel 占满剩余高度：标题固定，歌词自滚，进度+控制钉底 */
@@ -448,6 +483,28 @@
 
   .nowplaying__info {
     flex-shrink: 0;
+    max-height: 160px;
+    overflow: hidden;
+    transition:
+      opacity var(--dur) var(--ease),
+      max-height var(--dur) var(--ease);
+  }
+
+  .nowplaying__controls {
+    flex-shrink: 0;
+    max-height: 80px;
+    overflow: hidden;
+    transition:
+      opacity var(--dur) var(--ease),
+      max-height var(--dur) var(--ease);
+  }
+
+  /* 专注歌词：连同缩小后的封面，收起歌名 / 歌手与**播放控制组**，把空间整块让给歌词。 */
+  .nowplaying--focus .nowplaying__info,
+  .nowplaying--focus .nowplaying__controls {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 
   .nowplaying__title {
@@ -469,10 +526,6 @@
   }
 
   .nowplaying__progress {
-    flex-shrink: 0;
-  }
-
-  .nowplaying__controls {
     flex-shrink: 0;
   }
 

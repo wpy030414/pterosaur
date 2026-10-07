@@ -283,6 +283,39 @@ export const AUDIO_LEVEL_RANK: Record<AudioLevel, number> = {
   hires: 4,
 }
 
+/**
+ * 一次音频解析的**实际**流参数（服务端按可得性降级后的真实结果）。
+ *
+ * 与「所选档位」不同：请求 `hires` 但该曲不可得时服务端会降级，这里回报的才是真正在播的
+ * 编解码 / 码率 / 采样率。供沉浸播放页顶部**如实**展示（见 ADR-041）。
+ */
+export interface AudioQuality {
+  /** 编解码 / 容器显示名，如 `MP3` / `FLAC` / `AAC`。 */
+  codec?: string
+  /** 实际码率（bps）；上游未回报时缺省。 */
+  br?: number
+  /** 采样率（Hz）；上游未回报时缺省。 */
+  sr?: number
+}
+
+/** 采样率显示：`44100 → 44.1kHz`、`48000 → 48kHz`、`96000 → 96kHz`。 */
+export function formatSampleRate(sr: number): string {
+  const khz = sr / 1000
+  return `${Number.isInteger(khz) ? khz : khz.toFixed(1)}kHz`
+}
+
+/**
+ * 音频流参数摘要，按可得字段以 ` · ` 拼接，如 `FLAC · 1411Kbps · 44.1kHz`。
+ * 返回空串表示没有任何可展示的参数（调用方据此不渲染）。
+ */
+export function formatQuality(q: AudioQuality): string {
+  const parts: string[] = []
+  if (q.codec) parts.push(q.codec.toUpperCase())
+  if (q.br) parts.push(`${Math.round(q.br / 1000)}Kbps`)
+  if (q.sr) parts.push(formatSampleRate(q.sr))
+  return parts.join(' · ')
+}
+
 /** 判定是否合法档位（用于 query 等不可信输入）。 */
 export function isAudioLevel(v: unknown): v is AudioLevel {
   return (

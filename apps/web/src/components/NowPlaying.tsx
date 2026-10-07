@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   Play,
@@ -14,7 +14,7 @@ import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
 import { useSettings } from '../store/settings.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { useBackgroundUrl } from '../hooks/useBackgroundUrl.js'
+import { useMediaQuery } from '../hooks/useMediaQuery.js'
 import { seekTo } from '../hooks/audioElement.js'
 import { api } from '../api/client.js'
 import { getCachedLyric, putCachedLyric } from '../lib/lyricCache.js'
@@ -25,8 +25,8 @@ import {
   COVER_LARGE,
 } from '@pterosaur/shared/image'
 import { startNowPlayingTransition } from '../lib/nowPlayingTransition.js'
-import { formatTime, keyOf } from '@pterosaur/shared/types'
-import type { Lyric } from '@pterosaur/shared/types'
+import { formatTime, keyOf, formatQuality } from '@pterosaur/shared/types'
+import type { AudioQuality, Lyric } from '@pterosaur/shared/types'
 import { Cover } from './Cover.js'
 import { IconButton } from './IconButton.js'
 import { Slider } from './Slider.js'
@@ -48,6 +48,9 @@ type BgState = { stable: string | null; incoming: string | null }
  * reduced-motion 下动画时长被压到 0.01ms，事件时机不可靠（与 usePresence 同款处理）。
  */
 const BG_FADE_SETTLE_MS = 480
+
+/** 移动端断点：与 `NowPlaying.css` 的 `@media (max-width: 860px)` 保持一致。 */
+const MOBILE_QUERY = '(max-width: 860px)'
 
 /**
  * 全屏播放页（Apple Music「正在播放」）。
@@ -94,11 +97,6 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
    * 正是「有概率」复现的来源）。
    */
   const [bg, setBg] = useState<BgState>({ stable: null, incoming: null })
-
-  // 自定义应用背景：设置后，沉浸页隐藏封面、背景改用（高斯模糊的）自定义图。
-  const background = useSettings((s) => s.background)
-  const backgroundUrl = useBackgroundUrl()
-  const useCustomBg = !!background && !!backgroundUrl
 
   const coverUrl = current ? coverAt(current.cover, COVER_LARGE) : undefined
   useEffect(() => {
@@ -170,6 +168,37 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
     }
   }, [current])
 
+  // 音质 chip：反映服务端**实际**解析到的档位（含降级），仅在展开时拉取（见 ADR-041）。
+  const level = useSettings((s) => s.level)
+  const [quality, setQuality] = useState<AudioQuality | null>(null)
+  useEffect(() => {
+    if (!open || !current) {
+      setQuality(null)
+      return
+    }
+    let cancelled = false
+    api
+      .quality(current.source, current.id, level)
+      .then((q) => {
+        if (!cancelled) setQuality(q)
+      })
+      .catch(() => {
+        // 接口不可用（如该源未实现 501）或解析失败：不显示 chip，绝不阻塞播放
+        if (!cancelled) setQuality(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, current, level])
+
+  // 移动端「专注歌词」：点封面收起（缩小封面 + 隐藏歌名 / 歌手，腾给歌词），再点复原。
+  const isMobile = useMediaQuery(MOBILE_QUERY)
+  const [lyricFocused, setLyricFocused] = useState(false)
+  // 切歌 / 收起沉浸页时复位为初始态
+  useEffect(() => {
+    setLyricFocused(false)
+  }, [current, open])
+
   // 当前高亮行下标
   const activeIndex = useMemo(() => {
     if (!lyric?.timed || !lyric.lines.length) return -1
@@ -181,31 +210,58 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
     return idx
   }, [lyric, position])
 
-  // 自动滚动到当前行（居中）；首句未到时也保证第一行居中而非挤在顶部
+  // 自动滚动到当前行（居中）；首句未到时也保证第一行居中而非挤在顶部。
+  // 提取为回调，供「当前行变化」与「容器高度变化」两处复用。
   const listRef = useRef<HTMLDivElement | null>(null)
+  const centerActiveLine = useCallback(
+    (animate: boolean) => {
+      const el = listRef.current
+      if (!el || !lyric?.timed || !lyric.lines.length) return
+      // activeIndex 为 -1 表示播放位置尚未到达第一句：用第一行作为居中参照
+      const targetIdx = activeIndex < 0 ? 0 : activeIndex
+      const line = el.querySelector<HTMLElement>(`[data-idx="${targetIdx}"]`)
+      if (!line) return
+
+      // 首 / 末行居中的上下留白：写成 CSS 变量、由 `.nowplaying__lyrics` 的 `::before/::after`
+      // 撑起，而**不是**直接改容器的 `padding`。改 padding 等于每次换行都动这个滚动容器自身的
+      // 盒模型，WebKit 下会触发它重新测高、把下方控制区顶出视口（见 ADR-041）。
+      const pad = Math.max(0, (el.clientHeight - line.clientHeight) / 2)
+      el.style.setProperty('--np-lyric-pad', `${pad}px`)
+
+      if (activeIndex < 0) {
+        // 第一句还没到时静默滚到顶部——留白已使第一行居中
+        el.scrollTo({ top: 0, behavior: 'instant' })
+      } else {
+        const elRect = el.getBoundingClientRect()
+        const lineRect = line.getBoundingClientRect()
+        const delta =
+          lineRect.top - elRect.top - (el.clientHeight - line.clientHeight) / 2
+        el.scrollTo({
+          top: el.scrollTop + delta,
+          behavior: animate ? 'smooth' : 'instant',
+        })
+      }
+    },
+    [activeIndex, lyric],
+  )
+
+  useEffect(() => {
+    centerActiveLine(true)
+  }, [centerActiveLine])
+
+  // 歌词区高度变化时也要立即重居中，否则点封面「专注歌词」（容器变高）后当前行会偏，
+  // 非得等到下一句才归位。ResizeObserver 观察的是容器盒尺寸（不受留白伪元素影响，无回环）。
+  const centerRef = useRef(centerActiveLine)
+  useEffect(() => {
+    centerRef.current = centerActiveLine
+  }, [centerActiveLine])
   useEffect(() => {
     const el = listRef.current
-    if (!el || !lyric?.timed || !lyric.lines.length) return
-    // activeIndex 为 -1 表示播放位置尚未到达第一句：用第一行作为居中参照
-    const targetIdx = activeIndex < 0 ? 0 : activeIndex
-    const line = el.querySelector<HTMLElement>(`[data-idx="${targetIdx}"]`)
-    if (!line) return
-
-    const pad = Math.max(0, (el.clientHeight - line.clientHeight) / 2)
-    el.style.paddingTop = `${pad}px`
-    el.style.paddingBottom = `${pad}px`
-
-    if (activeIndex < 0) {
-      // 第一句还没到时静默滚到顶部——padding 已使第一行居中
-      el.scrollTo({ top: 0, behavior: 'instant' })
-    } else {
-      const elRect = el.getBoundingClientRect()
-      const lineRect = line.getBoundingClientRect()
-      const delta =
-        lineRect.top - elRect.top - (el.clientHeight - line.clientHeight) / 2
-      el.scrollTo({ top: el.scrollTop + delta, behavior: 'smooth' })
-    }
-  }, [activeIndex, lyric])
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => centerRef.current(false))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [current])
 
   const mode = currentPlayMode(shuffle, repeat)
   const modeMeta = PLAY_MODE_META[mode]
@@ -213,41 +269,33 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
   // 播放中且处于缓冲态：播放键显示加载动画
   const showBuffering = buffering && isPlaying
 
+  // 顶部音频流参数（如 `FLAC · 1411Kbps · 44.1kHz`）；未解析到 / 该源不支持时为空，不渲染。
+  const streamInfo = quality ? formatQuality(quality) : ''
+
   if (!current) return null
 
   return (
     <div
-      className={`nowplaying${exiting ? ' nowplaying--exit' : ''}${useCustomBg ? ' nowplaying--nocover' : ''}`}
+      className={`nowplaying${exiting ? ' nowplaying--exit' : ''}${lyricFocused ? ' nowplaying--focus' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="正在播放"
       aria-hidden={!open}
     >
-      {/* 动态模糊背景：设了自定义背景则用它（无需防闪双层），否则用当前封面双层防闪 */}
-      {useCustomBg ? (
+      {/* 动态模糊背景：当前封面双层防闪（切歌时新封面淡入盖上旧封面）。
+          自定义应用背景**不**作用于沉浸页（见 ADR-041）。 */}
+      <div
+        className="nowplaying__bg"
+        style={bg.stable ? { backgroundImage: `url(${bg.stable})` } : undefined}
+        aria-hidden
+      />
+      {bg.incoming && (
         <div
-          className="nowplaying__bg"
-          style={{ backgroundImage: `url(${backgroundUrl})` }}
+          key={bg.incoming}
+          className="nowplaying__bg nowplaying__bg-in"
+          style={{ backgroundImage: `url(${bg.incoming})` }}
           aria-hidden
         />
-      ) : (
-        <>
-          <div
-            className="nowplaying__bg"
-            style={
-              bg.stable ? { backgroundImage: `url(${bg.stable})` } : undefined
-            }
-            aria-hidden
-          />
-          {bg.incoming && (
-            <div
-              key={bg.incoming}
-              className="nowplaying__bg nowplaying__bg-in"
-              style={{ backgroundImage: `url(${bg.incoming})` }}
-              aria-hidden
-            />
-          )}
-        </>
       )}
       <div
         className="nowplaying__scrim"
@@ -265,7 +313,15 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
             <ChevronDown size={24} strokeWidth={2.2} />
           </IconButton>
           <div className="nowplaying__header-title">
-            <span>正在播放</span>
+            {/* 顶部不再有「正在播放」标语：这里直接如实展示当前音频流参数（见 ADR-041）。 */}
+            {streamInfo && (
+              <span
+                className="nowplaying__stream"
+                data-testid="nowplaying-stream"
+              >
+                {streamInfo}
+              </span>
+            )}
             <strong className="ellipsis">
               {current.albumId && current.album ? (
                 <button
@@ -297,17 +353,37 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
         </header>
 
         <div className="nowplaying__body">
-          {/* 左：封面（设了自定义背景时不展示） */}
-          {!useCustomBg && (
-            <div className="nowplaying__art">
-              <Cover
-                src={coverAt(current.cover, COVER_LARGE)}
-                alt={current.title}
-                radius="lg"
-                className={`nowplaying__cover${isPlaying ? ' nowplaying__cover--playing' : ''}`}
-              />
-            </div>
-          )}
+          {/* 左：封面。移动端可点按切换「专注歌词」（缩小封面、隐藏歌名 / 歌手，腾给歌词）。 */}
+          <div
+            className={`nowplaying__art${isMobile ? ' nowplaying__art--tap' : ''}`}
+            onClick={isMobile ? () => setLyricFocused((v) => !v) : undefined}
+            role={isMobile ? 'button' : undefined}
+            tabIndex={isMobile ? 0 : undefined}
+            aria-label={
+              isMobile
+                ? lyricFocused
+                  ? '退出专注歌词'
+                  : '进入专注歌词'
+                : undefined
+            }
+            onKeyDown={
+              isMobile
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setLyricFocused((v) => !v)
+                    }
+                  }
+                : undefined
+            }
+          >
+            <Cover
+              src={coverAt(current.cover, COVER_LARGE)}
+              alt={current.title}
+              radius="lg"
+              className={`nowplaying__cover${isPlaying ? ' nowplaying__cover--playing' : ''}`}
+            />
+          </div>
 
           {/* 右：歌词（上）+ 控制（下） */}
           <div className="nowplaying__panel">
