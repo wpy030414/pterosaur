@@ -7,6 +7,7 @@ import {
   useSidebarDrawer,
 } from '../store/ui.js'
 import { useAuth } from '../store/auth.js'
+import { setScrollSaving } from './scrollMemory.js'
 
 /**
  * 内容区转场（Apple Music 风格交叉溶解）。
@@ -131,7 +132,10 @@ export function startRouteTransition(
     // 非转场路径同样以 flushSync 提交：让滚动恢复的布局 effect 先于归零执行，
     // 否则归零会先跑、把旧条目的位置错误地记成 0。方向仍写入，供降级进场动画判断逆放。
     root.dataset.routeDir = dir
+    setScrollSaving(false)
     flushSync(update)
+    // 提交后新条目 key 已就位，此后滚动归属新条目，恢复记录
+    setScrollSaving(true)
     if (dir === 'forward') resetContentScroll()
     clearMarks()
     return
@@ -141,10 +145,20 @@ export function startRouteTransition(
   root.dataset.routeVt = 'on'
   root.dataset.routeDir = dir
 
+  /**
+   * 暂停滚动记录：`startViewTransition` 在回调（新条目提交）之前捕获旧快照，该渲染
+   * 步骤里浏览器可能对被命名的滚动容器产生**钳制滚动**（实测 677 被压到 5）——此刻
+   * `currentKey` 仍是旧条目，会把旧条目的真实记录污染成钳制值（下钻返回即「回顶」，
+   * 见 lib/scrollMemory 的 `setScrollSaving`）。提交完成（新 key 就位）后恢复。
+   */
+  setScrollSaving(false)
+  const resumeSaving = () => setScrollSaving(true)
+
   let transition: { finished?: Promise<void> } | undefined
   try {
     transition = doc.startViewTransition(() => {
       flushSync(update)
+      resumeSaving()
       // 新内容就位后立即回到顶部，保证新快照从顶部开始。
       // **后退不归零**：后退要回到历史条目的原滚动位置，归零会把它记成 0（滚动恢复失效）。
       if (dir === 'forward') resetContentScroll()
@@ -153,6 +167,7 @@ export function startRouteTransition(
     // 抛错（如文档非 fully-active）：回退为直接切换并摘掉命名标记（方向留待 clearMarks 清理）
     delete root.dataset.routeVt
     flushSync(update)
+    resumeSaving()
     if (dir === 'forward') resetContentScroll()
     clearMarks()
     return

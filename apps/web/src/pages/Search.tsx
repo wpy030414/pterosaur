@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SearchX } from 'lucide-react'
 import { api } from '../api/client.js'
@@ -64,6 +70,42 @@ const freshPagers = (): Record<SearchTab, PageState> => ({
   playlists: { page: 1, more: false, loading: false },
 })
 
+/** 搜索页的累积状态（滚动续页的结果与分页游标）。 */
+interface SearchPageState {
+  music: SearchResults
+  mvTracks: Track[]
+  pagers: Record<SearchTab, PageState>
+}
+
+/**
+ * 搜索页累积状态的**会话级缓存**（`源|关键词` → 累积结果与分页游标）。
+ *
+ * 滚动续页累积的列表是组件 state，下钻返回重挂即丢——返回时只剩第一页，内容高度
+ * 不足，滚动恢复会被浏览器**钳制**到第一页的底部（第一页不满屏时即顶部）。挂载时
+ * 从这里**同步**恢复等量内容，滚动恢复才有落脚点。LRU 触碰 + 上限淘汰，防无限增长。
+ */
+const searchPageCache = new Map<string, SearchPageState>()
+const SEARCH_CACHE_MAX = 10
+
+function loadSearchCache(key: string): SearchPageState | undefined {
+  const hit = searchPageCache.get(key)
+  if (hit) {
+    searchPageCache.delete(key)
+    searchPageCache.set(key, hit) // LRU 触碰
+  }
+  return hit
+}
+
+function saveSearchCache(key: string, state: SearchPageState): void {
+  searchPageCache.delete(key)
+  searchPageCache.set(key, state)
+  while (searchPageCache.size > SEARCH_CACHE_MAX) {
+    const oldest = searchPageCache.keys().next().value
+    if (oldest === undefined) break
+    searchPageCache.delete(oldest)
+  }
+}
+
 /**
  * 搜索结果页。
  *
@@ -74,19 +116,83 @@ const freshPagers = (): Record<SearchTab, PageState> => ({
  * 续取只跑该一类（`?type=`），避免每次都多打三个上游请求。
  */
 export function SearchPage() {
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const q = (params.get('q') ?? '').trim()
   const status = useAuth((s) => s.status)
   // 只有网易云一个音乐源，故直接跟随活动账号（未登录回落缺省源），不再单列源 tab。
   const source: MusicSource = activeMusicSource(status) ?? DEFAULT_SOURCE
   const navigate = useViewNavigate()
-  const [tab, setTab] = useState<SearchTab>('songs')
+  // 分类 tab 进 URL（`?tab=`，缺省「歌曲」不占 URL）：下探返回（POP 回本历史条目）即回到
+  // 所处 tab，刷新 / 分享深链同样成立；换词（顶栏 push 不带 tab）自然回到歌曲。
+  // replace 更新还使 location.key 更换 → 滚动记忆（按历史条目记，见 lib/scrollMemory）
+  // 按各 tab 分别记录，切 tab 即归顶。
+  const tabParam = params.get('tab')
+  const tab: SearchTab = TABS.some((t) => t.key === tabParam)
+    ? (tabParam as SearchTab)
+    : 'songs'
 
-  // 累积结果（随滚动追加）；首屏由下面的 useAsync 灌入
-  const [music, setMusic] = useState<SearchResults>(EMPTY_RESULTS)
-  const [mvTracks, setMvTracks] = useState<Track[]>([])
-  const [pagers, setPagers] =
-    useState<Record<SearchTab, PageState>>(freshPagers)
+  /**
+   * 同页 tab 间穿梭的滚动记忆（tab → scrollTop）。replace 切 tab 产生**新** history key、
+   * 旧 key 即被丢弃，按条目记忆的 `useContentScrollRestoration` 记不住「切走前的 tab」——
+   * 由这里在组件存活期间补齐（下钻返回的位置仍由按条目恢复负责，两者互补）。
+   */
+  const scrollByTab = useRef<Partial<Record<SearchTab, number>>>({})
+  const prevTabRef = useRef<SearchTab>(tab)
+
+  // 同页切 tab → 恢复目标 tab 上次的位置。重挂（下钻返回）时 prev === tab，跳过——
+  // 那由 `useContentScrollRestoration` 按历史条目恢复；用**嵌套 rAF** 确保晚于转场的
+  // `resetContentScroll`（VT 回调内同步）与滚动恢复的同帧补帧（外层 effect 后注册）。
+  useLayoutEffect(() => {
+    const prev = prevTabRef.current
+    prevTabRef.current = tab
+    if (prev === tab) return
+    const saved = scrollByTab.current[tab]
+    if (saved === undefined) return
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>('.app-content')
+        if (!el) return
+        const s = el.style.scrollBehavior
+        el.style.scrollBehavior = 'auto'
+        el.scrollTop = saved
+        el.style.scrollBehavior = s
+      })
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [tab])
+
+  /** 切 tab：**replace** 不压新历史条目——返回键回到上一页，而非上个 tab。 */
+  const selectTab = (key: SearchTab) => {
+    const el = document.querySelector<HTMLElement>('.app-content')
+    if (el) scrollByTab.current[tab] = el.scrollTop
+    const next = new URLSearchParams(params)
+    if (key === 'songs') next.delete('tab')
+    else next.set('tab', key)
+    setParams(next, { replace: true })
+  }
+
+  // 累积结果（随滚动追加）；首屏由下面的 useAsync 灌入。
+  // 下钻返回重挂时优先从**会话级缓存**同步恢复（等量内容是滚动恢复的前提，见
+  // searchPageCache 说明）；恢复过的挂载跳过一次首屏灌入，免得把列表打回第一页。
+  const cacheKey = q ? `${source}|${q}` : ''
+  const restoredRef = useRef<SearchPageState | undefined>(
+    cacheKey ? loadSearchCache(cacheKey) : undefined,
+  )
+  /** 本挂载是否已从会话级缓存恢复累积状态——若是，全程跳过 data/mv 的覆盖式灌入。 */
+  const didRestore = useRef(!!restoredRef.current)
+  const [music, setMusic] = useState<SearchResults>(
+    () => restoredRef.current?.music ?? EMPTY_RESULTS,
+  )
+  const [mvTracks, setMvTracks] = useState<Track[]>(
+    () => restoredRef.current?.mvTracks ?? [],
+  )
+  const [pagers, setPagers] = useState<Record<SearchTab, PageState>>(
+    () => restoredRef.current?.pagers ?? freshPagers(),
+  )
 
   const { data, loading, error, reload } = useAsync<SearchResults>(
     () => (q ? api.searchAll(source, q, 20) : Promise.resolve(EMPTY_RESULTS)),
@@ -104,8 +210,11 @@ export function SearchPage() {
     q ? `mv:${q}` : undefined,
   )
 
-  // 首屏（或换词 / 换源）就绪 → 重置累积结果与分页游标
+  // 首屏（或换词 / 换源）就绪 → 重置累积结果与分页游标。
+  // 「下钻返回」的挂载已从会话级缓存恢复累积结果：**全程跳过，不覆盖**，否则 data 从
+  // EMPTY_RESULTS 更新到真实结果时会把恢复的长列表打回第一页（滚动恢复即被钳制）。
   useEffect(() => {
+    if (didRestore.current) return
     const d = data ?? EMPTY_RESULTS
     setMusic(d)
     setPagers((p) => ({
@@ -134,6 +243,7 @@ export function SearchPage() {
   }, [data])
 
   useEffect(() => {
+    if (didRestore.current) return
     const items = mv.data?.songs ?? []
     setMvTracks(items)
     setPagers((p) => ({
@@ -141,6 +251,25 @@ export function SearchPage() {
       mv: { page: 1, more: items.length >= PAGE_SIZE.mv, loading: false },
     }))
   }, [mv.data])
+
+  // 累积状态变化即**同步**写回会话级缓存。用 useLayoutEffect 而非 useEffect：
+  // 被动 effect 在 paint 之后才执行，用户点卡下钻时的同步 flushSync（路由转场
+  // VT 回调）会让组件卸载、丢弃尚未运行的被动 effect——缓存里就是旧状态。
+  useLayoutEffect(() => {
+    if (!cacheKey) return
+    saveSearchCache(cacheKey, { music, mvTracks, pagers })
+  }, [cacheKey, music, mvTracks, pagers])
+
+  // 卸载快照兜底：用 ref 始终持有最新累积状态，cleanup 里做最后一次落盘——
+  // 即使 useLayoutEffect 的 deps 变化批在卸载前还没跑，这里也拿到最新事实。
+  const latestStateRef = useRef<SearchPageState>({ music, mvTracks, pagers })
+  latestStateRef.current = { music, mvTracks, pagers }
+  useLayoutEffect(() => {
+    return () => {
+      if (!cacheKey) return
+      saveSearchCache(cacheKey, latestStateRef.current)
+    }
+  }, [cacheKey])
 
   /** 点 MV：队列 = 该视频的**分P**（一对多），只播这一个视频（见 ADR-033）。 */
   const playMv = async (track: Track) => {
@@ -281,7 +410,7 @@ export function SearchPage() {
             role="tab"
             aria-selected={activeTab === t.key}
             className={`browse__tab${activeTab === t.key ? ' browse__tab--active' : ''}`}
-            onClick={() => setTab(t.key)}
+            onClick={() => selectTab(t.key)}
           >
             {t.label}
           </button>

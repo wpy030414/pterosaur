@@ -43,6 +43,38 @@ const qualityCache = new LRUCache<string, AudioQuality>({
   ttl: 15 * 60 * 1000,
 })
 
+/**
+ * 结构化数据缓存：搜索 / 发现 / 详情 / 分P / 歌词等**已归一化的 JSON 结果**，
+ * 键为 `源|端点|归一化参数|凭证指纹`（见 ADR-042）。这类数据 2 小时内基本稳定，
+ * 命中即免一次上游往返；与音频地址 / 音质缓存（15 分钟，时效敏感）分开管理。
+ * 导出实例供单测观察（清空 / TTL 断言）。
+ */
+export const DATA_CACHE_TTL_MS = 2 * 60 * 60 * 1000
+export const dataCache = new LRUCache<string, object>({
+  max: 1000,
+  ttl: DATA_CACHE_TTL_MS,
+})
+
+/**
+ * 包装一次上游结构化数据读取：命中缓存直接返回；未命中执行 loader、**成功才入缓存**——
+ * 抛错（上游故障 / 风控，路由回 502）不缓存，下次请求立即重试。适配器把失败降级为
+ * 空结果的（B 站歌词 / 分P 返空数组）空结果也会被缓存：防反复打挂上游，TTL 到期自愈。
+ *
+ * 键必须含**凭证指纹**：匿名访客与登录用户、不同账号间同一请求可能得到不同结果
+ * （B 站字幕匿名恒空、网易云 VIP 标记），不隔离会串数据；匿名访客全体回落到服务端
+ * 缺省凭证（`credentialOf`），恰好共享同一条目。
+ */
+async function cached<T extends object>(
+  key: string,
+  loader: () => Promise<T>,
+): Promise<T> {
+  const hit = dataCache.get(key)
+  if (hit !== undefined) return hit as T
+  const value = await loader()
+  dataCache.set(key, value)
+  return value
+}
+
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
@@ -323,14 +355,15 @@ export function createApp() {
     const limit = Number(c.req.query('limit') ?? 30)
     const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1)
     if (!keywords) return c.json(fail('缺少搜索关键词'), 400)
-    const adapter = adapterOf(sourceQuery(c))
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
     if (!adapter) return c.json(fail('未知音源'), 404)
+    const cred = credentialOf(c, adapter)
     try {
-      const tracks = await adapter.searchSongs(
-        keywords,
-        Math.min(limit, 60),
-        credentialOf(c, adapter),
-        page,
+      // 键用**与实参完全一致**的归一化值（limit 收口 60），避免同义参数重复建条目
+      const tracks = await cached(
+        `${source}|search|${keywords}|${Math.min(limit, 60)}|${page}|${credentialKey(cred)}`,
+        () => adapter.searchSongs(keywords, Math.min(limit, 60), cred, page),
       )
       return c.json(ok<Track[]>(tracks))
     } catch (e) {
@@ -352,33 +385,42 @@ export function createApp() {
       50,
     )
     const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1)
-    const adapter = adapterOf(sourceQuery(c))
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
     if (!adapter) return c.json(fail('未知音源'), 404)
-    const cookie = credentialOf(c, adapter)
+    const cred = credentialOf(c, adapter)
     const only = c.req.query('type')
     const want = (t: string) => !only || only === t
     try {
-      const [songs, artists, albums, playlists] = await Promise.all([
-        want('songs')
-          ? adapter.searchSongs(keywords, 50, cookie, page)
-          : Promise.resolve([] as Track[]),
-        want('artists') && adapter.searchArtists
-          ? adapter.searchArtists(keywords, limit, cookie, page)
-          : Promise.resolve([] as Artist[]),
-        want('albums') && adapter.searchAlbums
-          ? adapter.searchAlbums(keywords, limit, cookie, page)
-          : Promise.resolve([] as Album[]),
-        want('playlists') && adapter.searchPlaylists
-          ? adapter.searchPlaylists(keywords, limit, cookie, page)
-          : Promise.resolve([] as Playlist[]),
-      ])
-      const capabilities = {
-        songs: true,
-        artists: Boolean(adapter.searchArtists),
-        albums: Boolean(adapter.searchAlbums),
-        playlists: Boolean(adapter.searchPlaylists),
-      }
-      return c.json(ok({ songs, artists, albums, playlists, capabilities }))
+      // 整批缓存（`type` 进键：短路与否决定返回形状）；capabilities 由 adapter 静态
+      // 能力决定、恒定，一并缓存无妨。
+      const result = await cached(
+        `${source}|search-all|${keywords}|${limit}|${page}|${only ?? ''}|${credentialKey(cred)}`,
+        async () => {
+          const [songs, artists, albums, playlists] = await Promise.all([
+            want('songs')
+              ? adapter.searchSongs(keywords, 50, cred, page)
+              : Promise.resolve([] as Track[]),
+            want('artists') && adapter.searchArtists
+              ? adapter.searchArtists(keywords, limit, cred, page)
+              : Promise.resolve([] as Artist[]),
+            want('albums') && adapter.searchAlbums
+              ? adapter.searchAlbums(keywords, limit, cred, page)
+              : Promise.resolve([] as Album[]),
+            want('playlists') && adapter.searchPlaylists
+              ? adapter.searchPlaylists(keywords, limit, cred, page)
+              : Promise.resolve([] as Playlist[]),
+          ])
+          const capabilities = {
+            songs: true,
+            artists: Boolean(adapter.searchArtists),
+            albums: Boolean(adapter.searchAlbums),
+            playlists: Boolean(adapter.searchPlaylists),
+          }
+          return { songs, artists, albums, playlists, capabilities }
+        },
+      )
+      return c.json(ok(result))
     } catch (e) {
       return c.json(fail(`搜索失败：${(e as Error).message}`), 502)
     }
@@ -398,13 +440,16 @@ export function createApp() {
   })
 
   app.get('/api/discover/recommend', async (c) => {
-    const adapter = adapterOf(sourceQuery(c))
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
     if (!adapter?.recommendPlaylists)
       return c.json(fail('该音源暂不支持推荐'), 501)
+    const limit = Number(c.req.query('limit') ?? 12)
+    const cred = credentialOf(c, adapter)
     try {
-      const list = await adapter.recommendPlaylists(
-        Number(c.req.query('limit') ?? 12),
-        credentialOf(c, adapter),
+      const list = await cached(
+        `${source}|recommend|${limit}|${credentialKey(cred)}`,
+        () => adapter.recommendPlaylists!(limit, cred),
       )
       return c.json(ok<Playlist[]>(list))
     } catch (e) {
@@ -413,12 +458,15 @@ export function createApp() {
   })
 
   app.get('/api/discover/toplists', async (c) => {
-    const adapter = adapterOf(sourceQuery(c))
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
     if (!adapter?.toplists) return c.json(fail('该音源暂不支持排行榜'), 501)
+    const limit = Number(c.req.query('limit') ?? 50)
+    const cred = credentialOf(c, adapter)
     try {
-      const list = await adapter.toplists(
-        Number(c.req.query('limit') ?? 50),
-        credentialOf(c, adapter),
+      const list = await cached(
+        `${source}|toplists|${limit}|${credentialKey(cred)}`,
+        () => adapter.toplists!(limit, cred),
       )
       return c.json(ok<Playlist[]>(list))
     } catch (e) {
@@ -427,17 +475,19 @@ export function createApp() {
   })
 
   app.get('/api/discover/playlists', async (c) => {
-    const adapter = adapterOf(sourceQuery(c))
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
     if (!adapter?.topPlaylists)
       return c.json(fail('该音源暂不支持精品歌单'), 501)
+    const cat = c.req.query('cat') ?? '全部'
+    const limit = Number(c.req.query('limit') ?? 12)
+    const cred = credentialOf(c, adapter)
     try {
-      const cat = c.req.query('cat') ?? '全部'
-      const limit = Number(c.req.query('limit') ?? 12)
-      return c.json(
-        ok<Playlist[]>(
-          await adapter.topPlaylists(limit, cat, credentialOf(c, adapter)),
-        ),
+      const list = await cached(
+        `${source}|top-playlists|${limit}|${cat}|${credentialKey(cred)}`,
+        () => adapter.topPlaylists!(limit, cat, cred),
       )
+      return c.json(ok<Playlist[]>(list))
     } catch (e) {
       return c.json(fail(`获取歌单失败：${(e as Error).message}`), 502)
     }
@@ -449,11 +499,12 @@ export function createApp() {
     if (!ctx) return c.json(fail('未知音源'), 404)
     if (!ctx.adapter.playlistTracks)
       return c.json(fail('该音源暂不支持歌单页'), 501)
+    const id = c.req.param('id') ?? ''
+    const cred = credentialOf(c, ctx.adapter)
     try {
-      const id = c.req.param('id') ?? ''
-      const { playlist, tracks } = await ctx.adapter.playlistTracks(
-        id,
-        credentialOf(c, ctx.adapter),
+      const { playlist, tracks } = await cached(
+        `${ctx.source}|playlist|${id}|${credentialKey(cred)}`,
+        () => ctx.adapter.playlistTracks!(id, cred),
       )
       return c.json(ok({ playlist, tracks }))
     } catch (e) {
@@ -468,17 +519,15 @@ export function createApp() {
     if (!ctx) return c.json(fail('未知音源'), 404)
     if (!ctx.adapter.artistDetail)
       return c.json(fail('该音源暂不支持艺人页'), 501)
+    const name = c.req.query('name')
+    const id = c.req.param('id') ?? ''
+    const cred = credentialOf(c, ctx.adapter)
     try {
-      const name = c.req.query('name')
-      return c.json(
-        ok(
-          await ctx.adapter.artistDetail(
-            c.req.param('id') ?? '',
-            credentialOf(c, ctx.adapter),
-            name,
-          ),
-        ),
+      const detail = await cached(
+        `${ctx.source}|artist|${id}|${name ?? ''}|${credentialKey(cred)}`,
+        () => ctx.adapter.artistDetail!(id, cred, name),
       )
+      return c.json(ok(detail))
     } catch (e) {
       return c.json(fail(`获取艺人详情失败：${(e as Error).message}`), 502)
     }
@@ -489,15 +538,14 @@ export function createApp() {
   const albumHandler = async (c: Context) => {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)
+    const id = c.req.param('id') ?? ''
+    const cred = credentialOf(c, ctx.adapter)
     try {
-      return c.json(
-        ok(
-          await ctx.adapter.albumDetail(
-            c.req.param('id') ?? '',
-            credentialOf(c, ctx.adapter),
-          ),
-        ),
+      const detail = await cached(
+        `${ctx.source}|album|${id}|${credentialKey(cred)}`,
+        () => ctx.adapter.albumDetail(id, cred),
       )
+      return c.json(ok(detail))
     } catch (e) {
       return c.json(fail(`获取专辑详情失败：${(e as Error).message}`), 502)
     }
@@ -511,13 +559,16 @@ export function createApp() {
       .map((s) => s.trim())
       .filter(Boolean)
     if (!ids.length) return c.json(fail('缺少 ids'), 400)
-    const adapter = adapterOf(sourceQuery(c))
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
     if (!adapter) return c.json(fail('未知音源'), 404)
     if (!adapter.songDetail) return c.json(fail('该音源暂不支持批量曲目'), 501)
+    const capped = ids.slice(0, 200)
+    const cred = credentialOf(c, adapter)
     try {
-      const tracks = await adapter.songDetail(
-        ids.slice(0, 200),
-        credentialOf(c, adapter),
+      const tracks = await cached(
+        `${source}|songs|${capped.join(',')}|${credentialKey(cred)}`,
+        () => adapter.songDetail!(capped, cred),
       )
       return c.json(ok<Track[]>(tracks))
     } catch (e) {
@@ -530,15 +581,14 @@ export function createApp() {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)
     if (!ctx.adapter.parts) return c.json(fail('该音源暂不支持拆分'), 501)
+    const id = c.req.param('id') ?? ''
+    const cred = credentialOf(c, ctx.adapter)
     try {
-      return c.json(
-        ok<Track[]>(
-          await ctx.adapter.parts(
-            c.req.param('id') ?? '',
-            credentialOf(c, ctx.adapter),
-          ),
-        ),
+      const tracks = await cached(
+        `${ctx.source}|parts|${id}|${credentialKey(cred)}`,
+        () => ctx.adapter.parts!(id, cred),
       )
+      return c.json(ok<Track[]>(tracks))
     } catch (e) {
       return c.json(fail(`获取分P失败：${(e as Error).message}`), 502)
     }
@@ -549,15 +599,15 @@ export function createApp() {
   const lyricHandler = async (c: Context) => {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)
+    const id = c.req.param('id') ?? ''
+    const cred = credentialOf(c, ctx.adapter)
     try {
-      return c.json(
-        ok<Lyric>(
-          await ctx.adapter.getLyric(
-            c.req.param('id') ?? '',
-            credentialOf(c, ctx.adapter),
-          ),
-        ),
+      // 凭证指纹进键是硬要求：B 站字幕**匿名恒空、登录才可见**，不隔离则登录后仍命中空歌词
+      const lyric = await cached(
+        `${ctx.source}|lyric|${id}|${credentialKey(cred)}`,
+        () => ctx.adapter.getLyric(id, cred),
       )
+      return c.json(ok<Lyric>(lyric))
     } catch (e) {
       return c.json(fail(`获取歌词失败：${(e as Error).message}`), 502)
     }
@@ -707,6 +757,10 @@ export function createApp() {
   app.post('/api/auth/:source/logout', authLogoutHandler)
   app.post('/api/auth/logout', authLogoutHandler)
 
+  /**
+   * 用户歌单（登录者自己的收藏列表）。**不进结构化数据缓存**：私有数据、
+   * 随用户收藏操作即时变化，缓存收益低而串新旧的风险高（见 ADR-042 的排除清单）。
+   */
   app.get('/api/user/playlists', async (c) => {
     const netease = adapterOf('netease')
     if (!netease?.userPlaylists)

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import type { Mock } from 'vitest'
-import { createApp, audioContentTypeFromUrl } from '../src/app.js'
+import {
+  createApp,
+  audioContentTypeFromUrl,
+  dataCache,
+  DATA_CACHE_TTL_MS,
+} from '../src/app.js'
 import {
   BILIBILI_SESSION_COOKIE_NAMES,
   bilibiliAdapter,
@@ -19,6 +24,8 @@ let loginStatusMock: Mock
 let searchSongsMock: Mock
 
 beforeEach(() => {
+  // 结构化数据缓存同为模块级单例：跨用例共享会「莫名命中」，必须逐用例重置
+  dataCache.clear()
   qrCheckMock = vi.spyOn(neteaseAdapter, 'qrCheck')
   loginStatusMock = vi.spyOn(neteaseAdapter, 'loginStatus')
   searchSongsMock = vi.spyOn(neteaseAdapter, 'searchSongs')
@@ -421,5 +428,82 @@ describe('分P 展开（/api/parts）', () => {
 
   it('无 parts 能力的源回 501（而非 404/502）', async () => {
     expect((await app.request('/api/parts/netease/123')).status).toBe(501)
+  })
+})
+
+describe('结构化数据内存缓存（TTL 2h，见 ADR-042）', () => {
+  it('同参数同凭证的重复请求命中缓存，上游只打一次', async () => {
+    searchSongsMock.mockResolvedValue([])
+    await app.request('/api/search?keywords=hit-me')
+    await app.request('/api/search?keywords=hit-me')
+    expect(searchSongsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('参数不同（页码）或凭证不同（匿名 vs 登录）各自独立成条目', async () => {
+    searchSongsMock.mockResolvedValue([])
+    await app.request('/api/search?keywords=k&page=1')
+    await app.request('/api/search?keywords=k&page=2')
+    expect(searchSongsMock).toHaveBeenCalledTimes(2)
+    // 同参数但带访客会话：凭证指纹不同 → 新条目（VIP 标记等可能不同）
+    await app.request('/api/search?keywords=k&page=1', {
+      headers: { cookie: 'MUSIC_U=mine; __csrf=m' },
+    })
+    expect(searchSongsMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('失败不缓存：502 之后下一次请求立即重试上游', async () => {
+    searchSongsMock
+      .mockRejectedValueOnce(new Error('upstream boom'))
+      .mockResolvedValueOnce([])
+    const first = await app.request('/api/search?keywords=flaky')
+    expect(first.status).toBe(502)
+    const second = await app.request('/api/search?keywords=flaky')
+    expect(second.status).toBe(200)
+    expect(searchSongsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('缓存条目挂 2 小时级 TTL（到期重新打上游由 lru-cache 自身保证）', async () => {
+    // 说明：不在这里拨假时钟——lru-cache v11 在模块加载时捕获 performance 对象，
+    // vitest 的 fake timers 会整体替换 performance（恢复时又换新对象），拨不动其内部
+    // 时钟。故用公开的 getRemainingTTL 验证条目确实带 2h 级 TTL。
+    searchSongsMock.mockResolvedValue([])
+    await app.request('/api/search?keywords=ttl-check')
+    const keys = [...dataCache.keys()]
+    expect(keys).toHaveLength(1) // 缓存已清空，该请求应恰好产生 1 个条目
+    const remaining = dataCache.getRemainingTTL(keys[0])
+    // 上界留 1s 容差：其内部 now() 读数有防抖缓存，存在毫秒级抖动
+    expect(remaining).toBeGreaterThan(DATA_CACHE_TTL_MS - 60_000)
+    expect(remaining).toBeLessThanOrEqual(DATA_CACHE_TTL_MS + 1_000)
+  })
+
+  it('歌词缓存按凭证隔离：登录后同一曲目不命中匿名时的空歌词', async () => {
+    // B 站字幕匿名恒空、登录才可见（ADR-035）——凭证不进键的话登录后会一直命中空歌词
+    const getLyric = vi
+      .spyOn(bilibiliAdapter, 'getLyric')
+      .mockResolvedValue({ lines: [], timed: false })
+    await app.request('/api/lyric/bilibili/BV1cacheTest')
+    await app.request('/api/lyric/bilibili/BV1cacheTest', {
+      headers: { cookie: 'SESSDATA=ok' },
+    })
+    expect(getLyric).toHaveBeenCalledTimes(2)
+    // 同凭证的重复请求仍命中缓存
+    await app.request('/api/lyric/bilibili/BV1cacheTest', {
+      headers: { cookie: 'SESSDATA=ok' },
+    })
+    expect(getLyric).toHaveBeenCalledTimes(2)
+  })
+
+  it('登录态查询不进缓存（每次如实打上游）', async () => {
+    loginStatusMock
+      .mockResolvedValueOnce({ logged: false })
+      .mockResolvedValueOnce({ logged: true, nickname: 'me' })
+    const a = await app.request('/api/auth/status')
+    const b = await app.request('/api/auth/status')
+    expect(((await a.json()) as { data: { logged: boolean } }).data.logged).toBe(
+      false,
+    )
+    expect(((await b.json()) as { data: { logged: boolean } }).data.logged).toBe(
+      true,
+    )
   })
 })

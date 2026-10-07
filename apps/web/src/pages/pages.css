@@ -271,6 +271,14 @@
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   width: fit-content;
+  /*
+   * 吸顶：长结果列表滚动途中也能直接切 tab——这是「各 tab 滚动位置记忆」
+   * （SearchPage 的 scrollByTab）可用的前提；不吸顶则用户必须滚回顶部才能点到
+   * tab，记忆到的位置永远是顶部附近，功能形同虚设。实色背景遮住底下滚过的内容。
+   */
+  position: sticky;
+  top: 10px;
+  z-index: 2;
 }
 
 .search__results {

@@ -680,3 +680,35 @@
   - **问题 1 真因（移动端控制区被顶出）**：注入的实测（真实应用 + WebKit 引擎，700×760 连点 15 次换行）显示**静态布局不漂移**（`controlsBottom`/`lyricsClientH` 恒定），漂移来自**运行期**：歌词首/末行居中曾用 `.nowplaying__lyrics` 的 `padding-top/bottom`（JS 每次换行重设），等于每次都在改这个**滚动容器自身的盒模型**，触发它重新测高 → 顶动下方控制区；且 `position: fixed` 整页浮层在 macOS Safari 弹性滚动（滚动链抵达文档）时会整体位移。修法：留白改由 `::before`/`::after`（读 JS 写入的 `--np-lyric-pad`）撑起，容器盒模型恒定；容器再加 `overscroll-behavior: contain` 断开滚动链。**切勿改回容器 `padding`。**
   - 歌词居中须对**容器高度变化**（点封面进 / 出专注态、窗口缩放）即时响应：居中逻辑提取为回调用，`ResizeObserver` 观察 `.nowplaying__lyrics` 的盒尺寸并在变化时立即重居中（不加平滑）；否则点封面后当前行会偏，非得等到下一句才归位。
   - `useMediaQuery` 的断点常量须与 CSS 的 `860px` 同步；`AUDIO_LEVEL_LABELS` 已随 chip 一并移除。
+
+## ADR-042：后端结构化数据内存缓存（TTL 2h，凭证指纹进键）
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：内容接口（搜索 / 发现 / 详情 / 分P / 歌词）每次请求都实时打上游（网易云 / B 站），重复浏览同一搜索词或详情页既慢又徒增上游压力与风控风险（B 站搜索另有 buvid3 / wbi 签名等前置请求）。这类**结构化数据**——区别于音频地址 / 音质这类时效敏感数据——2 小时内基本稳定，值得整层缓存。
+- 决策：
+  - 路由层（`apps/server/src/app.ts`）新增统一缓存 `dataCache`（lru-cache，`max: 1000`、`ttl: 2h`）与 `cached(key, loader)` 包装器，覆盖 11 个端点：`/api/search`、`/api/search/all`、`/api/discover/{recommend,toplists,playlists}`、`/api/{playlist,artist,album,parts,lyric}`、`/api/songs`（含各自的 2 段式缺省源别名）。
+  - 键 = `源|端点|归一化参数|凭证指纹`。参数取**与传给适配器实参完全一致**的归一化值（limit 收口、cat 缺省、`type` / `page` / ids 保序拼接），同义请求不重复建条目。
+  - **凭证指纹进键**（复用音频地址缓存的 `credentialKey`，对 `credentialOf` 的最终凭证取 sha1 前 12 位）：匿名访客全体回落服务端缺省凭证、恰好共享同一条目；不同账号各自成条目——VIP 标记、B 站登录限定字幕（ADR-035：匿名 `subtitles` 恒空）不串数据。登录 / 退出登录**无需**清缓存：凭证变即键变，旧条目 TTL 到期自然淘汰。
+  - **只缓存成功结果**：loader 抛错（上游故障 / 风控 → 502）不落缓存，下次请求立即重试；适配器把失败降级为空结果的（B 站歌词 / 分P 返空）空结果也缓存——防反复打挂上游，TTL 到期自愈。
+  - **排除清单**：登录三件套与 `/api/auth/status`（轮询语义，绝不缓存）、`/stream/*` 与 `/api/quality/*`（已有 15 分钟专用缓存，音频地址时效敏感）、`/api/user/playlists`（私有数据、随收藏操作即时变化）、`/api/discover/capabilities`（纯本地计算）、云同步接口（非上游请求）。
+- 考虑过的方案：① 在各适配器内各自缓存——放弃，凭证归一化（匿名回落缺省凭证）在路由层，适配器层拿不到等价性、会重复建条目；② 缓存序列化后的 JSON 字符串——放弃，对象缓存零序列化成本（`c.json` 本就序列化）；③ TTL 30min / 1h——放弃，搜索 / 歌词 / 详情类数据 2h 内稳定，短 TTL 徒增回源。
+- 为什么选这个：路由层统一包装一处生效、适配器保持纯粹；凭证指纹进键与既有 `urlCache` / `qualityCache` 是同一套安全边界。
+- 后果 / 已知边界：
+  - 收藏歌单 / 专辑详情的内容变化最长 2h 后可见（自托管场景可接受）；在研的并发未命中去重（request coalescing）未做——单用户场景收益低。
+  - lru-cache v11 的 `ttlResolution` 默认对 `now()` 读数做 1s 防抖；单测**不拨假时钟**（fake timers 会整体替换 `performance` 对象、恢复时又换新对象，而 lru-cache 在模块加载时已捕获原引用、拨不动），改用公开的 `getRemainingTTL` 断言条目确实挂 2h 级 TTL。
+
+## ADR-043：搜索页状态保留——tab 进 URL、滚动恢复加固（VT 快照钳制污染）与 tab 栏吸顶
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：搜索结果页的分类 tab 原为组件本地 `useState`，下钻详情后返回即重置回「歌曲」；且实测「切到专辑 tab 下滚 → 进专辑 → 返回」滚动也回顶部。探针日志定位到滚动丢失的**真因**：`startViewTransition` 在回调（新条目提交、`location.key` 切换）之前要**捕获旧快照**，该渲染步骤里浏览器会对被命名的滚动容器（`.app-content`）产生**钳制滚动**（实测 677 → 5）——此刻 `scrollMemory.currentKey` 仍是旧条目，scroll 事件把旧条目的真实记录污染成钳制值，返回时恢复的就是污染值。此前未暴露纯属运气（钳制值取决于新旧内容高度差）。
+- 决策：
+  - **tab 进 URL**（`?tab=`，缺省歌曲不占 URL）：下钻返回（POP 回旧条目）即回到所处 tab，刷新 / 分享深链同样成立；顶栏换词 push 不带 tab、自然重置。切 tab 用 **replace**（不压历史条目，返回键回上一页而非上个 tab）。
+  - **导航转场期间暂停滚动记录**（`scrollMemory.setScrollSaving`）：`startRouteTransition` 入口暂停，`flushSync` 提交（新 key 就位）后恢复——把「拍旧快照的钳制滚动」窗口整个封死，无论浏览器内部行为如何。非转场路径与 VT 抛错回退路径同样处理。
+  - **tab 间穿梭的滚动记忆**（`SearchPage.scrollByTab`）：replace 会丢弃旧 history key，按条目记忆记不住「切走前的 tab」，由组件内 ref 补齐（组件存活期间有效；下钻返回仍由按条目恢复负责，两者互补）。恢复用**嵌套 rAF**——须晚于转场的 `resetContentScroll`（VT 回调内同步）与滚动恢复的同帧补帧（父层 effect 后注册、后执行）。
+  - **累积结果的会话级缓存**（`SearchPage.searchPageCache`，`源|关键词` → 累积列表与分页游标，LRU 上限 10）：滚动会触发**懒加载续页**，累积列表是组件 state、下钻返回重挂即丢——返回时只剩第一页、内容高度不足，恢复目标被浏览器**钳制**到第一页底部（第一页不满屏时即顶部，探针实测 960 → 677）。挂载时从缓存**同步**恢复等量内容，滚动才有落脚点；恢复过的挂载**跳过一次首屏灌入**（gate 为「恢复态 ∧ data 引用未变」，StrictMode 双跑亦稳），换词 / reload 后 data 引用变化即恢复正常重置。
+  - **tab 栏吸顶**（`position: sticky; top: 10px`）：不吸顶则用户滚到中段根本看不到 tab、必须滚回顶才能切，「穿梭记忆」存到的永远是顶部附近、形同虚设；吸顶后长列表滚动途中可直接切 tab。实色 `--bg-elevated` 背景遮住底下滚过的内容。
+- 后果 / 已知边界：
+  - E2E 两个教训：转场动画期间合成滚轮事件可能被吞（wheel 前须等 `data-route-vt` 摘除）；Playwright click 的 actionability 检查会把滚出视口的目标**自动滚回视口**（曾把记忆值污染成 0）。
+  - 穿梭记忆是组件级（`useRef`），下钻返回后重挂即清空——返回后切其它 tab 从顶部开始（按条目恢复只覆盖「最后所处 tab」）。

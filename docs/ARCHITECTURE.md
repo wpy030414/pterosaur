@@ -21,7 +21,7 @@ Pterosaur 分三层：浏览器前端（React SPA）、同源 Hono 后端（API 
 │                                                                 │
 │  app.ts (路由)  ──► sources/netease.ts / bilibili.ts             │
 │                         │                                       │
-│                    lru-cache（音频地址缓存，TTL 15min）          │
+│                    lru-cache（音频地址/音质 15min；结构化数据 2h）│
 │                    node:sqlite（云同步存储，WAL）               │
 └──────────────┬──────────────────────────────────────────────────┘
                ▼
