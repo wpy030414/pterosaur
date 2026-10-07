@@ -24,6 +24,7 @@ import { useAudioEngine } from './hooks/useAudioEngine.js'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js'
 import { useLibrarySync } from './hooks/useLibrarySync.js'
 import { useNowPlayingPrefetch } from './hooks/useNowPlayingPrefetch.js'
+import { usePlaylistPrefetch } from './hooks/usePlaylistPrefetch.js'
 import { useContentScrollRestoration } from './hooks/useContentScrollRestoration.js'
 import { useSourceTheme } from './hooks/useSourceTheme.js'
 import { useApplyTheme } from './hooks/useTheme.js'
@@ -61,6 +62,7 @@ export default function App() {
   useAudioEngine()
   useLibrarySync()
   useNowPlayingPrefetch()
+  usePlaylistPrefetch()
   useContentScrollRestoration()
   useSourceTheme()
 

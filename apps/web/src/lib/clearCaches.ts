@@ -7,12 +7,13 @@
  * 仍只放一小段」。因此在凭证变化时清空缓存，让新身份下重新解析。
  *
  * 清空范围：IDB 媒体池（音频 + 封面）+ Service Worker 内存元数据索引 + Cache Storage
- * （应用外壳 / 图标）+ 进程内内存缓存（歌词 / 封面就绪登记 / `useAsync` 取数）。
+ * （应用外壳 / 图标）+ 进程内内存缓存（歌词 / 封面就绪登记 / 预载去重表 / `useAsync` 取数）。
  * **不动**资料库（收藏 / 歌单，属用户数据）与登录态本身。
  */
 import { clearMediaCache } from './mediaCache.js'
 import { clearLyricCache } from './lyricCache.js'
 import { clearCoverRegistry } from './imageCache.js'
+import { clearPrefetchRegistry } from './prefetch.js'
 import {
   clearAllCaches as clearCacheStorage,
   postToServiceWorker,
@@ -34,4 +35,6 @@ export async function clearAllAppCaches(): Promise<void> {
   clearLyricCache()
   clearCoverRegistry()
   clearAsyncCache()
+  // 媒体池已清空，页面侧「已预载」记录必须同步清：否则重登后会误判「已预载」而不再重发
+  clearPrefetchRegistry()
 }

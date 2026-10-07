@@ -570,3 +570,38 @@
   - AI 字幕（`ai-zh` 等）仅登录后可见且地址带签名 token，拉取时同样带 cookie。
   - 超过两门语言（如 en + ja + zh 同存）只引入主轨 + 中文两门，其余不展示。
   - 字幕点击可跳转（`timed: true`，`time = from`），空正文行已过滤、多行空白折叠为单行。
+
+## ADR-036：`shuffle` 改为「不重复的排列游走」——手动切歌与自然推进一致
+
+- 日期：2026-10-07
+- 状态：已采纳（**修订** `docs/specs/module-player-state.md` 的「shuffle 下 next：随机跳转」一条）
+- 背景：开启 shuffle 时，队列**已**由 `shuffledIndexes` 一次性 Fisher–Yates 重排（`toggleShuffle` / `cyclePlayMode` / `playTracks`），自然结束推进 `advanceOnEnd` 在 `repeat='all'` 下已是 `index+1` 顺序游走。但 **`next()`/`prev()` 的 shuffle 分支各自 `Math.floor(Math.random()*len)` 跳转**：与自然推进不一致、可能连播同一首 / 漏播、且「下一首」不可预测——使前瞻预载（ADR-037）无从下手。
+- 考虑过的方案：① 保留每次随机跳转（现状）；② 每次 `next` 重洗剩余队列；③ 删除 `Math.random`，队列一次性重排后**顺序游走**。
+- 决策：采纳 ③。`next()` → `index+1`（越界：`repeat='all'` 回绕 0，否则停止并置 `playbackEnded`）；`prev()` → `index−1`（越界回绕 `len−1`，保留「已播 >3s 先回开头」）。`shuffledIndexes` 保留，`shuffle` 标志此后**仅决定队列是否被重排**。
+- 为什么选这个：与 `advanceOnEnd` 逐首一致，手动 ± 与自然推进统一；一次洗牌保证「整列不重复走一遍」；顺序确定，预载可预测。
+- 为什么不选其他：① 随机跳转语义下无「上一首」概念、易重复，且不可预载；② 每次重洗剩余队列会让「上一首」回溯无意义、且不断消耗随机。
+- 后果 / 已知边界：`shuffle + repeat='one'`（仅 `toggleShuffle` 单独调用可出现）队尾 `next` 会**停止**——与 `repeat='off'` 一致；`baseQueue`↔`queue` 关系不变；`toggleShuffle` 仍不改 `repeat`（既有行为，本次未动）。
+- 何时重新审视：若引入真实播放历史栈、或需要可复现的洗牌种子（分享「随机歌单」）。
+
+## ADR-037：队列前瞻 / 回瞻预载（前后各 2 首，SW 自取）
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：此前仅预载**当前曲**的封面（`COVER_LARGE`）+ 歌词（`useNowPlayingPrefetch`），音频只在首次播放时被 SW 整曲落盘。切歌 / 跳到下一首 / 回到上一首仍要等一次网络起播，封面可能闪一下。目标：在网络良好且播放侧空闲时，预热队列相邻曲目的音频 / 封面 / 歌词。
+- 考虑过的方案：
+  - 音频落法：**A** 页面 `fetch` 排空 body（字节穿过页面）/ **B** 新增 SW 消息由 SW 自取并写缓存。
+  - 封面档位：只 `COVER_LARGE` / 只 `COVER_SMALL` / **两档都预**。
+- 决策：**B + 两档封面 + 前后各 2 首**。协议抽为纯模块 `lib/prefetchProtocol.ts`（`PREFETCH_AUDIO`：页面构造 / SW 校验）。门控：`navigator.onLine` + Network Information API（`saveData !== true`；`effectiveType` 允许 `4g` 或未知，跳过 `slow-2g/2g/3g`）+ `!buffering` + 当前曲 `readyState ≥ 3`；经 `requestIdleCallback`（退化 `setTimeout`）**串行**执行，`settle 2500ms` 防抖、曲间 `gap 1500ms`。封面 `preloadCover`（`<img>` → SW `handleImage` 落同一 IDB 池）；歌词 `prefetchLyric`（内存）。
+- 为什么选这个：
+  - **B** 复用 SW 的 `storeResponse` / LRU / 单飞，页面零字节处理、零缓存逻辑重复；**关键前提**：SW 自身发起的 `fetch()` 不被其自身 fetch 处理器拦截，故 SW 内 `fetch('/stream/...')` 直连后端、不递归。
+  - 预载路径**绝不** `notifyNeedLogin`——预热的是「还没打算播」的曲目，为其弹登录框会打扰用户；403 / 非音频 / 非整段一律静默丢弃。
+  - 两档封面各自是**独立缓存条目**（key 含 `param`），列表行与沉浸页均需瞬显，故都预。
+  - 快速连跳由 `settle` 抑制（不断重置，收手才发车），叠加页面去重表（上限 512，键含 `level`）与 SW「命中 / 在途即 no-op」。
+- 为什么不选其他：A 让整曲字节多穿一趟页面主线程且重复缓存逻辑；只预两档之一会在「列表行」或「沉浸页」其一留白。
+- 后果 / 已知边界：
+  - **首载无 controller** 时 `postToServiceWorker` 静默丢弃 → 音频预载缺席，**封面 / 歌词仍预**。
+  - 预载等于提前下载「可能被跳过」的整曲：请求量约 +1 整曲 / 次切歌（±2 上限），上游风控与 VPS 流量为主要成本；`saveData` 兜底，快速连跳靠 `settle`。
+  - 换档不清旧档缓存（与 ADR-031 一致，靠 LRU）；去重键含 `level` 故换档按新档重发。
+  - 预载失败在**本会话内不重试**（先登记再执行，避免失败循环）。
+  - 登录 / 登出清空全部缓存（ADR-034）时同步清空页面去重表；但此时 `current/queue/index` 未变 → effect 不重跑，预载需**下次切歌**才恢复。
+- 何时重新审视：若引入音频分片缓存（ADR-012）可改为按需分段预热；若需给预载加显式取消协议或动态半径（如移动网络只预 ±1）。

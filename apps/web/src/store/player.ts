@@ -205,20 +205,17 @@ export const usePlayer = create<PlayerStore>()(
       },
 
       next: () => {
-        const { queue, index, repeat, shuffle } = get()
+        const { queue, index, repeat } = get()
         if (!queue.length) return
-        let nextIndex: number
-        if (shuffle) {
-          nextIndex = Math.floor(Math.random() * queue.length)
-        } else {
-          nextIndex = index + 1
-          if (nextIndex >= queue.length) {
-            if (repeat === 'all') nextIndex = 0
-            else {
-              // 顺序播放到尾 → 停止，标记已结束
-              set({ position: 0, isPlaying: false, playbackEnded: true })
-              return
-            }
+        // shuffle 只是把队列**一次性重排**（见 shuffledIndexes），顺序游走即可：
+        // 与自然结束的 advanceOnEnd 同构，保证「手动下一首」与「自然推进」一致且可预测。
+        let nextIndex = index + 1
+        if (nextIndex >= queue.length) {
+          if (repeat === 'all') nextIndex = 0
+          else {
+            // 顺序播放到尾 → 停止，标记已结束
+            set({ position: 0, isPlaying: false, playbackEnded: true })
+            return
           }
         }
         set({
@@ -232,20 +229,16 @@ export const usePlayer = create<PlayerStore>()(
       },
 
       prev: () => {
-        const { queue, index, position, shuffle } = get()
+        const { queue, index, position } = get()
         if (!queue.length) return
         // 已播放超过 3 秒则回到开头，符合主流播放器习惯
         if (position > 3) {
           set({ position: 0 })
           return
         }
-        let prevIndex: number
-        if (shuffle) {
-          prevIndex = Math.floor(Math.random() * queue.length)
-        } else {
-          prevIndex = index - 1
-          if (prevIndex < 0) prevIndex = queue.length - 1
-        }
+        // 同 next：顺序游走（shuffle 的重排已在队列里），越界回绕到末尾
+        let prevIndex = index - 1
+        if (prevIndex < 0) prevIndex = queue.length - 1
         set({
           index: prevIndex,
           current: queue[prevIndex] ?? null,

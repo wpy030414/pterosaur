@@ -122,6 +122,9 @@ Pterosaur 分三层：浏览器前端（React SPA）、同源 Hono 后端（API 
 **封面缓存过期（7 天）：**
 封面写入 IDB 时记录 `cachedAt`（写入时刻）。SW 命中时若 `now - cachedAt ≥ 7 天` 则清除并按未命中回源重取；SW 启动（`loadState`）时顺带清扫一遍过期项。音频不设时间过期，仅受 LRU 淘汰（见 ADR-015）。
 
+**队列预载（前后各 2 首）：**
+`hooks/usePlaylistPrefetch` 订阅当前曲 / 队列 / 下标 / 音质档位；在网络良好（`navigator.onLine` + Network Information API，非省流）、当前曲未缓冲且 `readyState ≥ 3` 时，经 `lib/prefetch.ts` 的调度器（`requestIdleCallback` 串行、`settle` 防抖、曲间留隙）预热队列**前后各 2 首**的音频 / 封面 / 歌词。音频由 `lib/prefetchProtocol.ts` 的 `PREFETCH_AUDIO` 消息交 SW 自行整段下载写 IDB（403 静默、不通知登录）；封面取 `COVER_SMALL` + `COVER_LARGE` 两档、经既有 SW 封面通道；歌词入内存缓存。`current`/`queue`/`index`/`level` 变化即取消重排；登录 / 登出清缓存（ADR-034）时同步清空页面去重表（见 ADR-037）。
+
 **library 云同步（LWW）：**
 
 1. 用户在头像菜单开启「云同步」→ `store/sync.ts` 记 `enabled` 与绑定的**活动账号**（`source`+`accountId`），并立即 `syncNow()`。
@@ -173,4 +176,6 @@ Pterosaur 分三层：浏览器前端（React SPA）、同源 Hono 后端（API 
 - **缩略参数边界**：给网易云图片追加 `param=WxH` 必须走 `thumb()`，兼容地址已带查询串的情况（见 ADR-010）。
 - **客户端持久化边界**：`library` 走 **IndexedDB**（异步写入不阻塞主线程；structured clone 免 `JSON.stringify`；配合 `partialize` 只存数据字段，避免克隆 action 函数）；写入经微任务级合并节流（无定时 debounce 的丢写窗口）。`player` / `theme` / `sync` 的 payload 小，仍用 localStorage（`sync` 仅存开关 / 绑定账号 / `updatedAt`）。library 的 hydration 是**异步**的，`main.tsx` 在首帧前 `await rehydrate()` 以避免空态闪烁（见 ADR-011）。
 - **播放韧性边界**：网络差时引擎把故障显式化并自愈——`waiting`/`stalled` 置 `buffering`（播放键显示加载态）；**未起播**由 12s 起播超时兜底，**已在播的停滞**由看门狗（静默 5s 判定、退避 10/15/20s、最多 3 次）以 `load()` + 回拨位置恢复，预算耗尽则**暂停并提示、不自动跳歌**；`ended` 时若 `audio.duration` 比元数据时长短 >10s 且 >10%，判为「截断流」走同一恢复而非切歌。登录引导只由**后端 403 经 SW `postMessage`（`STREAM_NEED_LOGIN`）**驱动——音频元素的 `error` 事件无法区分网络失败与版权受限，故一律中性提示（见 ADR-021）。
-- **SW 缓存边界**：Service Worker 按匹配范围互不相交地承担三类职责——(1) `/stream/*` 音频：整文件请求（无 `Range` / `bytes=0-` 前缀）命中按 `Range` 从 IDB 返回，未命中则单次下载、一路流式返回、一路写 IDB；seek 型 `Range` 不经 SW、由浏览器直接请求同源接口（见 ADR-012 后续修订）；(2) 封面图片（`destination === 'image'`）：命中即返，未命中以 CORS 拉取可读字节写入**同一** IDB 池，与音频共享 16GB LRU，且封面自写入起 **7 天过期**；(3) 应用外壳（仅生产）：Workbox 运行时缓存，7 天过期。音频/封面的容量上限为 `min(16GB, 配额 * 0.9)`，超出按 LRU 淘汰；仅缓存完整音频响应（`200`，或部分 CDN 对无条件请求返回的全量 `206`）且 `content-type` 为 `audio/*`；切片 `206`、`403`（VIP 未登录）/`502` 直接放行不缓存。封面 CORS 失败时回退直连且不缓存。`/api/*` 及其它请求原样放行（见 ADR-012 / ADR-013）。
+- **SW 缓存边界**：Service Worker 按匹配范围互不相交地承担三类职责——(1) `/stream/*` 音频：整文件请求（无 `Range` / `bytes=0-` 前缀）命中按 `Range` 从 IDB 返回，未命中则单次下载、一路流式返回、一路写 IDB；seek 型 `Range` 不经 SW、由浏览器直接请求同源接口（见 ADR-012 后续修订）；(2) 封面图片（`destination === 'image'`）：命中即返，未命中以 CORS 拉取可读字节写入**同一** IDB 池，与音频共享 16GB LRU，且封面自写入起 **7 天过期**；(3) 应用外壳（仅生产）：Workbox 运行时缓存，7 天过期。音频/封面的容量上限为 `min(16GB, 配额 * 0.9)`，超出按 LRU 淘汰；仅缓存完整音频响应（`200`，或部分 CDN 对无条件请求返回的全量 `206`）且 `content-type` 为 `audio/*`；切片 `206`、`403`（VIP 未登录）/`502` 直接放行不缓存。封面 CORS 失败时回退直连且不缓存。`/api/*` 及其它请求原样放行（见 ADR-012 / ADR-013）。此外 SW 接受页面消息 `PREFETCH_AUDIO` **主动**整段下载某曲音频写 IDB（预载相邻曲目；命中 / 在途即 no-op；403 静默、不通知登录；SW 自身发起的 `fetch()` 不经其自身 fetch 处理器，故不递归，见 ADR-037）。
+- **预载边界**：队列预载只在**网络良好且播放侧空闲**时进行——`onLine` + 非省流 + 非慢速类型、`!buffering` 且当前曲 `readyState ≥ 3`，并经 `requestIdleCallback`（退化 `setTimeout`）**串行**、`settle` 防抖、曲间留隙，避免与当前曲首缓冲抢带宽；音频经 SW 消息、封面经 `<img>`、歌词入内存，三者共用既有缓存层。预载的目标是「可能被跳过」的曲目，故 403 静默、失败本会话不重试、清缓存时须同步清页面去重表（见 ADR-037）。
+- **播放顺序边界**：`shuffle` 是对队列的一次性 Fisher–Yates 洗牌；此后 `next`/`prev` 与自然结束推进一律**顺序游走**（`index±1`，越界按 `repeat` 回绕/停止），不再每次随机——保证整列不重复、手动切歌与自然推进一致、且顺序可预测（见 ADR-036）。

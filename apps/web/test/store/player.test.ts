@@ -207,6 +207,82 @@ describe('usePlayer.next / prev', () => {
   })
 })
 
+describe('usePlayer shuffle 顺序游走（无随机）', () => {
+  // shuffle 只是把队列一次性重排；next/prev 应顺序游走（不再 Math.random），
+  // 故这里全部读取 store 里的实际排列来断言，不依赖随机结果。
+  beforeEach(() => {
+    usePlayer.setState({ shuffle: true, repeat: 'all' })
+    usePlayer.getState().playTracks(SONGS, 0)
+  })
+
+  it('next 走 index+1（按队列顺序，而非随机跳转）', () => {
+    const q = usePlayer.getState().queue
+    expect(q).toHaveLength(5)
+    usePlayer.getState().next()
+    expect(usePlayer.getState().index).toBe(1)
+    expect(usePlayer.getState().current?.id).toBe(q[1].id)
+  })
+
+  it('连按 next 遍历整个排列且不重复，末尾回绕到 0', () => {
+    const q = usePlayer.getState().queue
+    const seen = [q[0].id]
+    for (let i = 0; i < q.length - 1; i++) {
+      usePlayer.getState().next()
+      seen.push(usePlayer.getState().current?.id ?? '')
+    }
+    expect(seen).toEqual(q.map((t) => t.id))
+    expect(new Set(seen).size).toBe(q.length)
+    // 再按一次 → 回绕到队首
+    usePlayer.getState().next()
+    expect(usePlayer.getState().index).toBe(0)
+  })
+
+  it('prev 走 index-1，开头回绕到末尾', () => {
+    const q = usePlayer.getState().queue
+    usePlayer.setState({ index: 3, current: q[3], position: 0 })
+    usePlayer.getState().prev()
+    expect(usePlayer.getState().index).toBe(2)
+    expect(usePlayer.getState().current?.id).toBe(q[2].id)
+
+    usePlayer.setState({ index: 0, current: q[0], position: 0 })
+    usePlayer.getState().prev()
+    expect(usePlayer.getState().index).toBe(4)
+  })
+
+  it('末尾 next + repeat=off → 停止并标记已结束', () => {
+    usePlayer.setState({ repeat: 'off' })
+    usePlayer.setState({ index: 4, current: usePlayer.getState().queue[4] })
+    usePlayer.getState().next()
+    const s = usePlayer.getState()
+    expect(s.index).toBe(4)
+    expect(s.isPlaying).toBe(false)
+    expect(s.playbackEnded).toBe(true)
+  })
+
+  it('末尾 next + repeat=one → 与 off 一致地停止（固化既有语义）', () => {
+    usePlayer.setState({ repeat: 'one' })
+    usePlayer.setState({ index: 4, current: usePlayer.getState().queue[4] })
+    usePlayer.getState().next()
+    const s = usePlayer.getState()
+    expect(s.index).toBe(4)
+    expect(s.isPlaying).toBe(false)
+    expect(s.playbackEnded).toBe(true)
+  })
+
+  it('手动 next 与自然结束推进 advanceOnEnd 一致', () => {
+    const len = usePlayer.getState().queue.length
+    for (let i = 0; i < len; i++) {
+      usePlayer.setState({
+        index: i,
+        current: usePlayer.getState().queue[i],
+        position: 0,
+      })
+      usePlayer.getState().next()
+      expect(usePlayer.getState().index).toBe(advanceOnEnd(i, len, 'all'))
+    }
+  })
+})
+
 describe('usePlayer 播放模式', () => {
   it('cycleRepeat 循环切换 off->all->one->off', () => {
     usePlayer.setState({ repeat: 'off' })

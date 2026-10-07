@@ -13,6 +13,9 @@
  *
  * 其余请求原样放行——因此对 `/api/*`、HMR 与其它资源零影响。
  * 浏览器 HTTP 缓存已由后端 `Cache-Control: no-store` 关闭，故缓存完全由本 SW 承担。
+ *
+ * 另：接受页面 `PREFETCH_AUDIO` 消息**主动**整段下载音频写入同一 IDB（预载队列相邻曲目，
+ * 见 ADR-037）。SW 自身发起的 `fetch()` 不经其自身的 fetch 处理器，故该路径直连后端、不递归。
  */
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching'
 import {
@@ -36,9 +39,12 @@ import {
   touchCached,
 } from './lib/mediaCache.js'
 import { registerShellRoutes } from './lib/shellCache.js'
+import { parsePrefetchAudio, PREFETCH_AUDIO } from './lib/prefetchProtocol.js'
 import {
   DEFAULT_SOURCE,
   isMusicSource,
+  streamUrl,
+  type AudioLevel,
   type MusicSource,
 } from '@pterosaur/shared/types'
 
@@ -50,8 +56,10 @@ interface FetchEventLike extends ExtendableEventLike {
   request: Request
   respondWith(response: Response | Promise<Response>): void
 }
-interface MessageEventLike {
+interface MessageEventLike extends Event {
   data: unknown
+  /** `ExtendableMessageEvent` 的 waitUntil：把异步写入并入 SW 生命周期。 */
+  waitUntil(promise: Promise<unknown>): void
 }
 interface ServiceWorkerGlobalScopeLike {
   addEventListener(
@@ -165,7 +173,10 @@ async function storeResponse(
     await putCached(meta, blob)
     metaByKey.set(key, meta)
   } catch (err) {
-    console.warn('[sw] 写入媒体缓存失败', err)
+    // 单飞预载被新预载 abort、或播放侧换曲取消下载均属预期：不刷警告
+    if (!(err instanceof DOMException && err.name === 'AbortError')) {
+      console.warn('[sw] 写入媒体缓存失败', err)
+    }
   } finally {
     inflight.delete(key)
   }
@@ -200,6 +211,50 @@ async function notifyNeedLogin(source: MusicSource): Promise<void> {
     client.postMessage({ type: 'STREAM_NEED_LOGIN', source })
 }
 
+/**
+ * 带「响应头超时」的上游整段音频 GET：连接建立阶段超时即 abort（弱网下上游长时间不回头会
+ * 让请求悬死）。失败 / 超时 / 被取消返回 `null`。`signal` 供预载单飞取消（见 {@link prefetchAudio}）。
+ */
+async function fetchAudioUpstream(
+  url: string,
+  signal?: AbortSignal,
+): Promise<Response | null> {
+  if (signal?.aborted) return null
+  const controller = new AbortController()
+  const onAbort = () => controller.abort()
+  signal?.addEventListener('abort', onAbort)
+  const timer = setTimeout(
+    () => controller.abort(),
+    UPSTREAM_HEADERS_TIMEOUT_MS,
+  )
+  try {
+    return await fetch(url, {
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+  }
+}
+
+/**
+ * 校验上游是否为「整段、可缓存音频」，是则返回其 content-type，否则 `null`。
+ * 覆盖「非 2xx / 非 `audio/*`」与「非整文件」（seek 切片 206、502 等）两种不可缓存情形。
+ */
+function cacheableAudioMime(upstream: Response): string | null {
+  const ct = upstream.headers.get('content-type') ?? ''
+  if (!upstream.ok || !ct.startsWith('audio/')) return null
+  if (
+    !isWholeFileResponse(upstream.status, upstream.headers.get('content-range'))
+  ) {
+    return null
+  }
+  return ct
+}
+
 /** `/stream/*`：音频代理（Range 分段、整文件缓存）。 */
 async function handleStream(
   event: FetchEventLike,
@@ -214,22 +269,8 @@ async function handleStream(
   if (cached) return cached
 
   // 未命中：取整文件（不转发 Range），失败则交由浏览器报错（响应头阶段带超时）
-  const controller = new AbortController()
-  const headersTimer = setTimeout(
-    () => controller.abort(),
-    UPSTREAM_HEADERS_TIMEOUT_MS,
-  )
-  let upstream: Response
-  try {
-    upstream = await fetch(url.href, {
-      credentials: 'same-origin',
-      signal: controller.signal,
-    })
-  } catch {
-    return Response.error()
-  } finally {
-    clearTimeout(headersTimer)
-  }
+  const upstream = await fetchAudioUpstream(url.href)
+  if (!upstream) return Response.error()
 
   // VIP 未登录 / 版权受限：后端以 403 表达——通知页面给出登录引导，响应原样放行（不缓存）
   if (upstream.status === 403) {
@@ -238,19 +279,50 @@ async function handleStream(
   }
 
   // 仅缓存完整音频响应（200，或部分 CDN 对无条件请求返回的全量 206）；切片 206 与 502 等直接放行
-  const contentType = upstream.headers.get('content-type') ?? ''
-  if (!upstream.ok || !contentType.startsWith('audio/')) return upstream
-  if (
-    isWholeFileResponse(upstream.status, upstream.headers.get('content-range'))
-  ) {
+  const mime = cacheableAudioMime(upstream)
+  if (mime) {
     event.waitUntil(
       storeResponse(
-        { key, kind: 'audio', source, trackId: id, level, mime: contentType },
+        { key, kind: 'audio', source, trackId: id, level, mime },
         upstream.clone(),
       ),
     )
   }
   return upstream
+}
+
+/** 单飞：仅允许一条预载在途；新预载 abort 旧的，避免快速切歌时残留整段下载。 */
+let prefetchAbort: AbortController | null = null
+
+/**
+ * 预载单曲音频：SW **主动**整段下载并写入媒体缓存（页面不接字节，落法 B，见 ADR-037）。
+ *
+ * - 命中缓存或已有同 key 在途 → no-op；
+ * - 403（VIP / 版权）/ 非音频 / 非整段 → 丢弃响应体、**静默跳过**；
+ * - **绝不**调用 `notifyNeedLogin`——预载的是「还没打算播」的曲目，弹登录框会打扰用户。
+ */
+async function prefetchAudio(
+  source: MusicSource,
+  id: string,
+  level: AudioLevel,
+  key: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (metaByKey.has(key) || inflight.has(key)) return
+  const href = new URL(streamUrl(source, id, { level }), sw.location.origin)
+    .href
+  const upstream = await fetchAudioUpstream(href, signal)
+  if (!upstream) return
+  const mime = cacheableAudioMime(upstream)
+  if (!mime) {
+    // 403 / 非整段音频：丢弃响应体，静默跳过（不通知登录）
+    void upstream.body?.cancel().catch(() => {})
+    return
+  }
+  await storeResponse(
+    { key, kind: 'audio', source, trackId: id, level, mime },
+    upstream,
+  )
 }
 
 /** 封面图片：命中即返；未命中以 CORS 拉取可读字节写入同一 IDB 池，失败则原样放行。 */
@@ -307,10 +379,31 @@ sw.addEventListener('activate', (event) => {
   )
 })
 
-// 设置弹窗「清理缓存」后，主线程广播该消息以清空 SW 内存中的元数据索引。
+// 页面 → SW 的消息：清空内存元数据索引 / 预载音频。
 sw.addEventListener('message', (event) => {
   const data = event.data as { type?: string } | null
-  if (data?.type === 'MEDIA_CACHE_CLEARED') metaByKey.clear()
+  if (!data) return
+  // 设置弹窗「清理缓存」后，主线程广播该消息以清空 SW 内存中的元数据索引。
+  if (data.type === 'MEDIA_CACHE_CLEARED') {
+    metaByKey.clear()
+    return
+  }
+  // 预载：SW 主动整段下载音频写缓存（页面不接字节）。单飞——新预载 abort 旧的。
+  if (data.type === PREFETCH_AUDIO) {
+    const req = parsePrefetchAudio(data)
+    if (!req) return
+    prefetchAbort?.abort()
+    prefetchAbort = new AbortController()
+    event.waitUntil(
+      prefetchAudio(
+        req.source,
+        req.id,
+        req.level,
+        req.key,
+        prefetchAbort.signal,
+      ),
+    )
+  }
 })
 
 sw.addEventListener('fetch', (event) => {
