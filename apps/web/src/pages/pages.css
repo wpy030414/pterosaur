@@ -329,6 +329,16 @@
   box-shadow: var(--shadow-lg);
 }
 
+/* 磁带详情页封面：复用磁带外壳（样式见 Cards.css 的 .cassette-shell），只放大细部倍率 */
+.detail__art--cassette {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+.detail__art--cassette .cassette-shell {
+  --cs: 1.35;
+}
+
 .detail__info {
   min-width: 0;
   flex: 1;
@@ -492,6 +502,14 @@
   .detail__cover {
     width: 160px;
     height: 160px;
+  }
+
+  .detail__art--cassette {
+    width: 180px;
+  }
+
+  .detail__art--cassette .cassette-shell {
+    --cs: 1.1;
   }
 
   .detail__name {

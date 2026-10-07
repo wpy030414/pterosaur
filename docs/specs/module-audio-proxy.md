@@ -12,7 +12,7 @@
   - 所有 `/api/*` 返回统一的 `ApiResult<T>` 包裹（`{ ok, data } | { ok:false, error, needLogin? }`）。
   - `GET /stream/:source/:id?level=<档>` 按源分派适配器解析曲目真实音频地址（带 15 分钟 LRU，键含源、**档位**与凭证指纹），把 `http://` 改写为 `https://`，透传客户端 `Range` 头到上游，按 206/200 回流音频字节；无法解析（VIP 未登录/版权受限）时返回 403 且 `needLogin:true`。（2 段式 `/stream/:id` 为缺省源别名，见 ADR-022。）
   - **候选地址与故障转移**：`songUrl` 返回**有序候选**（`string[]`，首个优先，空数组即不可播放）。`/stream` 解析出候选后**逐个尝试**，首个成功即用；全败才回 502 并淘汰该 LRU 项（下次请求重解析）。命中的非首位候选会被**提到队首**回写缓存，避免反复白撞已知坏节点。**B 站**按主机重排候选——官方 upos 主 CDN（`*.bilivideo.com`）优先、`mcdn` P2P 边缘（`*.mcdn.bilivideo.cn`）殿后；后者对机房 IP / 非浏览器客户端不稳，正是「概率性播放出错、再点一次就好」的根因。
-  - **音质档位**：`level` 为**统一抽象档**（`standard | higher | exhigh | lossless | hires`，缺省 `exhigh`，见 ADR-031）。网易云直接透传 `song_url_v1`（上游自动降级）；**MV 渠道（B 站）**由抽象档在 `dash.audio[]` 里挑最接近的码率（只取音频轨、不解析视频）。非法 `level` 回退缺省档。
+  - **音质档位**：`level` 为**统一抽象档**（`standard | higher | exhigh | lossless | hires`，缺省 `exhigh`，见 ADR-031）。网易云直接透传 `song_url_v1`（上游自动降级）；**磁带渠道（B 站）**由抽象档在 `dash.audio[]` 里挑最接近的码率（只取音频轨、不解析视频）。非法 `level` 回退缺省档。
   - 搜索/歌单/歌词接口透传浏览器回传的网易云会话 cookie（若有），从而对登录用户返回可播放的 VIP 地址与个性化内容。
   - 登录：`/api/auth/:source/qr` 生成二维码，`/api/auth/:source/qr/check` 轮询扫码状态，成功（803）时把上游 Set-Cookie 中会话必需的几项下发浏览器（网易云 `MUSIC_U`/`__csrf`/`MUSIC_A`/`NMTID`；B 站 `SESSDATA`/`bili_jct`/`DedeUserID`/`buvid3` 等）；`/api/auth/:source/logout` 下发过期 cookie 清除会话（各源 `logoutCookieNames` = `sessionCookieNames`，防漏清）。**各源一律只支持扫码登录**（不使用帐密）。
   - 归一化：网易云原始结构统一转为 `shared/types.ts` 的 `Track`/`Playlist`，封面/头像改写为 https 并统一产出**大图基准**（网易云 `?param=1200y1200`），由前端 `coverAt` 按使用场景降到小图（300）——见 ADR-031；时长由毫秒转秒，`fee` 映射为 `free|vip|unknown`。

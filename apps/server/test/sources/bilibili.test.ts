@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   audioQuality,
+  buildCassette,
   buildLyricFromSubtitles,
   buildParts,
   canonicalBiliImage,
@@ -15,8 +16,10 @@ import {
   parseSampleRate,
   pickAudio,
   pickSubtitleTracks,
+  playlistTracks,
   rankAudioUrls,
   rawQueryValue,
+  searchCassettes,
   searchSongs,
   signWbi,
 } from '../../src/sources/bilibili.js'
@@ -201,6 +204,220 @@ describe('buildParts（分P 一对多）', () => {
     expect(buildParts(undefined)).toEqual([])
     expect(buildParts({ title: 'x' })).toEqual([])
     expect(buildParts({ bvid: 'BV1', pages: [] })).toEqual([])
+  })
+})
+
+describe('buildCassette（磁带 = bilibili 的 Playlist）', () => {
+  const view = {
+    bvid: 'BV1xx411c7mD',
+    title: '合集<em>标题</em>',
+    pic: '//i2.hdslb.com/bfs/cover.jpg',
+    owner: { name: 'UP 主' },
+    desc: '  这是简介  ',
+    stat: { view: 12345 },
+    pages: [
+      { cid: 111, page: 1, part: '第一段', duration: 100 },
+      { cid: 222, page: 2, part: '第二段', duration: 200 },
+    ],
+  }
+
+  it('映射为磁带：trackCount = 分P 数、creator = UP 主、标题去高亮、封面规范化', () => {
+    expect(buildCassette(view)).toEqual({
+      source: 'bilibili',
+      id: 'BV1xx411c7mD',
+      name: '合集标题', // <em> 已去
+      cover: 'https://i0.hdslb.com/bfs/cover.jpg',
+      creator: 'UP 主',
+      description: '这是简介',
+      playCount: 12345,
+      trackCount: 2,
+    })
+  })
+
+  it('单P → trackCount=1；缺 pages → trackCount 留空（而非 0，避免卡片误置灰）', () => {
+    expect(
+      buildCassette({ ...view, pages: [{ cid: 9, page: 1, duration: 10 }] })
+        .trackCount,
+    ).toBe(1)
+    expect(
+      buildCassette({ bvid: 'BV1', title: 'x' }).trackCount,
+    ).toBeUndefined()
+    expect(buildCassette(undefined).trackCount).toBeUndefined()
+  })
+
+  it('缺字段降级：标题回落、UP 主回落、无简介 / 播放量时留空', () => {
+    const c = buildCassette({ bvid: 'BV1' })
+    expect(c.name).toBe('未知视频')
+    expect(c.creator).toBe('未知 UP 主')
+    expect(c.description).toBeUndefined()
+    expect(c.playCount).toBeUndefined()
+  })
+})
+
+describe('searchCassettes（磁带搜索：逐条补分P 数）', () => {
+  /** 最小响应替身：避开 jsdom 是否提供 `Response` 的环境差异。 */
+  const jsonRes = (body: unknown) => ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  })
+  const videoGroup = (bvids: string[]) => ({
+    code: 0,
+    data: {
+      result: [
+        {
+          result_type: 'video',
+          data: bvids.map((bvid, i) => ({
+            bvid,
+            title: `T${i}`,
+            author: 'UP',
+            pic: '//i1.hdslb.com/x.jpg',
+            duration: '1:00',
+          })),
+        },
+      ],
+    },
+  })
+  const viewData = (bvid: string, pages: number) => ({
+    code: 0,
+    data: {
+      bvid,
+      title: `T-${bvid}`,
+      pic: '//i1.hdslb.com/x.jpg',
+      owner: { name: 'UP' },
+      stat: { view: 42 },
+      pages: Array.from({ length: pages }, (_, i) => ({
+        cid: 100 + i,
+        page: i + 1,
+        part: `P${i + 1}`,
+        duration: 10,
+      })),
+    },
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('每条结果补查 view → trackCount = 分P 数，并归一化为 Playlist', async () => {
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'b' } }))
+      if (url.includes('search/all/v2'))
+        return Promise.resolve(jsonRes(videoGroup(['BV1', 'BV2'])))
+      const m = /bvid=(BV\d+)/.exec(url)
+      return Promise.resolve(
+        jsonRes(viewData(m?.[1] ?? 'BV1', m?.[1] === 'BV2' ? 1 : 3)),
+      )
+    })
+    const list = await searchCassettes('x')
+    expect(list).toHaveLength(2)
+    expect(list[0]).toMatchObject({
+      source: 'bilibili',
+      id: 'BV1',
+      name: 'T-BV1',
+      trackCount: 3,
+      creator: 'UP',
+      playCount: 42,
+    })
+    expect(list[1]!.trackCount).toBe(1)
+  })
+
+  it('某条 view 失败 → 该项 trackCount 留空（不写 0）、回落搜索结果标题，其余不受影响', async () => {
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'b' } }))
+      if (url.includes('search/all/v2'))
+        return Promise.resolve(jsonRes(videoGroup(['BVbad', 'BVok'])))
+      if (url.includes('bvid=BVbad'))
+        return Promise.resolve(jsonRes({ code: -404, message: '稿件不存在' }))
+      return Promise.resolve(jsonRes(viewData('BVok', 2)))
+    })
+    const list = await searchCassettes('x')
+    const bad = list.find((c) => c.id === 'BVbad')!
+    expect(bad.trackCount).toBeUndefined() // 不写 0，否则 PlaylistCard 会置灰「播放」
+    expect(bad.name).toBe('T0') // 回落搜索结果标题
+    expect(list.find((c) => c.id === 'BVok')!.trackCount).toBe(2)
+  })
+
+  it('分P 补查受并发上限约束（同时在飞的 view 请求 ≤ 4）', async () => {
+    const bvids = Array.from({ length: 8 }, (_, i) => `BV${i}`)
+    let inflight = 0
+    let max = 0
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'b' } }))
+      if (url.includes('search/all/v2'))
+        return Promise.resolve(jsonRes(videoGroup(bvids)))
+      inflight++
+      max = Math.max(max, inflight)
+      const m = /bvid=(BV\d+)/.exec(url)
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          inflight--
+          resolve(jsonRes(viewData(m?.[1] ?? 'BV0', 1)))
+        }, 5),
+      )
+    })
+    const list = await searchCassettes('x')
+    expect(list).toHaveLength(8)
+    expect(max).toBeLessThanOrEqual(4)
+  })
+})
+
+describe('playlistTracks（磁带详情）', () => {
+  const jsonRes = (body: unknown) => ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('一次 view → 磁带档案 + 分P 曲目（id 带分P 后缀也只取 bvid）', async () => {
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'b' } }))
+      return Promise.resolve(
+        jsonRes({
+          code: 0,
+          data: {
+            bvid: 'BV9',
+            title: '磁带',
+            pic: '//i1.hdslb.com/x.jpg',
+            owner: { name: 'UP' },
+            pages: [
+              { cid: 100, page: 1, part: 'P1', duration: 10 },
+              { cid: 101, page: 2, part: 'P2', duration: 20 },
+            ],
+          },
+        }),
+      )
+    })
+    const { playlist, tracks } = await playlistTracks('BV9:5')
+    expect(playlist).toMatchObject({
+      source: 'bilibili',
+      id: 'BV9',
+      trackCount: 2,
+    })
+    expect(tracks).toHaveLength(2)
+    expect(tracks[0]!.id).toBe('BV9:100')
+  })
+
+  it('view 失败 → 向上抛（路由转 502，页面出错误态）', async () => {
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'b' } }))
+      return Promise.reject(new Error('net'))
+    })
+    await expect(playlistTracks('BVerr')).rejects.toThrow()
   })
 })
 

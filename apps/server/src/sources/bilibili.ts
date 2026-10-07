@@ -1,9 +1,15 @@
 /**
- * B 站（哔哩哔哩）音源适配器 —— 「MV」渠道。
+ * B 站（哔哩哔哩）音源适配器 —— 「磁带」渠道。
  *
- * 定位：**只用于搜索视频并播放其音频**。B 站是 DASH 音视频分轨，取 `dash.audio` 即可，
- * 无需解析视频。它不是可浏览音源，故不在 `MUSIC_SOURCES` 中（见 shared/types 的 `MV_SOURCES`）；
- * `playlistTracks` / 发现类能力一律不实现（路由回 501）。
+ * 定位：**搜索视频（作为「磁带」）并播放其音频**。B 站是 DASH 音视频分轨，取 `dash.audio`
+ * 即可，无需解析视频。它不是可浏览音源，故不在 `MUSIC_SOURCES` 中（见 shared/types 的
+ * `CASSETTE_SOURCES`）。
+ *
+ * **磁带**在数据模型上就是一个 `Playlist`（`source:'bilibili'`，`id=bvid`）：其「曲目」是该
+ * 视频的**分P**（`buildParts`）、`trackCount` 为分P 数、`creator` 为 UP 主。故磁带既可整盘播放，
+ * 也可进歌单详情页（`/playlist/bilibili/:bvid`）选分P、并像歌单一样收藏（见 ADR-044）。磁带渠道
+ * 的「搜歌单」即搜磁带，故适配器实现 `searchPlaylists`（= 领域命名的 `searchCassettes`）与
+ * `playlistTracks`；发现类能力仍不实现（路由回 501）。
  *
  * 反爬要点（2026-10 实测）：
  * - 搜索走 `x/web-interface/search/all/v2`（**未被风控**；`x/web-interface/wbi/search/type`
@@ -18,6 +24,7 @@
  */
 import { createHash } from 'node:crypto'
 import QRCode from 'qrcode'
+import { LRUCache } from 'lru-cache'
 import {
   DEFAULT_AUDIO_LEVEL,
   type Album,
@@ -26,6 +33,7 @@ import {
   type LoginStatus,
   type Lyric,
   type LyricLine,
+  type Playlist,
   type Track,
 } from '@pterosaur/shared/types'
 import type { QrCheckResult, SourceAdapter } from './types.js'
@@ -198,17 +206,16 @@ interface SearchAllData {
 }
 
 /**
- * 关键词搜索视频。
+ * 关键词搜视频，返回 `search/all/v2` 的 `video` 分组原始条目。
  *
- * 走 `search/all/v2`（实测未被风控），取其 `video` 分组。该接口对匿名请求即返回结果。
- * `page` 从 1 起（每页约 20 条），供前端滚动续取下一批。
+ * 走 `search/all/v2`（实测未被风控），该接口对匿名请求即返回结果；`page` 从 1 起
+ * （每页约 20 条）。`searchSongs` 与 `searchCassettes` 共用本函数。
  */
-export async function searchSongs(
+async function fetchVideoGroup(
   keywords: string,
-  limit = 30,
+  page: number,
   cred?: string,
-  page = 1,
-): Promise<Track[]> {
+): Promise<RawVideo[]> {
   const cookie = await cookieWithBuvid(cred)
   const res = await bGet<SearchAllData>(
     `https://api.bilibili.com/x/web-interface/search/all/v2?keyword=${encodeURIComponent(
@@ -217,7 +224,22 @@ export async function searchSongs(
     cookie,
   )
   const groups = res.data?.result ?? []
-  const videos = groups.find((g) => g.result_type === 'video')?.data ?? []
+  return groups.find((g) => g.result_type === 'video')?.data ?? []
+}
+
+/**
+ * 关键词搜索视频（归一化为 `Track`）。
+ *
+ * 磁带渠道改造后 UI 不再直接消费本函数（磁带 tab 走 {@link searchCassettes}），但
+ * `SourceAdapter.searchSongs` 为**必选**、且 `/api/search?source=bilibili` 仍分发到此，故保留。
+ */
+export async function searchSongs(
+  keywords: string,
+  limit = 30,
+  cred?: string,
+  page = 1,
+): Promise<Track[]> {
+  const videos = await fetchVideoGroup(keywords, page, cred)
   return videos.slice(0, limit).map(normalizeBilibiliTrack)
 }
 
@@ -489,7 +511,7 @@ export function streamHeaders(): Record<string, string> {
   return { Referer: REFERER }
 }
 
-/* ============================ 分P 展开 ============================ */
+/* ============================ 磁带（分P / 合集） ============================ */
 
 /** `x/web-interface/view` 返回的页（分P）结构（部分字段）。 */
 interface RawPage {
@@ -506,6 +528,10 @@ export interface BiliViewData {
   pic?: string
   owner?: { name?: string }
   pages?: RawPage[]
+  /** 视频简介（作磁带的 `description`）。 */
+  desc?: string
+  /** 稿件统计（取 `view` 作磁带的 `playCount`）。 */
+  stat?: { view?: number }
 }
 
 /**
@@ -538,6 +564,155 @@ export function buildParts(d: BiliViewData | undefined): Track[] {
 }
 
 /**
+ * 把 `view` 响应归一化为**磁带**（`Playlist`）（**纯函数**，供单测）。
+ *
+ * 磁带即 `source:'bilibili'` 的 `Playlist`：`trackCount` = 分P 数（`pages` 缺失时**留空**而非 0，
+ * 以免卡片误判为「空集合」而置灰播放），`creator` = UP 主，另取视频标题 / 封面 / 简介 / 播放量
+ * （见 ADR-044）。
+ */
+export function buildCassette(d: BiliViewData | undefined): Playlist {
+  return {
+    source: 'bilibili',
+    id: String(d?.bvid ?? ''),
+    name: decodeTitle(d?.title ?? '') || '未知视频',
+    cover: canonicalBiliImage(d?.pic),
+    creator: d?.owner?.name ?? '未知 UP 主',
+    description: d?.desc?.trim() || undefined,
+    playCount: d?.stat?.view,
+    trackCount: d?.pages?.length || undefined,
+  }
+}
+
+/** 仅凭一条**搜索结果**构造磁带（分P 数未知 → `trackCount` 留空，卡片不显示 chip）。 */
+function cassetteFromVideo(v: RawVideo): Playlist {
+  return {
+    source: 'bilibili',
+    id: String(v.bvid ?? v.aid ?? ''),
+    name: decodeTitle(v.title ?? '') || '未知视频',
+    cover: canonicalBiliImage(v.pic),
+    creator: v.author ?? '未知 UP 主',
+  }
+}
+
+/**
+ * `view` 结果的进程内 memo（键 = 凭证指纹 + bvid，TTL 同结构化缓存 2h）。
+ *
+ * 磁带搜索要**逐条补查 `view`** 取分P 数，之后「点进详情 / 展开分P」还要再取同一个 bvid——
+ * 有这层 memo，同凭证下每个 bvid 至多打一次上游（`playlistTracks` / `parts` / `searchCassettes`
+ * 共用）。键含凭证指纹：不同账号的 `view`（封面 / 简介等）不串数据（对齐 ADR-042）。
+ */
+const viewCache = new LRUCache<string, BiliViewData>({
+  max: 200,
+  ttl: 2 * 60 * 60 * 1000,
+})
+
+/** 凭证指纹（`sha1` 前 12 位），与 `app.ts` 的 `credentialKey` 同法。 */
+function credentialFingerprint(cred?: string): string {
+  if (!cred) return 'anon'
+  return createHash('sha1').update(cred).digest('hex').slice(0, 12)
+}
+
+/**
+ * 取一个视频的 `view` 数据（标题 / 封面 / UP 主 / `pages[]` / 简介 / 统计），带 {@link viewCache}。
+ *
+ * 失败（含上游非 0 码 / 网络错误 / 风控）**向调用方抛错**，由各调用点决定降级：`parts` 返空、
+ * `searchCassettes` 单条留空分P 数、`playlistTracks` 上抛（路由回 502）。
+ */
+async function fetchView(
+  bvid: string,
+  cred?: string,
+): Promise<BiliViewData | undefined> {
+  const cookie = await cookieWithBuvid(cred)
+  const key = `${credentialFingerprint(cookie)}|${bvid}`
+  const hit = viewCache.get(key)
+  if (hit !== undefined) return hit
+  const res = await bGet<BiliViewData>(
+    `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+    cookie,
+  )
+  if (res.data) viewCache.set(key, res.data)
+  return res.data
+}
+
+/** 磁带搜索的**分P 补查并发上限**——避免一次对整页结果并发打上游（风控 / 拖慢）。 */
+const CASSETTE_ENRICH_CONCURRENCY = 4
+/** 单条分P 补查的墙钟超时；超时按「分P 数未知」降级，绝不拖垮整次搜索。 */
+const CASSETTE_ENRICH_TIMEOUT_MS = 5000
+
+/** 并发受限的 `Promise.all`：至多 `limit` 个任务同时在跑，结果顺序不变。 */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from(
+    { length: Math.min(Math.max(limit, 1), items.length) },
+    async () => {
+      for (let i = next++; i < items.length; i = next++) {
+        results[i] = await fn(items[i]!)
+      }
+    },
+  )
+  await Promise.all(workers)
+  return results
+}
+
+/** 与超时竞速：超时则返回 `undefined`（并不取消底层请求，其结果仍会补进 {@link viewCache}）。 */
+async function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      p,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** 补查单条的分P 数：成功用 `view` 归一化，失败 / 超时降级为「仅凭搜索结果构造」。 */
+async function enrichCassette(v: RawVideo, cred?: string): Promise<Playlist> {
+  const bvid = String(v.bvid ?? v.aid ?? '')
+  if (!bvid) return cassetteFromVideo(v)
+  try {
+    const data = await withTimeout(
+      fetchView(bvid, cred),
+      CASSETTE_ENRICH_TIMEOUT_MS,
+    )
+    return data ? buildCassette(data) : cassetteFromVideo(v)
+  } catch {
+    return cassetteFromVideo(v)
+  }
+}
+
+/**
+ * 关键词搜索**磁带**（`Playlist[]`），供适配器的 `searchPlaylists` 槽位分发。
+ *
+ * 一份搜索结果不含分P 数，故对每条结果**补查一次 `view`**（{@link enrichCassette}）取
+ * `pages.length` 作为 `trackCount`——带并发上限与单条超时，且**单条失败即降级**（分P 数留空、
+ * 磁带仍可播），**绝不整批抛错**。整批结果由 `app.ts` 的 `/api/search/all` 缓存 2h 摊薄成本
+ * （见 ADR-044）。
+ */
+export async function searchCassettes(
+  keywords: string,
+  limit = 20,
+  cred?: string,
+  page = 1,
+): Promise<Playlist[]> {
+  const videos = (await fetchVideoGroup(keywords, page, cred)).slice(0, limit)
+  return mapLimit(videos, CASSETTE_ENRICH_CONCURRENCY, (v) =>
+    enrichCassette(v, cred),
+  )
+}
+
+/**
  * 解析一个视频的**分P**（单P 视频只有一项）。
  *
  * 走 `x/web-interface/view?bvid=`——**一次请求**即含标题 / 封面 / UP 主与 `pages[]`
@@ -545,16 +720,26 @@ export function buildParts(d: BiliViewData | undefined): Track[] {
  */
 export async function parts(id: string, cred?: string): Promise<Track[]> {
   try {
-    const bvid = id.split(':')[0]
-    const cookie = await cookieWithBuvid(cred)
-    const res = await bGet<BiliViewData>(
-      `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
-      cookie,
-    )
-    return buildParts(res.data)
+    return buildParts(await fetchView(id.split(':')[0], cred))
   } catch {
     return []
   }
+}
+
+/**
+ * **磁带**详情：一次 `view` 即得磁带档案（{@link buildCassette}）与其分P 曲目（{@link buildParts}）。
+ *
+ * 复用歌单详情页（`/playlist/bilibili/:bvid`）——磁带在数据模型上就是 `Playlist`（见 ADR-044）。
+ * 与 `parts` 不同：此处失败**向上抛**，路由转 502、页面出错误态 + 重试（与网易云歌单一致）；
+ * 且复用 {@link viewCache}，搜索时刚补查过的 bvid 这里是缓存命中。
+ */
+export async function playlistTracks(
+  id: string,
+  cred?: string,
+): Promise<{ playlist: Playlist; tracks: Track[] }> {
+  const data = await fetchView(id.split(':')[0], cred)
+  if (!data) throw new Error('获取视频信息失败')
+  return { playlist: buildCassette(data), tracks: buildParts(data) }
 }
 
 /* ============================ 字幕（作为歌词，ADR-035） ============================ */
@@ -1046,7 +1231,7 @@ export async function loginStatus(cred?: string): Promise<LoginStatus> {
 
 /* ============================ 适配器 ============================ */
 
-/** MV 无专辑页，返回空壳以满足适配器必选面（前端不会走到）。 */
+/** 磁带无专辑页，返回空壳以满足适配器必选面（前端不会走到）。 */
 export async function albumDetail(
   id: string,
 ): Promise<{ album: Album; tracks: Track[] }> {
@@ -1056,12 +1241,16 @@ export async function albumDetail(
   }
 }
 
-/** B 站（MV）音源适配器。字幕作歌词（`getLyric`）、分P（`parts`）与扫码登录的实现见上文各节。 */
+/** B 站（磁带）音源适配器。字幕作歌词（`getLyric`）、分P / 磁带（`parts` / `playlistTracks`）与扫码登录的实现见上文各节。 */
 export const bilibiliAdapter: SourceAdapter = {
   id: 'bilibili',
   sessionCookieNames: BILIBILI_SESSION_COOKIE_NAMES,
   logoutCookieNames: BILIBILI_SESSION_COOKIE_NAMES,
   searchSongs,
+  // 磁带渠道的「搜歌单」= 搜磁带（结果即 `source:'bilibili'` 的 Playlist；见 ADR-044）。
+  // 界面恒以 `type=playlists` 短路，不会与 `searchSongs` 同时命中（无 type 时两者都会跑）。
+  searchPlaylists: searchCassettes,
+  playlistTracks,
   albumDetail,
   songUrl,
   audioQuality,

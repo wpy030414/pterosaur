@@ -11,29 +11,33 @@ import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
-import { usePlayer } from '../store/player.js'
-import type { MusicSource, SearchResults, Track } from '@pterosaur/shared/types'
-import { DEFAULT_SOURCE } from '@pterosaur/shared/types'
-import { expandTrack } from '../lib/mv.js'
+import type {
+  MusicSource,
+  Playlist,
+  SearchResults,
+} from '@pterosaur/shared/types'
+import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
+import { dedupeByKey } from '../lib/dedupe.js'
 import { TrackList } from '../components/TrackList.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
+import { CassetteCard } from '../components/CassetteCard.js'
 import { ArtistCard, AlbumCard } from '../components/EntityCards.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
 
-type SearchTab = 'songs' | 'mv' | 'artists' | 'albums' | 'playlists'
-/** 音乐结果四类（不含 MV 渠道）。 */
-type MusicTab = Exclude<SearchTab, 'mv'>
+type SearchTab = 'songs' | 'cassette' | 'artists' | 'albums' | 'playlists'
+/** 音乐结果四类（不含磁带渠道）。 */
+type MusicTab = Exclude<SearchTab, 'cassette'>
 
 const TABS: { key: SearchTab; label: string }[] = [
   { key: 'songs', label: '歌曲' },
-  { key: 'mv', label: 'MV' },
+  { key: 'cassette', label: '磁带' },
   { key: 'artists', label: '艺人' },
   { key: 'albums', label: '专辑' },
   { key: 'playlists', label: '歌单' },
 ]
 
-/** MV 渠道（B 站）源 id：独立于音乐源，MV tab 恒查询它。 */
-const MV_SOURCE: MusicSource = 'bilibili'
+/** 磁带渠道（B 站）源 id：独立于音乐源，磁带 tab 恒查询它。 */
+const CASSETTE_SOURCE: MusicSource = 'bilibili'
 
 /**
  * 各 tab 的**每页条数**——须与后端一致：后端 `/api/search/all` 对歌曲固定取 50、
@@ -41,7 +45,7 @@ const MV_SOURCE: MusicSource = 'bilibili'
  */
 const PAGE_SIZE: Record<SearchTab, number> = {
   songs: 50,
-  mv: 20,
+  cassette: 20,
   artists: 20,
   albums: 20,
   playlists: 20,
@@ -54,6 +58,16 @@ const EMPTY_RESULTS: SearchResults = {
   playlists: [],
 }
 
+/**
+ * 按 `keyOf` 去重的累积列表项。
+ *
+ * 上游分页会**跨页返回同一实体**（实测 B 站第 1、2 页都含同一 bvid）。累积列表若带重复项，
+ * React 就会遇到重复 `key` 并「duplicated and/or omitted children」——旧卡片残留在 DOM 里，
+ * 换 tab 时跟着混进新 tab 的网格（见 `lib/dedupe` / ADR-046）。
+ */
+const uniq = <T extends { id: string; source?: MusicSource }>(list: T[]): T[] =>
+  dedupeByKey(list, keyOf)
+
 /** 单类结果的分页游标。 */
 interface PageState {
   page: number
@@ -64,7 +78,7 @@ interface PageState {
 
 const freshPagers = (): Record<SearchTab, PageState> => ({
   songs: { page: 1, more: false, loading: false },
-  mv: { page: 1, more: false, loading: false },
+  cassette: { page: 1, more: false, loading: false },
   artists: { page: 1, more: false, loading: false },
   albums: { page: 1, more: false, loading: false },
   playlists: { page: 1, more: false, loading: false },
@@ -73,7 +87,8 @@ const freshPagers = (): Record<SearchTab, PageState> => ({
 /** 搜索页的累积状态（滚动续页的结果与分页游标）。 */
 interface SearchPageState {
   music: SearchResults
-  mvTracks: Track[]
+  /** 磁带搜索结果（磁带即 `source:'bilibili'` 的 Playlist，见 ADR-044）。 */
+  cassettes: Playlist[]
   pagers: Record<SearchTab, PageState>
 }
 
@@ -110,25 +125,37 @@ function saveSearchCache(key: string, state: SearchPageState): void {
  * 搜索结果页。
  *
  * 关键词来自 `?q=`，音乐源来自 `?source=`（缺省跟随活动账号）。
- * 分类 tab 在四类音乐结果之外，另有一个恒查询 B 站的 **MV** tab（只搜视频、只放其音频）。
+ * 分类 tab 在四类音乐结果之外，另有一个恒查询 B 站的 **磁带** tab（只搜视频作为「磁带」、
+ * 只放其音频；磁带即一个类歌单的合集，见 ADR-044）。
  *
  * **懒加载**：滚动到底部（哨兵进入视口）时为**当前 tab** 续取下一页并追加，直到整页不满（无更多）。
  * 续取只跑该一类（`?type=`），避免每次都多打三个上游请求。
  */
 export function SearchPage() {
-  const [params, setParams] = useSearchParams()
+  const [params] = useSearchParams()
   const q = (params.get('q') ?? '').trim()
   const status = useAuth((s) => s.status)
   // 只有网易云一个音乐源，故直接跟随活动账号（未登录回落缺省源），不再单列源 tab。
   const source: MusicSource = activeMusicSource(status) ?? DEFAULT_SOURCE
+  // 查询签名（源 + 关键词）变化 → **重挂**内容组件，使「累积结果的会话级恢复」（searchPageCache）
+  // 按新查询重新评估。`didRestore` 是**每挂载一次性**判定、而同挂载内查询恒定；若不重挂，则一旦
+  // 本次挂载走过恢复（如下钻返回），此后换词就会**永远跳过首屏灌入**，残留上一个查询的结果。
+  return <SearchResults key={`${source}|${q}`} q={q} source={source} />
+}
+
+/** 搜索结果内容（按「源|关键词」重挂，语义见 {@link SearchPage}）。 */
+function SearchResults({ q, source }: { q: string; source: MusicSource }) {
+  const [params, setParams] = useSearchParams()
   const navigate = useViewNavigate()
   // 分类 tab 进 URL（`?tab=`，缺省「歌曲」不占 URL）：下探返回（POP 回本历史条目）即回到
   // 所处 tab，刷新 / 分享深链同样成立；换词（顶栏 push 不带 tab）自然回到歌曲。
   // replace 更新还使 location.key 更换 → 滚动记忆（按历史条目记，见 lib/scrollMemory）
   // 按各 tab 分别记录，切 tab 即归顶。
   const tabParam = params.get('tab')
-  const tab: SearchTab = TABS.some((t) => t.key === tabParam)
-    ? (tabParam as SearchTab)
+  // 兼容旧深链：磁带 tab 曾名「mv」（`?tab=mv`），别名映射到 cassette，免得静默落回「歌曲」。
+  const tabKey = tabParam === 'mv' ? 'cassette' : tabParam
+  const tab: SearchTab = TABS.some((t) => t.key === tabKey)
+    ? (tabKey as SearchTab)
     : 'songs'
 
   /**
@@ -182,13 +209,13 @@ export function SearchPage() {
   const restoredRef = useRef<SearchPageState | undefined>(
     cacheKey ? loadSearchCache(cacheKey) : undefined,
   )
-  /** 本挂载是否已从会话级缓存恢复累积状态——若是，全程跳过 data/mv 的覆盖式灌入。 */
+  /** 本挂载是否已从会话级缓存恢复累积状态——若是，全程跳过 data/cassette 的覆盖式灌入。 */
   const didRestore = useRef(!!restoredRef.current)
   const [music, setMusic] = useState<SearchResults>(
     () => restoredRef.current?.music ?? EMPTY_RESULTS,
   )
-  const [mvTracks, setMvTracks] = useState<Track[]>(
-    () => restoredRef.current?.mvTracks ?? [],
+  const [cassettes, setCassettes] = useState<Playlist[]>(
+    () => restoredRef.current?.cassettes ?? [],
   )
   const [pagers, setPagers] = useState<Record<SearchTab, PageState>>(
     () => restoredRef.current?.pagers ?? freshPagers(),
@@ -201,13 +228,22 @@ export function SearchPage() {
     q ? `search:${source}:${q}` : undefined,
   )
 
-  // MV 与音乐结果**并行**一次取齐（不等点开 MV tab 才惰性加载）
-  const mv = useAsync<SearchResults>(
+  // 磁带与音乐结果**并行**一次取齐（不等点开磁带 tab 才惰性加载）。
+  // 磁带渠道的「歌单搜索」即搜磁带 → 走 `type=playlists` 短路，只跑 B 站的 searchPlaylists。
+  const cassette = useAsync<SearchResults>(
     () =>
-      q ? api.searchAll(MV_SOURCE, q, 20) : Promise.resolve(EMPTY_RESULTS),
+      q
+        ? api.searchAll(
+            CASSETTE_SOURCE,
+            q,
+            PAGE_SIZE.cassette,
+            undefined,
+            'playlists',
+          )
+        : Promise.resolve(EMPTY_RESULTS),
     [q],
     EMPTY_RESULTS,
-    q ? `mv:${q}` : undefined,
+    q ? `cassette:${q}` : undefined,
   )
 
   // 首屏（或换词 / 换源）就绪 → 重置累积结果与分页游标。
@@ -216,7 +252,14 @@ export function SearchPage() {
   useEffect(() => {
     if (didRestore.current) return
     const d = data ?? EMPTY_RESULTS
-    setMusic(d)
+    // 首屏同样可能自带重复项（上游单页内重叠），一并去重
+    setMusic({
+      ...d,
+      songs: uniq(d.songs),
+      artists: uniq(d.artists),
+      albums: uniq(d.albums),
+      playlists: uniq(d.playlists),
+    })
     setPagers((p) => ({
       ...p,
       songs: {
@@ -244,26 +287,30 @@ export function SearchPage() {
 
   useEffect(() => {
     if (didRestore.current) return
-    const items = mv.data?.songs ?? []
-    setMvTracks(items)
+    const items = uniq(cassette.data?.playlists ?? [])
+    setCassettes(items)
     setPagers((p) => ({
       ...p,
-      mv: { page: 1, more: items.length >= PAGE_SIZE.mv, loading: false },
+      cassette: {
+        page: 1,
+        more: items.length >= PAGE_SIZE.cassette,
+        loading: false,
+      },
     }))
-  }, [mv.data])
+  }, [cassette.data])
 
   // 累积状态变化即**同步**写回会话级缓存。用 useLayoutEffect 而非 useEffect：
   // 被动 effect 在 paint 之后才执行，用户点卡下钻时的同步 flushSync（路由转场
   // VT 回调）会让组件卸载、丢弃尚未运行的被动 effect——缓存里就是旧状态。
   useLayoutEffect(() => {
     if (!cacheKey) return
-    saveSearchCache(cacheKey, { music, mvTracks, pagers })
-  }, [cacheKey, music, mvTracks, pagers])
+    saveSearchCache(cacheKey, { music, cassettes, pagers })
+  }, [cacheKey, music, cassettes, pagers])
 
   // 卸载快照兜底：用 ref 始终持有最新累积状态，cleanup 里做最后一次落盘——
   // 即使 useLayoutEffect 的 deps 变化批在卸载前还没跑，这里也拿到最新事实。
-  const latestStateRef = useRef<SearchPageState>({ music, mvTracks, pagers })
-  latestStateRef.current = { music, mvTracks, pagers }
+  const latestStateRef = useRef<SearchPageState>({ music, cassettes, pagers })
+  latestStateRef.current = { music, cassettes, pagers }
   useLayoutEffect(() => {
     return () => {
       if (!cacheKey) return
@@ -271,61 +318,64 @@ export function SearchPage() {
     }
   }, [cacheKey])
 
-  /** 点 MV：队列 = 该视频的**分P**（一对多），只播这一个视频（见 ADR-033）。 */
-  const playMv = async (track: Track) => {
-    const parts = await expandTrack(track)
-    usePlayer.getState().playTracks(parts, 0)
-  }
-
   const counts: Record<SearchTab, number> = {
     songs: music.songs.length,
-    mv: mvTracks.length,
+    cassette: cassettes.length,
     artists: music.artists.length,
     albums: music.albums.length,
     playlists: music.playlists.length,
   }
   const caps = data?.capabilities
-  // 只展示当前音乐源支持的分类（capabilities 缺失视为支持）；MV tab 不参与该能力判定、恒可见。
+  // 只展示当前音乐源支持的分类（capabilities 缺失视为支持）；磁带 tab 不参与该能力判定、恒可见。
   const capOf = (key: SearchTab): boolean | undefined =>
-    key === 'mv' ? true : caps?.[key]
+    key === 'cassette' ? true : caps?.[key]
   const visibleTabs = TABS.filter((t) => capOf(t.key) !== false)
   const activeTab = visibleTabs.some((t) => t.key === tab)
     ? tab
     : (visibleTabs[0]?.key ?? 'songs')
-  // MV 与音乐结果各自取数，故加载/出错/有无内容均按当前 tab 分流。
-  const tabLoading = activeTab === 'mv' ? mv.loading : loading
-  const tabError = activeTab === 'mv' ? mv.error : error
+  // 磁带与音乐结果各自取数，故加载/出错/有无内容均按当前 tab 分流。
+  const tabLoading = activeTab === 'cassette' ? cassette.loading : loading
+  const tabError = activeTab === 'cassette' ? cassette.error : error
   const musicHasAny = visibleTabs.some(
-    (t) => t.key !== 'mv' && counts[t.key] > 0,
+    (t) => t.key !== 'cassette' && counts[t.key] > 0,
   )
   const activeCount = counts[activeTab]
   const activePage = pagers[activeTab]
   const canLoadMore = !!q && !tabLoading && !tabError && activePage.more
 
+  /**
+   * 单飞锁：**同步**标记某 tab 正在续取。
+   *
+   * `pagers[tab].loading` 是 state，两次背靠背触发（哨兵连发 / 快速滚动）时闭包里的它都还是
+   * `false`，于是两次都取同一页码——既重复又跳页。用 ref 同步锁住。
+   */
+  const inflightRef = useRef<Partial<Record<SearchTab, boolean>>>({})
+
   /** 为当前 tab 续取下一页并追加。 */
   const loadMore = useCallback(async () => {
     const st = pagers[activeTab]
-    if (!st.more || st.loading) return
+    if (!st.more || st.loading || inflightRef.current[activeTab]) return
+    inflightRef.current[activeTab] = true
     const next = st.page + 1
     setPagers((p) => ({
       ...p,
       [activeTab]: { ...p[activeTab], loading: true },
     }))
     try {
-      if (activeTab === 'mv') {
+      if (activeTab === 'cassette') {
         const res = await api.searchAll(
-          MV_SOURCE,
+          CASSETTE_SOURCE,
           q,
-          PAGE_SIZE.mv,
+          PAGE_SIZE.cassette,
           next,
-          'songs',
+          'playlists',
         )
-        setMvTracks((prev) => [...prev, ...res.songs])
+        setCassettes((prev) => uniq([...prev, ...res.playlists]))
         setPagers((p) => ({
           ...p,
-          mv: {
+          cassette: {
             page: next,
-            more: res.songs.length >= PAGE_SIZE.mv,
+            more: res.playlists.length >= PAGE_SIZE.cassette,
             loading: false,
           },
         }))
@@ -335,12 +385,15 @@ export function SearchPage() {
       const res = await api.searchAll(source, q, PAGE_SIZE[type], next, type)
       setMusic((prev) =>
         type === 'songs'
-          ? { ...prev, songs: [...prev.songs, ...res.songs] }
+          ? { ...prev, songs: uniq([...prev.songs, ...res.songs]) }
           : type === 'artists'
-            ? { ...prev, artists: [...prev.artists, ...res.artists] }
+            ? { ...prev, artists: uniq([...prev.artists, ...res.artists]) }
             : type === 'albums'
-              ? { ...prev, albums: [...prev.albums, ...res.albums] }
-              : { ...prev, playlists: [...prev.playlists, ...res.playlists] },
+              ? { ...prev, albums: uniq([...prev.albums, ...res.albums]) }
+              : {
+                  ...prev,
+                  playlists: uniq([...prev.playlists, ...res.playlists]),
+                },
       )
       const got =
         type === 'songs'
@@ -360,6 +413,8 @@ export function SearchPage() {
         ...p,
         [activeTab]: { ...p[activeTab], loading: false, more: false },
       }))
+    } finally {
+      inflightRef.current[activeTab] = false
     }
   }, [pagers, activeTab, source, q])
 
@@ -423,22 +478,25 @@ export function SearchPage() {
         ) : tabError ? (
           <ErrorState
             message={tabError}
-            onRetry={activeTab === 'mv' ? mv.reload : reload}
+            onRetry={activeTab === 'cassette' ? cassette.reload : reload}
           />
         ) : (
           <>
-            {activeTab === 'mv' ? (
+            {activeTab === 'cassette' ? (
               activeCount > 0 ? (
-                /* MV 无专辑概念，专辑列恒空 → 不显示（标题列随之加宽） */
-                <TrackList
-                  tracks={mvTracks}
-                  emptyText="没有找到相关 MV"
-                  showAlbum={false}
-                  onPlayRow={(t) => void playMv(t)}
-                />
+                /* 磁带即类歌单合集：4:3 磁带卡。点卡本体进详情页选分P，点播放按钮整盘播放。 */
+                <div className="card-grid">
+                  {cassettes.map((c) => (
+                    <CassetteCard
+                      key={keyOf(c)}
+                      cassette={c}
+                      onClick={() => navigate(`/playlist/${c.source}/${c.id}`)}
+                    />
+                  ))}
+                </div>
               ) : (
                 <Empty
-                  text={`没有找到与「${q}」相关的 MV`}
+                  text={`没有找到与「${q}」相关的磁带`}
                   icon={<SearchX size={32} strokeWidth={1.5} />}
                 />
               )
@@ -454,7 +512,7 @@ export function SearchPage() {
                 <div className="card-grid">
                   {music.artists.map((a) => (
                     <ArtistCard
-                      key={a.id}
+                      key={keyOf(a)}
                       artist={a}
                       onClick={() =>
                         navigate(
@@ -472,7 +530,7 @@ export function SearchPage() {
                 <div className="card-grid">
                   {music.albums.map((album) => (
                     <AlbumCard
-                      key={album.id}
+                      key={keyOf(album)}
                       album={album}
                       onClick={() =>
                         navigate(`/album/${album.source}/${album.id}`)
@@ -487,7 +545,7 @@ export function SearchPage() {
               <div className="card-grid">
                 {music.playlists.map((p) => (
                   <PlaylistCard
-                    key={p.id}
+                    key={keyOf(p)}
                     playlist={p}
                     onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
                   />

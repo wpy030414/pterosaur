@@ -199,3 +199,111 @@
     height: 36px;
   }
 }
+
+/* ---------- 封面右上角的「曲目数量」chip（见 CountChip） ---------- */
+.card__count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  /* 纯展示：不吃点击，避免与卡片本体 / 播放按钮争抢 */
+  pointer-events: none;
+}
+
+/* ---------- 磁带：4:3 视频窗 + 磁带外壳（见 CassetteShell） ---------- */
+/* 高度由内部 4:3 视频窗 + 卷轴带决定（覆盖 .card__art 的 1:1） */
+.card__art--cassette {
+  aspect-ratio: auto;
+}
+
+/**
+ * 磁带外壳（见 CassetteShell）：**沿用应用的中性面板语言**——与卡片 / 弹层同为一层抬升面
+ * （`--cassette-surface` + 1px `--separator` 描边 + `--radius-md`），不引入拟物塑料 / 金属配色。
+ *
+ * 结构：外壳面（此元素）→ **4:3 视频窗**（`children`，即封面 / chip / 播放按钮）→ **卷轴带**
+ * （内凹深色带 + 两枚卷轴 + 其间磁带）。磁带身份靠「4:3 视窗在上、双卷轴在下」的版式，而非细节贴图。
+ *
+ * 细部尺寸（内衬 / 卷轴带高 / 卷轴直径 / 磁带线内缩）统一以 `--cs` 为倍率，使同一份规则在卡片
+ * （约 150px 宽）与详情页 hero（约 240px 宽）下观感一致；`.detail__art--cassette` 只调 `--cs`。
+ *
+ * **以封面为主**：卷轴带刻意做矮（32px）、卷轴做小（20px），只作「这是磁带」的提示，不与封面抢戏。
+ */
+.cassette-shell {
+  --cs: 1;
+  width: 100%;
+  padding: calc(11px * var(--cs)) calc(11px * var(--cs)) calc(8px * var(--cs));
+  border-radius: var(--radius-md);
+  background: var(--cassette-surface);
+  border: 1px solid var(--separator);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* 4:3 视频窗：chip 与播放按钮以它为定位参照（position: relative） */
+.cassette-shell__window {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+/* 窗内封面：圆角随窗、不重复投影 */
+.cassette-shell .card__cover {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+/* 卷轴带：内凹深色带（两态都用「压暗」表达凹陷），两端各一枚卷轴 */
+.cassette-shell__deck {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(32px * var(--cs));
+  margin-top: calc(8px * var(--cs));
+  padding: 0 calc(12px * var(--cs));
+  border-radius: var(--radius-sm);
+  background: var(--cassette-deck);
+  border: 1px solid var(--separator);
+}
+
+/* 两卷轴之间的一段磁带 */
+.cassette-shell__tape {
+  position: absolute;
+  left: calc(28px * var(--cs));
+  right: calc(28px * var(--cs));
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--cassette-line);
+}
+
+/* 卷轴：外圈 + 内毂两道同心细线（扁平，全用分隔线色；**不画轴心圆点**） */
+.cassette-reel {
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(20px * var(--cs));
+  height: calc(20px * var(--cs));
+  border-radius: 50%;
+  background: var(--cassette-surface);
+  border: 1.5px solid var(--cassette-line);
+}
+
+.cassette-reel::before {
+  content: '';
+  position: absolute;
+  inset: calc(4px * var(--cs));
+  border-radius: 50%;
+  border: 1.5px solid var(--cassette-line);
+}

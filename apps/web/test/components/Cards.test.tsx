@@ -49,3 +49,25 @@ describe('卡片播放按钮的可用性', () => {
     expect(playBtn()).toBeEnabled()
   })
 })
+
+describe('封面右上角的数量 chip（> 1 才显示）', () => {
+  it('多首（> 1）显示 chip', () => {
+    render(<PlaylistCard playlist={playlist(7)} onClick={() => {}} />)
+    expect(screen.getByText('7 首')).toBeInTheDocument()
+  })
+
+  it('1 首不显示（需求：为 1 则不显示）', () => {
+    render(<PlaylistCard playlist={playlist(1)} onClick={() => {}} />)
+    expect(screen.queryByText('1 首')).toBeNull()
+  })
+
+  it('0 首 / 数量未知不显示', () => {
+    const { unmount } = render(
+      <PlaylistCard playlist={playlist(0)} onClick={() => {}} />,
+    )
+    expect(screen.queryByText('0 首')).toBeNull()
+    unmount()
+    render(<PlaylistCard playlist={playlist(undefined)} onClick={() => {}} />)
+    expect(screen.queryByText(/首/)).toBeNull()
+  })
+})

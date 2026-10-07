@@ -5,6 +5,7 @@ import {
   sourceOf,
   keyOf,
   isMusicSource,
+  isCassetteSource,
   formatQuality,
   formatSampleRate,
 } from '../src/types.js'
@@ -78,12 +79,21 @@ describe('sourceOf / keyOf', () => {
 describe('isMusicSource', () => {
   it('识别合法音源', () => {
     expect(isMusicSource('netease')).toBe(true)
+    expect(isMusicSource('bilibili')).toBe(true) // 磁带渠道也是合法源
   })
 
   it('拒绝非法值与本地歌单前缀', () => {
     expect(isMusicSource('pl-abc')).toBe(false)
     expect(isMusicSource('spotify')).toBe(false)
     expect(isMusicSource(undefined)).toBe(false)
+  })
+})
+
+describe('isCassetteSource', () => {
+  it('仅磁带渠道为真', () => {
+    expect(isCassetteSource('bilibili')).toBe(true)
+    expect(isCassetteSource('netease')).toBe(false)
+    expect(isCassetteSource(undefined)).toBe(false)
   })
 })
 

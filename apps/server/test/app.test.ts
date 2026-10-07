@@ -103,7 +103,7 @@ describe('扫码登录 803 响应', () => {
       ...BILIBILI_SESSION_COOKIE_NAMES,
     ])
     expect(names.every((n) => allowed.has(n))).toBe(true)
-    // 登入网易云时，B 站的会话 cookie 被清（单活动账号，含 MV 渠道）
+    // 登入网易云时，B 站的会话 cookie 被清（单活动账号，含磁带渠道）
     const otherClears = setCookies.filter((c) =>
       /^(SESSDATA|bili_jct|DedeUserID)=;/.test(c),
     )
@@ -369,7 +369,7 @@ describe('音频响应 Content-Type（按直链后缀，纠正上游谎报）', 
   })
 })
 
-describe('MV 渠道（B 站，独立于音乐源）', () => {
+describe('磁带渠道（B 站，独立于音乐源）', () => {
   it('/auth/bilibili/status 标记 loginable:true（支持扫码登录）', async () => {
     vi.spyOn(bilibiliAdapter, 'loginStatus').mockResolvedValue({
       logged: false,
@@ -388,8 +388,9 @@ describe('MV 渠道（B 站，独立于音乐源）', () => {
     expect(await res.json()).toMatchObject({ ok: false, needLogin: true })
   })
 
-  it('/api/search/all?source=bilibili 只标 songs 能力', async () => {
+  it('/api/search/all?source=bilibili 标明 songs 与 playlists（磁带）能力', async () => {
     vi.spyOn(bilibiliAdapter, 'searchSongs').mockResolvedValue([])
+    vi.spyOn(bilibiliAdapter, 'searchPlaylists').mockResolvedValue([])
     const res = await app.request('/api/search/all?keywords=x&source=bilibili')
     const body = (await res.json()) as {
       ok: boolean
@@ -400,8 +401,62 @@ describe('MV 渠道（B 站，独立于音乐源）', () => {
       songs: true,
       artists: false,
       albums: false,
-      playlists: false,
+      playlists: true,
     })
+  })
+
+  it('/api/search/all?type=playlists 只跑磁带搜索（不跑 searchSongs）', async () => {
+    const cassette = {
+      source: 'bilibili' as const,
+      id: 'BV1',
+      name: '磁带',
+      cover: '',
+      trackCount: 3,
+    }
+    const searchSongsSpy = vi
+      .spyOn(bilibiliAdapter, 'searchSongs')
+      .mockResolvedValue([])
+    const searchPlaylistsSpy = vi
+      .spyOn(bilibiliAdapter, 'searchPlaylists')
+      .mockResolvedValue([cassette])
+    const res = await app.request(
+      '/api/search/all?keywords=x&source=bilibili&type=playlists',
+    )
+    const body = (await res.json()) as {
+      data: { playlists: unknown[]; songs: unknown[] }
+    }
+    expect(res.status).toBe(200)
+    expect(body.data.playlists).toEqual([cassette])
+    expect(searchPlaylistsSpy).toHaveBeenCalled()
+    expect(searchSongsSpy).not.toHaveBeenCalled()
+  })
+
+  it('/api/playlist/bilibili/:id 返回磁带与其分P（复用歌单详情路由）', async () => {
+    const payload = {
+      playlist: {
+        source: 'bilibili' as const,
+        id: 'BV1',
+        name: '磁带',
+        cover: '',
+        trackCount: 1,
+      },
+      tracks: [
+        {
+          source: 'bilibili' as const,
+          id: 'BV1:1',
+          title: 'P1',
+          artist: 'up',
+          album: '',
+          cover: '',
+          duration: 10,
+          fee: 'free' as const,
+        },
+      ],
+    }
+    vi.spyOn(bilibiliAdapter, 'playlistTracks').mockResolvedValue(payload)
+    const res = await app.request('/api/playlist/bilibili/BV1')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, data: payload })
   })
 })
 
@@ -499,11 +554,11 @@ describe('结构化数据内存缓存（TTL 2h，见 ADR-042）', () => {
       .mockResolvedValueOnce({ logged: true, nickname: 'me' })
     const a = await app.request('/api/auth/status')
     const b = await app.request('/api/auth/status')
-    expect(((await a.json()) as { data: { logged: boolean } }).data.logged).toBe(
-      false,
-    )
-    expect(((await b.json()) as { data: { logged: boolean } }).data.logged).toBe(
-      true,
-    )
+    expect(
+      ((await a.json()) as { data: { logged: boolean } }).data.logged,
+    ).toBe(false)
+    expect(
+      ((await b.json()) as { data: { logged: boolean } }).data.logged,
+    ).toBe(true)
   })
 })

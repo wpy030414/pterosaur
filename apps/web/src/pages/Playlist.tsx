@@ -11,11 +11,13 @@ import type { Playlist, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
   isMusicSource,
+  isCassetteSource,
   type MusicSource,
 } from '@pterosaur/shared/types'
 import { TrackList } from '../components/TrackList.js'
 import { coverAt, COVER_LARGE } from '@pterosaur/shared/image'
 import { Cover } from '../components/Cover.js'
+import { CassetteShell } from '../components/CassetteShell.js'
 import { IconButton } from '../components/IconButton.js'
 import { RipButton } from '../components/RipButton.js'
 import { Loading, ErrorState } from '../components/States.js'
@@ -34,9 +36,11 @@ function fmtCount(n?: number): string {
 /**
  * 歌单详情页。
  *
- * 同时支持两种歌单：
+ * 同时支持三种集合：
  * - 本地自建歌单（id 以 `pl-` 开头，来自 library store）；
- * - 网易云歌单（数字 id，通过 API 拉取）。
+ * - 网易云歌单（数字 id，通过 API 拉取）；
+ * - **磁带**（`source` 为磁带渠道，如 B 站——`Playlist` 即磁带，见 ADR-044）：套用「4:3 封面 +
+ *   磁带边框」与「磁带」类型标签，其余（播放 / 随机 / 收藏到资料库 / 翻录 / 分P 列表）全部复用。
  */
 export function PlaylistPage() {
   const params = useParams()
@@ -46,6 +50,7 @@ export function PlaylistPage() {
   const id = params.id ?? ''
   const navigate = useViewNavigate()
   const isLocal = id.startsWith('pl-')
+  const isCassette = isCassetteSource(source)
 
   const playlists = useLibrary((s) => s.playlists)
   const deletePlaylist = useLibrary((s) => s.deletePlaylist)
@@ -196,14 +201,29 @@ export function PlaylistPage() {
   return (
     <div className="detail">
       <header className="detail__hero">
-        <Cover
-          src={coverAt(playlist.cover, COVER_LARGE)}
-          alt={playlist.name}
-          radius="lg"
-          className="detail__cover"
-        />
+        {isCassette ? (
+          <div className="detail__art--cassette">
+            <CassetteShell>
+              <Cover
+                src={coverAt(playlist.cover, COVER_LARGE)}
+                alt={playlist.name}
+                radius="sm"
+                className="card__cover"
+              />
+            </CassetteShell>
+          </div>
+        ) : (
+          <Cover
+            src={coverAt(playlist.cover, COVER_LARGE)}
+            alt={playlist.name}
+            radius="lg"
+            className="detail__cover"
+          />
+        )}
         <div className="detail__info">
-          <span className="detail__type">{isLocal ? '本地歌单' : '歌单'}</span>
+          <span className="detail__type">
+            {isLocal ? '本地歌单' : isCassette ? '磁带' : '歌单'}
+          </span>
           {isLocal && renaming ? (
             <input
               ref={renameRef}
@@ -292,7 +312,11 @@ export function PlaylistPage() {
       </div>
 
       <div className="detail__list">
-        <TrackList tracks={tracks} emptyText="这个歌单还没有曲目" />
+        <TrackList
+          tracks={tracks}
+          emptyText={isCassette ? '这盘磁带还没有曲目' : '这个歌单还没有曲目'}
+          showAlbum={!isCassette}
+        />
       </div>
     </div>
   )

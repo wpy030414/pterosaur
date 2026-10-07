@@ -8,7 +8,7 @@ import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
 import { IconButton } from './IconButton.js'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu.js'
-import { expandGroups } from '../lib/mv.js'
+import { expandGroups } from '../lib/cassette.js'
 import './TrackList.css'
 
 interface TrackListProps {
@@ -17,7 +17,7 @@ interface TrackListProps {
   showHeader?: boolean
   /** 是否显示序号列 */
   showIndex?: boolean
-  /** 是否显示专辑列（MV 等「无专辑」语境的列表可关掉，标题列随之加宽） */
+  /** 是否显示专辑列（磁带等「无专辑」语境的列表可关掉，标题列随之加宽） */
   showAlbum?: boolean
   /** 空状态文案 */
   emptyText?: string
@@ -136,7 +136,7 @@ export function TrackList({
       )}
 
       {tracks.map((t, i) => {
-        // MV 的「一对多」：队列里是分P（`bvid:cid`），列表行却是整视频（`bvid`）——
+        // 磁带（B 站）的「一对多」：队列里是分P（`bvid:cid`），列表行却是整视频（`bvid`）——
         // 故再以 bvid 前缀匹配，保证播放某分P 时对应视频行同样高亮。
         const isCurrent = current
           ? keyOf(current) === keyOf(t) ||

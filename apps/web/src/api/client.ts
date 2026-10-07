@@ -74,7 +74,10 @@ export const api = {
   search: (source: MusicSource, keywords: string, limit = 30) =>
     get<Track[]>(`${API_BASE}/search`, { keywords, limit, source }),
 
-  /** 多类型搜索：并行返回歌曲 / 艺人 / 专辑 / 歌单；`page` 供滚动续取，`type` 限定只跑一类。 */
+  /**
+   * 多类型搜索：并行返回歌曲 / 艺人 / 专辑 / 歌单；`page` 供滚动续取，`type` 限定只跑一类。
+   * 磁带渠道（B 站）的 `playlists` 即**磁带**（`source:'bilibili'` 的 Playlist，见 ADR-044）。
+   */
   searchAll: (
     source: MusicSource,
     keywords: string,
@@ -121,6 +124,7 @@ export const api = {
   playlists: (source: MusicSource, limit = 12, cat = '全部') =>
     get<Playlist[]>(`${API_BASE}/discover/playlists`, { limit, cat, source }),
 
+  /** 歌单详情；对磁带渠道（B 站）而言返回该**磁带**与它的分P 曲目（见 ADR-044）。 */
   playlist: (source: MusicSource, id: string) =>
     get<{ playlist: Playlist; tracks: Track[] }>(
       `${API_BASE}/playlist/${source}/${encodeURIComponent(id)}`,
@@ -129,7 +133,7 @@ export const api = {
   songs: (source: MusicSource, ids: string[]) =>
     get<Track[]>(`${API_BASE}/songs`, { ids: ids.join(','), source }),
 
-  /** 把一个视频 / 曲目展开为多个可播放条目（如 B 站分P 视频的一对多映射）。 */
+  /** 把一个视频 / 曲目展开为多个可播放条目（如 B 站分P 的一对多映射）。 */
   parts: (source: MusicSource, id: string) =>
     get<Track[]>(`${API_BASE}/parts/${source}/${encodeURIComponent(id)}`),
 

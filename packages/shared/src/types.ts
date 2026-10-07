@@ -9,15 +9,19 @@
 export const MUSIC_SOURCES = ['netease'] as const
 
 /**
- * MV 渠道：只提供「搜视频 + 播放其音频」（B 站 DASH 分轨，只取音频）。
+ * 磁带渠道：只提供「搜视频（类歌单的磁带）+ 播放其音频」（B 站 DASH 分轨，只取音频）。
+ *
+ * 一条**磁带**在数据模型上就是一个 `Playlist`（`source` 属于本清单）——其「曲目」是该视频的
+ * **分P**、`trackCount` 为分P 数、`creator` 为 UP 主。故可直接播放整盘，也可进详情页选分P、
+ * 并像歌单一样收藏到资料库（见 ADR-044）。
  *
  * 作为**独立渠道**存在，故刻意**不放进 {@link MUSIC_SOURCES}**——否则 `activeSource`
  * 会在登录后返回它，把首页 / 浏览 / 发现的「活动源」带偏。登录态与单活动账号模型也互不干扰。
  */
-export const MV_SOURCES = ['bilibili'] as const
+export const CASSETTE_SOURCES = ['bilibili'] as const
 
-/** 全部音源（音乐音源 + MV 渠道）；`Track.source` 等实体字段的取值范围。 */
-export const ALL_SOURCES = [...MUSIC_SOURCES, ...MV_SOURCES] as const
+/** 全部音源（音乐音源 + 磁带渠道）；`Track.source` 等实体字段的取值范围。 */
+export const ALL_SOURCES = [...MUSIC_SOURCES, ...CASSETTE_SOURCES] as const
 
 /** 音源服务器。 */
 export type MusicSource = (typeof ALL_SOURCES)[number]
@@ -31,6 +35,16 @@ export const DEFAULT_SOURCE: MusicSource = 'netease'
  */
 export function isMusicSource(v: unknown): v is MusicSource {
   return typeof v === 'string' && (ALL_SOURCES as readonly string[]).includes(v)
+}
+
+/**
+ * 判定是否磁带渠道源（B 站）。磁带在数据模型上是 `Playlist`，界面据此套用「4:3 封面 + 磁带边框」
+ * 与「磁带」类型标签（见 ADR-044）。
+ */
+export function isCassetteSource(v: unknown): v is MusicSource {
+  return (
+    typeof v === 'string' && (CASSETTE_SOURCES as readonly string[]).includes(v)
+  )
 }
 
 /** 读取实体所属源；旧持久化数据（收藏 / 最近 / 队列 / 云同步载荷）缺失时回填缺省源。 */
@@ -135,20 +149,20 @@ export interface SearchResults {
   capabilities?: Record<'songs' | 'artists' | 'albums' | 'playlists', boolean>
 }
 
-/** 歌单 / 排行榜等合集的精简模型。 */
+/** 歌单 / 排行榜等合集的精简模型（**磁带**亦是其中之一：`source` 为磁带渠道时见下）。 */
 export interface Playlist {
-  /** 所属音源。 */
+  /** 所属音源。为磁带渠道源时，本实体即**磁带**（见 ADR-044）。 */
   source: MusicSource
   id: string
   name: string
   cover: string
   /** 简介。 */
   description?: string
-  /** 曲目数量。 */
+  /** 曲目数量。磁带为**分P 数**（未知时缺省）。 */
   trackCount?: number
   /** 播放量（若有）。 */
   playCount?: number
-  /** 创建者昵称。 */
+  /** 创建者昵称。磁带为 **UP 主**。 */
   creator?: string
 }
 
@@ -163,7 +177,7 @@ export interface LocalPlaylist {
 }
 
 /**
- * 资料库的可同步数据（收藏 / 最近 / 自建歌单 / 收藏的网易云歌单 · 艺人 · 专辑）。
+ * 资料库的可同步数据（收藏 / 最近 / 自建歌单 / 收藏的歌单 · 磁带 · 艺人 · 专辑）。
  * 与前端 `store/library.ts` 的持久化字段一一对应，也是云同步的载荷。
  */
 export interface LibraryData {
@@ -173,11 +187,11 @@ export interface LibraryData {
   recent: Track[]
   /** 本地自建歌单。 */
   playlists: LocalPlaylist[]
-  /** 收藏的网易云歌单引用。 */
+  /** 收藏的歌单引用（含**磁带**——同为 `Playlist`，见 ADR-044）。 */
   savedPlaylists: Playlist[]
-  /** 收藏的网易云艺人引用。 */
+  /** 收藏的艺人引用。 */
   savedArtists: Artist[]
-  /** 收藏的网易云专辑引用。 */
+  /** 收藏的专辑引用。 */
   savedAlbums: Album[]
 }
 

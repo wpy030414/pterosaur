@@ -3,6 +3,7 @@ import type { Playlist } from '@pterosaur/shared/types'
 import { usePlayCollection } from '../hooks/usePlayCollection.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
+import { CountChip } from './CountChip.js'
 import './Cards.css'
 
 interface PlaylistCardProps {
@@ -17,7 +18,8 @@ interface PlaylistCardProps {
  * 歌单 / 排行榜卡片（方形封面 + 标题 + 描述）。
  *
  * - 点击卡片本体：进入详情页；
- * - 悬浮浮现的播放按钮：立即播放该歌单（不进入详情页）。
+ * - 悬浮浮现的播放按钮：立即播放该歌单（不进入详情页）；
+ * - 封面右上角：曲目数量 chip（> 1 才显示）。
  */
 export function PlaylistCard({
   playlist,
@@ -47,6 +49,7 @@ export function PlaylistCard({
           radius="md"
           className="card__cover"
         />
+        <CountChip count={playlist.trackCount} />
         <button
           type="button"
           className="card__play"

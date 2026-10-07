@@ -39,15 +39,26 @@ export function AppRouter({ children }: { children?: ReactNode }) {
     location: history.location,
   }))
   const lastIdx = useRef(readIdx())
+  /** 上一次提交的地址，用于判定本次是否只是「同页」变更（路径不变、仅查询串 / 哈希变）。 */
+  const lastLocation = useRef(history.location)
 
   useLayoutEffect(() => {
     const onHistoryChange = (next: HistoryUpdate) => {
+      const prev = lastLocation.current
+      lastLocation.current = next.location
       const idx = readIdx()
       const dir: 'forward' | 'back' = idx < lastIdx.current ? 'back' : 'forward'
       lastIdx.current = idx
+      /**
+       * **路径不变**（仅 `?` / `#` 变化，如搜索页切 tab）＝页内状态切换，不是页面切换：
+       * 不跑内容区转场。转场会给内容区拍一张旧快照盖在新内容上交叉溶解——页内切换时那只是
+       * 「上一屏的残影」（快速来回切换尤其明显：旧快照层不拆，残影越积越多）。
+       */
+      const samePage = next.location.pathname === prev.pathname
       startRouteTransition(
         () => setState({ action: next.action, location: next.location }),
         dir,
+        { skip: samePage },
       )
     }
     return history.listen(onHistoryChange)

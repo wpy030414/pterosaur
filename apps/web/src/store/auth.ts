@@ -33,7 +33,7 @@ interface AuthActions {
 
 export type AuthStore = AuthState & AuthActions
 
-/** 生成「每源一份」的全假登录态 / 加载态（含 MV 渠道，故遍历 `ALL_SOURCES`）。 */
+/** 生成「每源一份」的全假登录态 / 加载态（含磁带渠道，故遍历 `ALL_SOURCES`）。 */
 const emptyStatus = (): Record<MusicSource, LoginStatus> =>
   Object.fromEntries(ALL_SOURCES.map((s) => [s, { logged: false }])) as Record<
     MusicSource,
@@ -121,7 +121,7 @@ function applyLogin(source: MusicSource, status: LoginStatus): void {
   }))
 }
 
-/** 是否任一源已登录（含 MV 渠道）。 */
+/** 是否任一源已登录（含磁带渠道）。 */
 export function isLoggedAny(status: Record<MusicSource, LoginStatus>): boolean {
   return ALL_SOURCES.some((s) => status[s]?.logged)
 }
@@ -129,7 +129,7 @@ export function isLoggedAny(status: Record<MusicSource, LoginStatus>): boolean {
 /**
  * 当前**活动账号**——最多一个源登录（单活动账号，见 ADR-027）；未登录返回 `null`。
  *
- * **含 MV 渠道（B 站）**：登录它同样是「一个账号」，故顶栏账户菜单与**云同步锚点**都跟随它。
+ * **含磁带渠道（B 站）**：登录它同样是「一个账号」，故顶栏账户菜单与**云同步锚点**都跟随它。
  * 需要「可浏览内容」的页面请改用 {@link activeMusicSource}。
  */
 export function activeSource(
@@ -143,7 +143,7 @@ export function activeSource(
  * 当前**活动音乐源**（仅 `MUSIC_SOURCES`，现为网易云）；无则 `null`。
  *
  * 供「可浏览内容」的页面（首页 / 浏览 / 电台 / 搜索默认源）与源主题使用——它们需要发现 /
- * 歌单 / 排行榜等能力，而 MV 渠道（B 站）一概没有，故**不能**跟随 {@link activeSource}。
+ * 歌单 / 排行榜等能力，而 磁带渠道（B 站）一概没有，故**不能**跟随 {@link activeSource}。
  */
 export function activeMusicSource(
   status: Record<MusicSource, LoginStatus>,

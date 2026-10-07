@@ -163,7 +163,7 @@ function credentialKey(cookie?: string): string {
 async function requireIdentity(
   c: Context,
 ): Promise<{ source: MusicSource; id: string } | null> {
-  // 遍历**全部源**（含 MV 渠道）：登录 B 站同样是一个可云同步的账号身份
+  // 遍历**全部源**（含磁带渠道）：登录 B 站同样是一个可云同步的账号身份
   for (const source of ALL_SOURCES) {
     const adapter = adapterOf(source)
     if (!adapter) continue
@@ -716,7 +716,7 @@ export function createApp() {
       const cookieHeader = ctx.adapter.cookieHeaderFromSetCookies(cookies)
       const status = await ctx.adapter.loginStatus(cookieHeader)
       forwardSessionCookies(c, ctx.adapter, cookies)
-      // 单活动账号：登入某源时清掉**其它源**的会话 cookie（含 MV 渠道，见 ADR-027）
+      // 单活动账号：登入某源时清掉**其它源**的会话 cookie（含磁带渠道，见 ADR-027）
       for (const other of ALL_SOURCES) {
         if (other === ctx.source) continue
         const oa = adapterOf(other)

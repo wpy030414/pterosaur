@@ -6,10 +6,10 @@ import { TrackList } from '../../src/components/TrackList.js'
 import { usePlayer } from '../../src/store/player.js'
 import { useLibrary } from '../../src/store/library.js'
 import type { Track } from '@pterosaur/shared/types'
-import { expandGroups } from '../../src/lib/mv.js'
+import { expandGroups } from '../../src/lib/cassette.js'
 
 // 屏蔽真实展开（会打网络）；各用例按需给 expandGroups 设返回值。
-vi.mock('../../src/lib/mv.js', () => ({
+vi.mock('../../src/lib/cassette.js', () => ({
   expandTrack: vi.fn(),
   expandGroups: vi.fn(),
   expandList: vi.fn(),

@@ -332,7 +332,7 @@
 ## ADR-022：多源架构——实体带 `source`、`keyOf` 统一身份、`SourceAdapter` 归一化
 
 - 日期：2026-10-06
-- 状态：已采纳（**部分修订**：源清单改为 `MUSIC_SOURCES` + `MV_SOURCES` 双名单，见 ADR-033）
+- 状态：已采纳（**部分修订**：源清单改为 `MUSIC_SOURCES` + `CASSETTE_SOURCES` 双名单，见 ADR-033）
 - 背景：项目原为单一音源（网易云），`Track` 的 `id` 是**全局唯一身份**，贯穿搜索产出 → 卡片 key / 跳转 → URL path → 页面取数 → 收藏/最近/歌单成员去重 → 队列定位 → 音频/歌词缓存键 → 后端 `/stream` 与 urlCache（约 60 个判等点位）。需求是接入第二个源（QQ 音乐）并支持多平台混合。若不引入「源」维度，两源共享同一原始 id 时会**互相覆盖**（收藏串源、队列定位错、缓存命中到错误音频）。
 - 考虑过的方案：① 把源编码进 `id` 字符串（`qq:mid`）而不加字段；② 给实体加必填 `source` 字段 + 组合键助手 `keyOf`；③ 只加可选 `source` 字段。
 - 决策：②。`MusicSource`（**现为 `'netease' | 'bilibili'`**，见 ADR-033）；`Track`/`Artist`/`Album`/`Playlist` 各加**必填** `source`；新增 `sourceOf(e)`（旧数据回填 `'netease'`）与 `keyOf(e) = \`${sourceOf(e)}:${e.id}\``；全仓所有「认曲 / 认实体」的比对一律改用 `keyOf`；`streamUrl(source, id)`与便捷式`streamUrlOf(track)`；后端抽 `SourceAdapter` 接口（`sources/{types,netease,qq,index}.ts`），路由 `/stream/:source/:id`、`/api/artist|album|playlist|lyric/:source/:id`，另**保留 2 段式别名**（视为缺省源，兼容 SW 外壳 7 天缓存下的旧页面）。
@@ -514,14 +514,14 @@
 ## ADR-033：移除 QQ / 咪咕音源；新增「MV」渠道（B 站，只放音频）
 
 - 日期：2026-10-06
-- 状态：已采纳（**废止** ADR-024 / ADR-029 / ADR-030 / ADR-032；**部分修订** ADR-022 / ADR-026 / ADR-031）
+- 状态：已采纳（**废止** ADR-024 / ADR-029 / ADR-030 / ADR-032；**部分修订** ADR-022 / ADR-026 / ADR-031；**渠道更名**：本 ADR 的「MV 渠道」于 ADR-044 更名为**磁带**并类歌单化）
 - 背景：实测 QQ 音乐与咪咕音乐的可用性 / 稳定性明显不足（QQ 频控 + 私有 API 易碎、咪咕曲库与体验有限），维护成本高于收益。同时制作人希望搜索时能一并搜到 B 站视频、并**只解析其音频**播放（B 站为 DASH 音视频分轨，取 `dash.audio` 即可，无需解析视频）。
 - 考虑过的方案：
   - 源收敛：① 保留三源；② **移除 QQ / 咪咕，仅留网易云**。
   - MV 定位：③ 把 B 站做成与网易云并列的**可浏览音源**；④ **做成独立「MV 渠道」**，只出现在搜索页的分类 tab 里（「歌曲」右侧）。
 - 决策：
   1. **移除 QQ / 咪咕**：删适配器、注册表项、`MusicSource` 分支、主题色块（`tokens.css` 的 `[data-source='qq'|'migu']`）、CLI 分支、`QQ_COOKIE`/`MIGU_COOKIE` 及各自单测；相关 ADR 标注废弃。
-  2. **源清单双名单**（`packages/shared/src/types.ts`）：`MUSIC_SOURCES = ['netease']`（可浏览 / 发现）、`MV_SOURCES = ['bilibili']`（MV 渠道）、`ALL_SOURCES = [...MUSIC_SOURCES, ...MV_SOURCES]` 且 `MusicSource = (typeof ALL_SOURCES)[number]`。**B 站是一等账号**：`activeSource`（顶栏账户菜单 / 云同步锚点）、`/api/auth/*` 的「单活动账号」清理、后端 `requireIdentity`（云同步身份）**都遍历 `ALL_SOURCES`**；而「可浏览内容」的页面（首页 / 浏览 / 电台 / 搜索默认源 / 源主题）改用 **`activeMusicSource`**（仅 `MUSIC_SOURCES`），以免这些需要发现 / 歌单 / 排行榜能力的页面被 B 站带偏。
+  2. **源清单双名单**（`packages/shared/src/types.ts`）：`MUSIC_SOURCES = ['netease']`（可浏览 / 发现）、`CASSETTE_SOURCES = ['bilibili']`（磁带渠道，ADR-044 前名为 `MV_SOURCES`）、`ALL_SOURCES = [...MUSIC_SOURCES, ...CASSETTE_SOURCES]` 且 `MusicSource = (typeof ALL_SOURCES)[number]`。**B 站是一等账号**：`activeSource`（顶栏账户菜单 / 云同步锚点）、`/api/auth/*` 的「单活动账号」清理、后端 `requireIdentity`（云同步身份）**都遍历 `ALL_SOURCES`**；而「可浏览内容」的页面（首页 / 浏览 / 电台 / 搜索默认源 / 源主题）改用 **`activeMusicSource`**（仅 `MUSIC_SOURCES`），以免这些需要发现 / 歌单 / 排行榜能力的页面被 B 站带偏。
   3. **B 站适配器**（`apps/server/src/sources/bilibili.ts`）：搜索走 `x/web-interface/search/all/v2`（**实测未被风控**；`x/web-interface/wbi/search/type` 会回 `v_voucher` 人机验证）；取音频 `x/player/pagelist → x/player/playurl(fnval=16) → dash.audio`，按抽象档挑最接近的码率；`streamHeaders` 带上 `Referer`（必需，否则 403）；扫码登录走 `passport-login/web/qrcode/{generate,poll}`（**URL 即 key**，无状态）。`sessionCookieNames = logoutCookieNames` 覆盖 `SESSDATA/bili_jct/DedeUserID/buvid3/bili_ticket`。
   4. **前端 MV tab**：搜索页分类行「歌曲」右侧加「MV」，**与音乐结果并行取数**（不惰性加载）；源 tab 行移除（只剩一个音乐源，无需切换器）。
   5. **音频响应 Content-Type 依直链后缀回写**（`app.ts` 的 `audioContentTypeFromUrl`）：网易云 CDN 对 `.flac` 谎报 `audio/mpeg`、B 站 m4s 为 `application/octet-stream`——按 URL 后缀纠正后，下载能落正确后缀、SW 也能按 `audio/*` 入缓存。
@@ -557,7 +557,7 @@
 ## ADR-035：B 站字幕作为 MV 渠道歌词（登录可见 + 主语言/中文双语）
 
 - 日期：2026-10-07
-- 状态：已采纳
+- 状态：已采纳（**渠道更名**：MV 渠道于 ADR-044 更名为**磁带**，本 ADR 的歌词语义不变）
 - 背景：MV 渠道（ADR-033）此前 `getLyric` 恒空（前端「暂无歌词」）。B 站视频自带 CC 字幕（UP 上传 + AI 生成）：`x/player/wbi/v2` 返回轨列表（`subtitle.subtitles[]`：`lan` / `is_lock` / `ai_type` / `subtitle_url`），`subtitle_url` 指向的 JSON 正文（`body[]`：`from`/`to`/`content`）天然是带时间轴的「歌词」。但**字幕列表要求登录**：匿名（无 SESSDATA）请求 `subtitles` 恒为空——wbi 签名也救不了（2026-10 实测），与网页端未登录看不到 CC 一致。需求：主语言非中文时引入多语言、且必含中文。
 - 决策：适配器实现 `getLyric`，全链路失败一律降级空歌词（前端「暂无歌词」），不打挂播放链路：
   1. **通道**：`id` 解析（`<bvid>` 取首P / `<bvid>:<cid>` 分P 定位，与 `songUrl` 同规）→ **wbi 签名**的 `player/wbi/v2` 取轨列表（密钥取自 `nav.wbi_img`，盐表混淆成 32 位 mixinKey，进程内缓存 24h；签名失败回落非签名 `player/v2` 一次）→ 拉 `subtitle_url` JSON（`//` 补 https，主/中两轨并行）→ 构建共享 `Lyric`。
@@ -649,7 +649,7 @@
 ## ADR-040：顶栏前进 / 后退也走内容区转场——自定义路由器包裹 popstate
 
 - 日期：2026-10-07
-- 状态：已采纳
+- 状态：已采纳（**修订**：见 ADR-045——**路径不变**的同页变更（如切 tab）不再跑转场）
 - 背景：内容区转场（Apple Music 风格交叉溶解）此前只覆盖「跳转新地址」（`useViewNavigate` 同步包裹 `startViewTransition`）；顶栏前进 / 后退按钮（`navigate(-1)/navigate(1)`）经 `history.go` 触发 **popstate**，其更新是异步的，无法同步包裹，故**没有转场**。
 - 考虑过的方案：① 维持现状；② 在早期 `popstate` 监听里起转场（依赖与 react-router 监听器的注册顺序，且其 `useSyncExternalStore` 式更新可能同步提交，`old` 快照会拍到新 DOM，脆弱）；③ **改用自定义路由器**，把转场统一上移到 `history.listen` 层。
 - 决策：③。新组件 `components/AppRouter.tsx` 镜像 react-router 的 `<BrowserRouter>`（`useRef` 惰性 `UNSAFE_createBrowserHistory({ v5Compat: true })` + `useLayoutEffect(() => history.listen(...))` + `<Router location navigationType navigator>`），但把状态提交经 `startRouteTransition(update, dir)`；`main.tsx` 用它替换 `<BrowserRouter>`。方向由 `window.history.state.idx` 的前后增减判定（增为前进、减为后退）。`startRouteTransition` 转场期间在 `<html>` 打 `data-route-vt` 与 `data-route-dir`；CSS 为 `back` 定义**镜像**关键帧（旧内容向下淡出、新内容自上方滑入 = 逆速度播放）。`useViewNavigate` 与 `AppLink` 因此简化为直通（转场不再由它们包裹，避免与路由器层双裹）。
@@ -670,7 +670,7 @@
 - 考虑过的方案：
   - **流参数数据源**：① 仅用所选档位（纯前端，改动小）——放弃，无法反映降级（非 VIP 设 Hi-Res 实得 320Kbps 时会误报）；② **实际解析**（选中）——如实、与 Apple Music 语义一致。
   - **展示形式**：档位名（`无损` / `Hi-Res`）——放弃，语义不透明；改用**具体参数**（编解码 / 码率 / 采样率）。
-  - **B 站流参数**：不实现（参数缺失）——放弃，MV 渠道体验不一致。
+  - **B 站流参数**：不实现（参数缺失）——放弃，磁带渠道体验不一致。
   - **防顶出**：只缩小封面但不定高——放弃，矮屏仍会顶出；改由 `100dvh` 参与 `min()` 直接约束封面。
 - 为什么选这个：以「语义对齐」为准——背景与沉浸页职责分离；移动端把屏幕让给核心内容（歌词）且不牺牲控制可达性；音质信息说真话、说具体。
 - 后果 / 已知边界：
@@ -712,3 +712,61 @@
 - 后果 / 已知边界：
   - E2E 两个教训：转场动画期间合成滚轮事件可能被吞（wheel 前须等 `data-route-vt` 摘除）；Playwright click 的 actionability 检查会把滚出视口的目标**自动滚回视口**（曾把记忆值污染成 0）。
   - 穿梭记忆是组件级（`useRef`），下钻返回后重挂即清空——返回后切其它 tab 从顶部开始（按条目恢复只覆盖「最后所处 tab」）。
+
+## ADR-044：搜索「MV」渠道更名「磁带」——类歌单化、磁带卡与数量 chip
+
+- 日期：2026-10-07
+- 状态：已采纳（**部分修订 / 更名** ADR-033 / ADR-035；**复用** ADR-042 结构化缓存）
+- 背景：B 站此前作为独立「MV 渠道」（ADR-033）：搜索页「MV」tab 把每个视频当作**一条 Track** 平铺进 `TrackList`，点行才展开其分P 播放。问题：(1) 视频——尤其多分P 的「选集」——本质是**合集**，用平铺曲目行表达不贴切；(2) 无法像歌单那样收藏到侧边栏。需求：改造成**磁带**语义——每条结果「类歌单」，可**整盘播放**、可**进详情页选分P**、以 **4:3 视频封面 + 磁带象征边框**展示、**收藏即一种特殊歌单**（与其它歌单并列出现在侧边栏）；并给**磁带与歌单**封面加「歌曲数量」chip（**> 1 才显示**）。
+- 决策：
+  1. **磁带 = 一个 `Playlist`（`source:'bilibili'`，`id=bvid`）**：`name`=视频标题、`cover`=视频封面、`creator`=UP 主、`trackCount`=分P 数、`description`/`playCount` 取自 `view`。这一选择让「收藏」与「详情页」**几乎零成本复用** `savedPlaylists` / `Sidebar` / 云同步（`LibraryData`）/ `/playlist/:source/:id` + `PlaylistPage` / `usePlayCollection`。
+  2. **走适配器既有的 `searchPlaylists` 槽位**：磁带渠道的「搜歌单」即搜磁带——导出函数仍叫 `searchCassettes`、登记为 `searchPlaylists: searchCassettes`。**不改** `SourceAdapter` 接口、`/api/search/all` 分发、客户端契约与 `capabilities` 形状（仅 B 站 `capabilities.playlists` 由 false 翻 true）。
+  3. **分P 数逐条补查**：`search/all/v2` 的 video 组**不返回**分P 数，故对每条结果补查一次 `x/web-interface/view` 取 `pages.length`。带**并发上限 4** 与**单条 5s 超时**；**单条失败 / 超时降级为 `trackCount` 留空**（`undefined`，**绝不写 0**——否则会误触发 `PlaylistCard` 的 `trackCount===0` 置灰）。`view` 另走进程内 memo（LRU `max:200`、TTL 2h、键 `sha1(cookie)|bvid`），故「补查 → 点进详情 / 展开分P」不重复打上游；整批结果再由 `/api/search/all` 缓存 2h（ADR-042）。
+  4. **新增适配器 `playlistTracks`**：一次 `view` 返回 `{ playlist: buildCassette(d), tracks: buildParts(d) }`；失败**上抛**（路由 502、页面错误态 + 重试，与网易云歌单一致）。`parts` 内部改用同一 `fetchView`（行为不变：失败返 `[]`）。
+  5. **前端**：搜索 tab `'mv'→'cassette'`、文案 `'MV'→'磁带'`、常量 `MV_SOURCE→CASSETTE_SOURCE`；磁带结果渲染 `CassetteCard`（`.card--cassette`），点本体进详情页、点播放按钮整盘播放。`PlaylistPage` 在 `source` 属磁带渠道时套用同一磁带样式与「磁带」类型标签、`showAlbum=false`。`?tab=mv` 旧深链别名映射到 `cassette`。
+  6. **磁带外壳是共享组件 `components/CassetteShell.tsx`**：卡片与详情页 hero 共用同一份 DOM / CSS，保证两处观感一致。**沿用应用既有的中性面板语言**（不引入拟物塑料 / 金属配色，与 Apple Music 式基调一致）：外壳面＝一层抬升面（`--cassette-surface` = `--bg-elevated-2`）+ 1px `--separator` 描边 + `--radius-md`；内部＝**4:3 视频窗**（`children`，即封面 / chip / 播放按钮，`--radius-sm` + 投影）+ **卷轴带**（内凹深色带 `--cassette-deck` + 1px 描边 + 两枚卷轴 + 其间一段磁带线 `--cassette-line`）。卷轴＝两道同心细线（外圈 / 内毂，**不画轴心圆点**），全用分隔线色。磁带身份靠「视窗在上、双卷轴在下」的**版式**，而非贴图细节。
+     细部尺寸（内衬 / 卷轴带高 / 卷轴直径 / 磁带线内缩）统一以 `--cs` 为倍率（`.cassette-shell` 默认 `1`，`.detail__art--cassette` 设 `1.35` / 移动端 `1.1`），使同一份规则在 ~150px 卡片与 ~240px hero 下观感一致。**以封面为主**：卷轴带刻意做矮、卷轴做小，只作「这是磁带」的提示，不与封面抢戏。
+     演进：初版为「外框 + 顶部两枚小圆」的示意画法 → 用户反馈「不够仿真」→ 改为一版**拟真拟物**（深色塑料壳 + 螺丝 + 纸质标签 + 齿纹）→ 用户反馈「与应用整体美术风格不符」→ 定为**当前的扁平令牌版**（磁带语义 + 应用语言）。
+  7. **数量 chip**（`components/CountChip.tsx`）：`PlaylistCard` 与 `CassetteCard` 封面右上角**共用**，**仅当数量已知且 > 1** 时显示（1 / 0 / 未知都不显示），纯展示（`pointer-events:none`）。
+  8. **命名**：`MV_SOURCES→CASSETTE_SOURCES`（shared）、`lib/mv.ts→lib/cassette.ts`；`expandTrack/expandGroups/expandList` **保留**（`TrackList` 仍对**旧数据**里的裸 `bvid` 就地展开）；`searchSongs` 保留（接口必选，UI 不再使用）。
+  9. **顺带修复 ADR-043 的恢复门缺陷**：搜索页现按「源 + 关键词」**重挂**内容组件（`<SearchResults key={...}>`）。原「累积结果的会话级缓存」的跳过灌入门是**每挂载一次性** ref，而同挂载内查询恒定——一旦本次挂载走过恢复（下钻返回），此后顶栏换词就**永远跳过首屏灌入**，残留上一个查询的结果（磁带卡最显眼：搜新词后其它 tab 仍显示旧磁带）。重挂使该门随查询重估。
+- 考虑过的方案：① 给 `SearchResults` 新增 `cassettes` 字段 + 第 5 个能力键——放弃，徒增 shared / app.ts / 客户端面；② 独立 `/api/search/cassettes` 路由——放弃，复制通用分发与 `type` 分页机制；③ **惰性取数**（首次激活磁带 tab 再拉）——暂缓，以免动 `Search.tsx` 的 ADR-043 恢复逻辑。
+- 为什么选这个：磁带本就是「合集」，用 `Playlist` 表达最自然——收藏 / 详情 / 云同步全部白拿；`searchPlaylists` 槽位使路由与契约零改动。
+- 后果 / 已知边界：
+  - **磁带搜索显著重于旧「一次调用」**：一次搜索 = 1×`search/all/v2` + ≤20×`view`（并发 4）。若上游抽风，磁带无 chip 但仍可播；结果缓存 2h 摊薄成本。逃生舱：改惰性取数、或给分P 补查加显式取消 / 更小并发。
+  - 旧客户端（SW 外壳 7 天缓存）仍按「MV tab + `searchSongs`」工作；拉到「收藏的磁带」会走 `/api/playlist/bilibili/:id` → 501 → 既有错误态（不崩）。`savedPlaylists` 无 schema 变化，`keyOf`（`bilibili:BV…`）一致。
+  - 视频失效 / 删除：详情页 502 → 错误态 + 重试（不再像旧 `parts` 那样静默返空）。
+  - 磁带外壳（卷轴带 / 卷轴 / 磁带线）为纯 CSS 装饰：单测只断言**结构**（`.cassette-shell__deck` / `.cassette-shell__tape` / `.cassette-reel ×2`，见 `CassetteCard.test.tsx`），观感需**人工视觉迭代**（明暗两态、移动端 ≤640px 下与常显播放按钮不打架）。改细部尺寸请同时改 `--cs` 倍率与各细部，保持卡片 / hero 比例一致；配色一律走 `--cassette-*` 令牌，**不要**为磁带引入专门的拟物色值，否则会脱离应用基调。
+- 何时重新审视：若磁带搜索的上游成本 / 风控成为问题；若 B 站提供批量取分P 数的接口（可去掉逐条补查）。
+
+## ADR-045：同页变更不跑内容区转场——修「切 tab 后上一屏残影」
+
+- 日期：2026-10-07
+- 状态：已采纳（**修订** ADR-040）
+- 背景：ADR-040 让 `AppRouter` 把**所有**历史变更（push / pop / **replace**）统一包进 `startRouteTransition`。但搜索页的分类 tab 是**查询串**（`?tab=`）：切 tab 只改 `?`、**路径不变**，于是每次切 tab 都会为整个内容区拍一张旧快照、盖在新内容上交叉溶解。表现为**上一屏残影**：浏览过「磁带」后切到「艺人 / 专辑 / 歌单」，旧的磁带卡会盖在新内容上（被误读为「其他 tab 也显示了磁带实例」）；来回快速切换时被中断的转场还会把旧快照层滞留在 top layer 不拆，残影**越积越多**。
+- 决策：
+  1. `AppRouter` 记录上一次地址；**路径不变**（仅 `?` / `#` 变化）时以 `startRouteTransition(update, dir, { skip: true })` 提交——走既有的「不转场」分支（`flushSync` 提交、`setScrollSaving` 时序、`resetContentScroll`、清标记全部保留），只是不起浏览器 VT。页内切换（切 tab、页内筛选）本就不是页面切换，不该有页面级交叉溶解。
+  2. `startRouteTransition` 开新转场前先 `skipTransition()` **掐掉上一条在飞转场**——被中断的转场会把旧内容快照层留在 top layer，连续导航时表现为残影累积。
+  3. **掐断动作提到函数最前**，**任何分支**（含 `skip` 与降级路径）都先 `skipTransition()` 再提交。这一步不可省：上一条路由转场还在跑时（如「下钻详情 → 返回」的 580ms 内）点 tab，`flushSync` 会直接在旧快照**底下**换掉内容，而那张旧快照（上一屏 = 磁带网格）仍盖在最上层继续画——这就是「几个 tab 之间互相污染」的直接成因。
+- 为什么选这个：语义上「内容区转场」是**页面**之间的转场；同页参数变化由组件自身重渲染即可。修在路由器层（一处），对所有页内 tab / 筛选生效；真实路由跳转（含顶栏前进 / 后退）的转场完全不变。
+- 后果 / 已知边界：**同页换查询串不再有交叉溶解**（如顶栏换搜索词、搜索页切 tab）——内容直接替换，观感更利落。真实路径变化仍走 VT（`test/navigation.spec.ts` 的「后退走转场」用例可证）。
+- 复现要点（已固化为回归用例）：旧快照残影是**合成层**现象，DOM 探针查不到（`document.querySelectorAll('.card--cassette')` 恒为 0），必须看 `document.getAnimations()` 里有没有 **`running`** 的 `::view-transition-old(app-content)`。症状重现路径：磁带 tab → 点开一盘磁带 → **返回**转场仍在飞时点「艺人」。用例：单测 `apps/web/test/lib/viewTransition.test.ts`（`skip` 与连点两例，去掉掐断即红）；E2E `test/navigation.spec.ts`「磁带下钻返回的转场未结束时切 tab」（先等 `running` 快照层出现，点 tab，踩两帧后断言其已清零——去掉掐断 3/3 必红）。
+- 何时重新审视：若希望「同页换搜索词」也有转场，应改为按**内容区是否被替换**（而非路径是否变化）判定，并先解决 VT 被中断时的快照滞留。
+
+## ADR-046：搜索结果累积列表必须去重——上游跨页重复导致 React key 重复、旧卡片残留
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：用户报「搜索页几个 tab 之间互相污染：磁带卡混进艺人 / 专辑 / 歌单」，且「来回切换越来越多」。DOM 探针证实**确有其事**：其它分类 tab 的 `.card-grid` 首位真的残留一张 `.card--cassette`（网格子元素 21 = 20 艺人 + 1 磁带卡；艺人分页后 41 / 61 同步 +1）。
+- 根因：**上游分页会跨页返回同一实体**——实测 B 站搜索结果 `BV1Ws411v7Zu` 同时出现在第 1、2 页。搜索页把各页拼接成累积列表，于是出现重复项；`CassetteCard key={c.id}`（及其它卡片）因此出现**重复 React key**，控制台警告
+  `Encountered two children with the same key … may cause children to be duplicated and/or omitted`。协调（reconciliation）随即错乱、**旧节点残留在 DOM**；换 tab 时 `.card-grid` 容器被复用，残留卡片就跟着留在新 tab 上。翻页越多、重复越多 ⇒ 「越来越多」。
+- 决策：
+  1. 新增 `apps/web/src/lib/dedupe.ts` 的 `dedupeByKey(list, keyOf)`：按 `keyOf`（= `<source>:<id>`，仓库身份铁律）去重、保留首次出现。
+  2. `pages/Search.tsx` 的**所有累积处**一律先去重：首屏灌入（四类 + 磁带）与 `loadMore` 追加（四类 + 磁带）都过 `uniq`。
+  3. 渲染 `key` 一律改用 `keyOf(x)` 而非裸 `x.id`——既合仓库身份铁律，也防跨源同 id 撞车。
+  4. `loadMore` 加**同步单飞锁**（`inflightRef`）：原守卫读的是 state（`pagers[tab].loading`），两次背靠背触发（哨兵连发 / 快速滚动）时闭包里的它都还是 `false`，会取两次同一页码——既重复又跳页。
+- 考虑过的方案：① 「切 tab 清空状态」——**否决**：根因是重复身份键、与状态保留无关；砍掉 ADR-043 的 tab 滚动记忆属误伤，且不治本（磁带 tab 自身仍会重复渲染同一盘）。② 上游翻页时跳过重复（服务端）——不可行：各页是彼此独立的无状态请求，只有**累积方**（前端）能看到全貌。
+- 为什么选这个：去重后累积列表天然唯一，React 协调恢复正常；改动集中在累积点，最小且根治。
+- 后果 / 已知边界：累积列表长度可能小于「页数 × 每页」（重复项被丢），故「`res.X.length >= PAGE_SIZE` ⇒ 还有下一页」的判据略有偏差（下一页会补回），不影响正确性。
+- 回归：单测 `apps/web/test/lib/dedupe.test.ts`（含「模拟上游跨页重复」用例）；E2E `test/navigation.spec.ts`「磁带 tab 翻页后切到其他 tab：不得有磁带卡混进来」（去掉去重 → `toHaveCount` 得到 1，必红），并断言控制台无重复 key 警告。
+- 何时重新审视：若上游改成分页不重叠，此去重成为多余但无害的防御。

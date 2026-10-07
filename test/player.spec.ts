@@ -348,6 +348,45 @@ test.describe('搜索与播放', () => {
     expect(rows).toBeGreaterThan(0)
   })
 
+  test('浏览磁带后换词：结果刷新为新词，不残留上一个查询（回归）', async ({
+    page,
+  }) => {
+    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    await expect(page.locator('.track-row').first()).toBeVisible({
+      timeout: 15000,
+    })
+    const firstBefore = await page
+      .locator('.col-title__name')
+      .first()
+      .textContent()
+
+    // 切到磁带 tab，点进一盘磁带再返回——触发搜索页重挂 + 会话级缓存恢复
+    await page.getByRole('tab', { name: '磁带' }).click()
+    await expect(page.locator('.card--cassette').first()).toBeVisible({
+      timeout: 20000,
+    })
+    await page.locator('.card--cassette').first().click()
+    await expect(page).toHaveURL(/\/playlist\/bilibili\//, { timeout: 15000 })
+    await page.goBack()
+    await expect(page.locator('.card--cassette').first()).toBeVisible({
+      timeout: 15000,
+    })
+
+    // 换词：应刷新为新词结果（并回到「歌曲」tab），而非残留旧词 / 旧磁带
+    await page.getByTestId('search-input').fill('周杰伦 晴天')
+    await page.getByTestId('search-input').press('Enter')
+    await expect(page).not.toHaveURL(/tab=cassette/)
+    await expect(page.locator('.track-row').first()).toBeVisible({
+      timeout: 20000,
+    })
+    await expect(page.locator('.card--cassette')).toHaveCount(0)
+    const firstAfter = await page
+      .locator('.col-title__name')
+      .first()
+      .textContent()
+    expect(firstAfter).not.toBe(firstBefore)
+  })
+
   test('点击结果行开始真实播放（audio 未暂停且时间前进）', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
@@ -826,7 +865,7 @@ test.describe('卡片播放按钮', () => {
 })
 
 test.describe('搜索分栏与艺人 / 专辑跳转', () => {
-  test('搜索结果分为歌曲 / MV / 艺人 / 专辑 / 歌单五个 tab', async ({
+  test('搜索结果分为歌曲 / 磁带 / 艺人 / 专辑 / 歌单五个 tab', async ({
     page,
   }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))

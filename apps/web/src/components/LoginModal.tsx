@@ -42,7 +42,7 @@ export function LoginModal() {
 
   const [source, setSource] = useState<MusicSource>(modalSource)
 
-  // 仅列出已确认**支持登录**的源（`loginable`；含 MV 渠道 B 站，未加载的源暂时不出现）
+  // 仅列出已确认**支持登录**的源（`loginable`；含磁带渠道 B 站，未加载的源暂时不出现）
   const loggableSources = ALL_SOURCES.filter((s) => status[s]?.loginable)
 
   // 扫码状态

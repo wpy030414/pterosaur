@@ -1,10 +1,10 @@
-# Research — B 站（哔哩哔哩）MV 音频接入
+# Research — B 站（哔哩哔哩）磁带音频接入
 
-> 状态：**已落地**（MV 渠道，只放音频）。相关：`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`（ADR-022 / ADR-031 / **ADR-033**）、`apps/server/src/sources/bilibili.ts`。
+> 状态：**已落地**（磁带渠道，只放音频）。相关：`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`（ADR-022 / ADR-031 / ADR-033 / **ADR-044**）、`apps/server/src/sources/bilibili.ts`。
 
 ## 结论
 
-- B 站视频是 **DASH 音视频分轨**：取流接口同时给出 `dash.video[]` 与 `dash.audio[]`。本项目**只取 `dash.audio`**、不解析视频——即「MV 只放音频」。
+- B 站视频是 **DASH 音视频分轨**：取流接口同时给出 `dash.video[]` 与 `dash.audio[]`。本项目**只取 `dash.audio`**、不解析视频——即「磁带只放音频」。
 - 音频直链是 `*.bilivideo.*` / `*.mcdn.bilivideo.cn` 上的**明文 m4s**（fMP4/AAC，带 `Accept-Ranges: bytes`），**无 DRM**，可沿用既有 `/stream/:source/:id` 明文代理。
 - **搜索**首选 `x/web-interface/search/all/v2`（实测未被风控）；`x/web-interface/wbi/search/type` 会回 `v_voucher` 人机验证，弃用。
 - **取字节必须带 `Referer: https://www.bilibili.com`**，否则 403。
@@ -31,6 +31,14 @@
 - **分P 一对多**：`x/web-interface/view?bvid=` **一次请求**即含标题 / 封面 / UP 主与 `pages[]`（每页 `cid`/`page`/`part`/`duration`），故 `parts()` 无需再请求 `pagelist`；展开项 `id` 为 `<bvid>:<cid>`。
 - **封面防盗链**：`i0–iN.hdslb.com` 对**异域 `Referer` 返回 403**（无 Referer 才 200）——故 `<img>` 与 SW 图片回源均带 `referrerPolicy: 'no-referrer'`。
 - **匿名解析重试**：`bGet` **只要任何一次请求失败就重试**（网络错误 / 非 2xx / `code !== 0`，**与错误码无关**），固定 333ms 间隔、共 5 次。
+
+## 磁带（类歌单化，ADR-044）
+
+> 渠道其余不变（只放音频、字幕作歌词），仅把搜索结果的**呈现与身份**从「平铺 Track」改为「类歌单的磁带」。
+
+- **磁带 = 一个 `Playlist`（`source:'bilibili'`, `id=bvid`）**：`trackCount`=分P 数、`creator`=UP 主。适配器以此实现 **`searchPlaylists`**（= 领域命名的 `searchCassettes`）与 **`playlistTracks`**，从而白拿歌单的收藏 / 侧边栏 / 云同步 / 详情页（`/playlist/bilibili/:bvid`）。`buildCassette` / `searchCassettes` / `playlistTracks` 见 `apps/server/src/sources/bilibili.ts`。
+- **分P 数需逐条补查**：`search/all/v2` 的 video 组**不含**分P 数（实测字段里没有 `videos`）——只能对每条结果再查一次 `x/web-interface/view?bvid=` 取 `pages.length`。故 `searchCassettes` 对整页结果**并发受限（上限 4）**地补查，单条 **5s 超时**；失败 / 超时**降级为 `trackCount` 留空**（不写 0，否则卡片会置灰「播放」）。整批结果再由 `/api/search/all` 缓存 2h（ADR-042）摊薄成本。
+- **`view` 进程内 memo**（LRU `max:200`、TTL 2h、键 `sha1(cookie)|bvid`）：搜索补查与「点进详情 / 展开分P」共用，同一 bvid 同凭证至多打一次上游。
 
 ## 风险
 

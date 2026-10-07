@@ -90,6 +90,12 @@ export function nextFrame(cb: () => void): void {
 let routeToken = 0
 
 /**
+ * 在飞的转场。开新转场前先 `skipTransition()` 掐掉上一条——被中断的转场若放任自流，
+ * 浏览器会把它的旧内容快照层留在 top layer 不拆（连续快速切换时表现为旧内容残影越积越多）。
+ */
+let activeTransition: { skipTransition?: () => void } | null = null
+
+/**
  * 在 View Transition 包裹下执行一次路由更新。
  *
  * 满足以下任一条件时直接执行（不转场）：浏览器不支持该 API、用户偏好减少动效、
@@ -102,18 +108,38 @@ let routeToken = 0
  *
  * @param dir 转场方向：`forward`（前进，默认）或 `back`（后退）。写入 `data-route-dir`，
  *   供 CSS 决定内容动画正放 / 逆放（后退 = 逆速度播放）。
+ * @param opts.skip 强制走「不转场」分支（仍以 `flushSync` 提交、仍重置滚动、仍清标记）。
+ *   用于**路径不变**的同页变更（如仅改查询串的切 tab）：那是页内状态切换、不是页面切换，
+ *   为内容区拍一张旧快照盖上去只会留下上一屏的残影。
+ *
+ * 无论走哪条分支，都会先 `skipTransition()` 掐掉在飞的转场：否则旧快照会滞留在 top layer，
+ * 盖住随后提交的新内容（见函数内注释）。
  */
 export function startRouteTransition(
   update: () => void,
   dir: 'forward' | 'back' = 'forward',
+  opts: { skip?: boolean } = {},
 ): void {
   const doc = document as Document & {
-    startViewTransition?: (
-      cb: () => void,
-    ) => { finished?: Promise<void> } | undefined
+    startViewTransition?: (cb: () => void) =>
+      | {
+          finished?: Promise<void>
+          skipTransition?: () => void
+        }
+      | undefined
   }
   const root = document.documentElement
   const token = ++routeToken
+
+  /**
+   * **任何**一次更新前，先掐掉在飞的转场。
+   *
+   * 关键：连「不转场」的路径也要掐——否则在**上一条路由转场还在跑**（如：下钻详情后返回，
+   * 580ms 内）时点 tab，本次 `flushSync` 会直接在旧快照**底下**换掉内容，而那张旧快照仍
+   * 盖在最上层继续画——表现为**上一屏（磁带）污染当前 tab**（艺人 / 专辑 / 歌单）。
+   */
+  activeTransition?.skipTransition?.()
+  activeTransition = null
 
   // 转场结束后摘名；推迟到下一帧，躲开伪树拆除期（其间改样式会触发快照重建）。
   // 只清「仍是最新一段」的标记，避免快速连续导航时被旧转场提前摘名。
@@ -127,10 +153,12 @@ export function startRouteTransition(
   if (
     !doc.startViewTransition ||
     prefersReducedMotion() ||
-    hasBlockingOverlay()
+    hasBlockingOverlay() ||
+    opts.skip
   ) {
     // 非转场路径同样以 flushSync 提交：让滚动恢复的布局 effect 先于归零执行，
     // 否则归零会先跑、把旧条目的位置错误地记成 0。方向仍写入，供降级进场动画判断逆放。
+    delete root.dataset.routeVt
     root.dataset.routeDir = dir
     setScrollSaving(false)
     flushSync(update)
@@ -154,7 +182,12 @@ export function startRouteTransition(
   setScrollSaving(false)
   const resumeSaving = () => setScrollSaving(true)
 
-  let transition: { finished?: Promise<void> } | undefined
+  let transition:
+    | {
+        finished?: Promise<void>
+        skipTransition?: () => void
+      }
+    | undefined
   try {
     transition = doc.startViewTransition(() => {
       flushSync(update)
@@ -173,6 +206,11 @@ export function startRouteTransition(
     return
   }
 
-  if (transition?.finished) transition.finished.then(clearMarks, clearMarks)
-  else clearMarks()
+  activeTransition = transition ?? null
+  const settled = () => {
+    if (activeTransition === transition) activeTransition = null
+    clearMarks()
+  }
+  if (transition?.finished) transition.finished.then(settled, settled)
+  else settled()
 }

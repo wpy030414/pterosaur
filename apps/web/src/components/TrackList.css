@@ -68,7 +68,7 @@
   --tl-cols: 32px minmax(0, 4fr) minmax(0, 2.4fr) 56px 76px;
 }
 
-/* 无专辑列变体（MV 列表等）：序号 / 标题 / 时长 / 操作，标题列占满余宽 */
+/* 无专辑列变体（磁带列表等）：序号 / 标题 / 时长 / 操作，标题列占满余宽 */
 .track-list--no-album,
 .track-list--no-album .track-list__head,
 .track-list--no-album .track-row {
