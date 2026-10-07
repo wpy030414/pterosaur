@@ -2,6 +2,7 @@ import type {
   Album,
   ApiResult,
   Artist,
+  LibraryData,
   LoginStatus,
   Lyric,
   MusicSource,
@@ -155,9 +156,9 @@ export const api = {
   syncGet: () =>
     get<{ payload: SyncEnvelope | null }>(`${API_BASE}/sync/library`),
 
-  /** 覆盖写入本人 library 的云端副本（LWW）。 */
-  syncPut: (envelope: SyncEnvelope) =>
-    put<SyncEnvelope>(`${API_BASE}/sync/library`, envelope),
+  /** 覆盖写入本人 library 的云端副本（整文档）；返回服务端指派版本后的封套。 */
+  syncPut: (state: LibraryData) =>
+    put<SyncEnvelope>(`${API_BASE}/sync/library`, { state }),
 }
 
 export type Api = typeof api

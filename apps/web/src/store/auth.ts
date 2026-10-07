@@ -7,6 +7,7 @@ import {
 } from '@pterosaur/shared/types'
 import { api } from '../api/client.js'
 import { clearAllAppCaches } from '../lib/clearCaches.js'
+import { useSync } from './sync.js'
 
 interface AuthState {
   /** 各源各自的登录态（无源的浏览器会话互不影响）。 */
@@ -105,6 +106,8 @@ export const useAuth = create<AuthStore>()((set) => ({
 /** 扫码登录成功后写入该源登录态并关闭弹窗，并清空全部缓存（凭证已变更）。 */
 export function finishQrLogin(source: MusicSource, status: LoginStatus): void {
   applyLogin(source, status)
+  // 登录后**默认开启云同步**并绑定该账号；active 翻真即触发一次「云端权威」同步（见 useLibrarySync）。
+  if (status.userId) useSync.getState().enable(source, status.userId)
   void clearAllAppCaches()
 }
 

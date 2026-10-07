@@ -1,5 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { X, Trash2, RefreshCw, Loader2, RotateCcw } from 'lucide-react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
+import {
+  X,
+  Trash2,
+  RefreshCw,
+  Loader2,
+  RotateCcw,
+  Image as ImageIcon,
+} from 'lucide-react'
 import { AUDIO_LEVELS, type AudioLevel } from '@pterosaur/shared/types'
 import { useSettingsDialog, confirmDialog } from '../store/ui.js'
 import { useSync } from '../store/sync.js'
@@ -12,6 +25,8 @@ import {
 import { checkForUpdates, postToServiceWorker } from '../lib/pwa.js'
 import { pushEmptyLibrary } from '../lib/sync.js'
 import { resetAll } from '../lib/reset.js'
+import { removeBackground, saveBackground } from '../lib/background.js'
+import { accentFromBlob } from '../lib/accent.js'
 import { formatBytes } from '../lib/formatBytes.js'
 import { IconButton } from './IconButton.js'
 import './SettingsDialog.css'
@@ -37,11 +52,16 @@ export function SettingsDialog() {
   const closeSettings = useSettingsDialog((s) => s.closeSettings)
   const level = useSettings((s) => s.level)
   const setLevel = useSettings((s) => s.setLevel)
+  const background = useSettings((s) => s.background)
+  const setBackground = useSettings((s) => s.setBackground)
 
   const [usage, setUsage] = useState<MediaUsage | null>(null)
   const [quota, setQuota] = useState<number | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
+  const [bgBusy, setBgBusy] = useState(false)
+  const [bgError, setBgError] = useState(false)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
   const refresh = useCallback(async () => {
     setUsage(await mediaUsage())
@@ -101,6 +121,39 @@ export function SettingsDialog() {
     // 结束时页面通常会卸载；若未刷新则恢复按钮
     await checkForUpdates()
     setBusy(null)
+  }
+
+  const handlePickBackground = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 允许再次选择同一文件
+    if (!file) return
+    setBgBusy(true)
+    setBgError(false)
+    try {
+      const kind = file.type.startsWith('video') ? 'video' : 'image'
+      await saveBackground(file)
+      // 自动取色作为主题色（失败则回落默认红）
+      const accent = await accentFromBlob(file)
+      setBackground({ kind, mime: file.type, accent: accent ?? '#fa243c' })
+    } catch (err) {
+      // 写入失败（如 IndexedDB 不可用 / background store 缺失）→ 明示，且**不落配置**
+      console.warn('[settings] 设置背景失败', err)
+      setBgError(true)
+    } finally {
+      setBgBusy(false)
+    }
+  }
+
+  const handleClearBackground = async () => {
+    if (bgBusy) return
+    setBgBusy(true)
+    setBgError(false)
+    try {
+      await removeBackground()
+      setBackground(null)
+    } finally {
+      setBgBusy(false)
+    }
   }
 
   const handleReset = async () => {
@@ -172,6 +225,53 @@ export function SettingsDialog() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="settings-dialog__section">
+          <h3 className="settings-dialog__section-title">背景</h3>
+          <p className="settings-dialog__desc">
+            自定义应用背景，并自动从背景中取主题色。
+          </p>
+          <div className="settings-dialog__btnrow">
+            <button
+              type="button"
+              className="settings-dialog__btn settings-dialog__btn--neutral"
+              onClick={() => fileRef.current?.click()}
+              disabled={bgBusy}
+              data-testid="pick-background"
+            >
+              {bgBusy ? (
+                <Loader2 size={15} className="spinner" />
+              ) : (
+                <ImageIcon size={15} />
+              )}
+              {background ? '更换背景' : '上传背景'}
+            </button>
+            {background && (
+              <button
+                type="button"
+                className="settings-dialog__btn settings-dialog__btn--danger"
+                onClick={handleClearBackground}
+                disabled={bgBusy}
+                data-testid="clear-background"
+              >
+                <Trash2 size={15} /> 清除背景
+              </button>
+            )}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*,video/*"
+            hidden
+            data-testid="background-input"
+            onChange={handlePickBackground}
+          />
+          {bgError && (
+            <p className="settings-dialog__error" data-testid="background-error">
+              背景保存失败，请重试；若仍失败可刷新页面后再试。
+            </p>
+          )}
         </section>
 
         <section className="settings-dialog__section">

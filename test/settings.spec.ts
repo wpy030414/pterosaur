@@ -153,6 +153,19 @@ async function favoriteCount(page: Page): Promise<number> {
   return (await storeCounts(page)).favorites
 }
 
+/** 1×1 红色 PNG，用作自定义背景的 fixture。 */
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+/** 读取根元素上被 JS 覆写的 `--accent`（空串表示未覆写、回落默认红）。 */
+function accentVar(page: Page): Promise<string> {
+  return page.evaluate(() =>
+    document.documentElement.style.getPropertyValue('--accent'),
+  )
+}
+
 test.describe('设置弹窗', () => {
   test('顶栏齿轮打开设置；Esc 关闭', async ({ page }) => {
     await page.goto('/')
@@ -232,6 +245,39 @@ test.describe('设置弹窗', () => {
       'aria-checked',
       'true',
     )
+  })
+
+  test('上传自定义背景：生效、取色替换主题色、可持久化与清除', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.getByTestId('settings-button').click()
+    await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible()
+
+    // 未设置背景时无背景层、强调色为默认红（未被 JS 覆写）
+    await expect(page.locator('.app-bg')).toHaveCount(0)
+    expect(await accentVar(page)).toBe('')
+
+    await page.getByTestId('background-input').setInputFiles({
+      name: 'bg.png',
+      mimeType: 'image/png',
+      buffer: PNG_1x1,
+    })
+
+    // 背景层出现，且强调色被取色结果覆写
+    await expect(page.locator('.app-bg')).toBeVisible()
+    await expect.poll(() => accentVar(page)).not.toBe('')
+
+    // 持久化：刷新后仍在（媒体本体在 IndexedDB、元数据在 localStorage）
+    await page.reload()
+    await expect(page.locator('.app-bg')).toBeVisible()
+    expect(await accentVar(page)).not.toBe('')
+
+    // 清除背景 → 背景层消失、强调色回落默认
+    await page.getByTestId('settings-button').click()
+    await page.getByTestId('clear-background').click()
+    await expect(page.locator('.app-bg')).toHaveCount(0)
+    await expect.poll(() => accentVar(page)).toBe('')
   })
 
   test('检查更新触发整页刷新', async ({ page }) => {

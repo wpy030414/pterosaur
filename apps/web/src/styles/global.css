@@ -210,6 +210,41 @@ ol {
   }
 }
 
+/*
+ * 后退（浏览器 / 顶栏前进后退按钮）：内容动画**逆速度播放**——旧内容向下淡出、
+ * 新内容自上方滑入（即上面两条关键帧的镜像）。方向由 lib/viewTransition.ts 写入
+ * <html data-route-dir>。仅覆盖 animation-name，时长 / 缓动 / 延迟沿用基础规则。
+ */
+:root[data-route-dir='back'] ::view-transition-old(app-content) {
+  animation-name: vt-content-out-rev;
+}
+
+:root[data-route-dir='back'] ::view-transition-new(app-content) {
+  animation-name: vt-content-in-rev;
+}
+
+@keyframes vt-content-out-rev {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes vt-content-in-rev {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ---------- 主题转场：新主题自按钮圆形揭示（clip-path circle） ---------- */
 /*
  * 圆心与半径由 lib/themeTransition.ts 注入为 `--theme-vt-x/-y/-r`（写在 <html> 上，

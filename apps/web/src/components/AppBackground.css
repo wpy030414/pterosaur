@@ -1,0 +1,18 @@
+/*
+ * 自定义应用背景层。铺在顶栏 / 侧边栏 / 主内容区之下，**不含底部播放条**：
+ * 底边留出 `--playerbar-height`，正好让 PlayerBar 落在此层之外。
+ * 用负 z-index 藏在内容之后——`.app-shell` 的 `isolation: isolate` 保证它不会逃到 body 之后。
+ */
+.app-bg {
+  position: absolute;
+  inset: 0 0 var(--playerbar-height) 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-bg__media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

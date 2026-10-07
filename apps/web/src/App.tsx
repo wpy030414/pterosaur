@@ -3,6 +3,7 @@ import { Route, Routes, useLocation } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar.js'
 import { Topbar } from './components/Topbar.js'
 import { PlayerBar } from './components/PlayerBar.js'
+import { AppBackground } from './components/AppBackground.js'
 import { NowPlaying } from './components/NowPlaying.js'
 import { QueuePanel } from './components/QueuePanel.js'
 import { LoginModal } from './components/LoginModal.js'
@@ -28,6 +29,7 @@ import { usePlaylistPrefetch } from './hooks/usePlaylistPrefetch.js'
 import { useContentScrollRestoration } from './hooks/useContentScrollRestoration.js'
 import { useSourceTheme } from './hooks/useSourceTheme.js'
 import { useApplyTheme } from './hooks/useTheme.js'
+import { useAccentFromBackground } from './hooks/useAccentFromBackground.js'
 import { usePresence } from './hooks/usePresence.js'
 import { supportsViewTransition } from './lib/viewTransition.js'
 import { audioEl } from './hooks/audioElement.js'
@@ -65,6 +67,7 @@ export default function App() {
   usePlaylistPrefetch()
   useContentScrollRestoration()
   useSourceTheme()
+  useAccentFromBackground()
 
   const searchRef = useRef<HTMLInputElement | null>(null)
   const focusSearch = () => searchRef.current?.focus()
@@ -89,6 +92,9 @@ export default function App() {
     <div className="app-shell">
       {/* 全局唯一的 audio 元素，由引擎驱动 */}
       <audio ref={audioEl} preload="metadata" data-testid="audio-engine" />
+
+      {/* 自定义应用背景层（铺在顶栏 / 侧边栏 / 主内容区之下，不含底部播放条） */}
+      <AppBackground />
 
       <Sidebar />
 

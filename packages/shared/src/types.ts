@@ -182,12 +182,21 @@ export interface LibraryData {
 }
 
 /**
- * 云同步封套：一份完整 library + 修改时间戳。
- * 冲突策略为 LWW（最新修改为准），故仅需单个 `updatedAt`。
+ * 云同步封套：一份完整 library + 服务端版本。
+ *
+ * 同步语义为**云端权威**：进入同步启用态（登录 / 开开关 / 打开页面）时以云端覆盖本地，
+ * 仅当云端为空才反过来以本地为准并上传。因此版本号由**服务端**指派（避免多设备时钟偏差），
+ * 客户端据 {@link SyncEnvelope.rev} 忽略自己推送的回声。
  */
 export interface SyncEnvelope {
   state: LibraryData
+  /** 服务端写入时刻（毫秒），由服务端指派。 */
   updatedAt: number
+  /**
+   * 服务端单调递增的版本号，由服务端指派。
+   * 客户端读取时可据此判断「云端是否更新」；旧载荷缺失时按 0 处理。
+   */
+  rev?: number
 }
 
 /** 一行歌词。 */

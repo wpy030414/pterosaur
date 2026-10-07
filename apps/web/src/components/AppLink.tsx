@@ -1,10 +1,10 @@
 import { NavLink, useNavigate, type NavLinkProps } from 'react-router-dom'
-import { startRouteTransition } from '../lib/viewTransition.js'
 
 /**
- * 包装 `NavLink`：左键点击时以 View Transition 播放内容区转场，并保留 active 样式。
+ * 包装 `NavLink`：左键点击时导航，并保留 active 样式。
  *
- * 因为本项目用的是声明式路由，`<NavLink viewTransition>` 不生效，故手动拦截点击。
+ * 内容区转场已**上移到路由器层**（见 `components/AppRouter.tsx`）：这里的 `navigate` 触发
+ * 的 push 会在 `history.listen` 里被统一包进 View Transition，故此处无需再手动包裹。
  * 带修饰键（新标签页等）或非左键点击时保留浏览器默认行为。
  */
 export function AppLink({ to, onClick, ...rest }: NavLinkProps) {
@@ -24,7 +24,7 @@ export function AppLink({ to, onClick, ...rest }: NavLinkProps) {
         )
           return
         e.preventDefault()
-        startRouteTransition(() => navigate(to, { replace: rest.replace }))
+        navigate(to, { replace: rest.replace })
       }}
       {...rest}
     />

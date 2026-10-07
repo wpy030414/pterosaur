@@ -83,8 +83,9 @@ export function nextFrame(cb: () => void): void {
  * 满足以下任一条件时直接执行（不转场）：浏览器不支持该 API、用户偏好减少动效、
  * 当前有浮层打开。`flushSync` 确保 DOM 在startViewTransition 的更新回调内同步提交，
  * 这是 React 配合 View Transitions 的官方推荐做法。
+ *
+ * 路由转场令牌：连续导航时只让最新一段摘名，避免提前摘下内容区的命名。
  */
-/** 路由转场令牌：连续导航时只让最新一段摘名，避免提前摘下内容区的命名。 */
 let routeToken = 0
 
 /**
@@ -97,52 +98,66 @@ let routeToken = 0
  * 转场期间给 `<html>` 打 `data-route-vt`——**只有路由转场**会让内容区（`.app-content`）
  * 参与快照（见 global.css / app.css）。主题与沉浸转场不命名它，故不会出现「转场结束后
  * 内容区恢复命名、其快照与伪树拆除赛跑」而导致的封面错位。
+ *
+ * @param dir 转场方向：`forward`（前进，默认）或 `back`（后退）。写入 `data-route-dir`，
+ *   供 CSS 决定内容动画正放 / 逆放（后退 = 逆速度播放）。
  */
-export function startRouteTransition(update: () => void): void {
+export function startRouteTransition(
+  update: () => void,
+  dir: 'forward' | 'back' = 'forward',
+): void {
   const doc = document as Document & {
     startViewTransition?: (
       cb: () => void,
     ) => { finished?: Promise<void> } | undefined
   }
+  const root = document.documentElement
+  const token = ++routeToken
+
+  // 转场结束后摘名；推迟到下一帧，躲开伪树拆除期（其间改样式会触发快照重建）。
+  // 只清「仍是最新一段」的标记，避免快速连续导航时被旧转场提前摘名。
+  const clearMarks = () =>
+    nextFrame(() => {
+      if (routeToken !== token) return
+      delete root.dataset.routeVt
+      delete root.dataset.routeDir
+    })
+
   if (
     !doc.startViewTransition ||
     prefersReducedMotion() ||
     hasBlockingOverlay()
   ) {
     // 非转场路径同样以 flushSync 提交：让滚动恢复的布局 effect 先于归零执行，
-    // 否则归零会先跑、把旧条目的位置错误地记成 0。
+    // 否则归零会先跑、把旧条目的位置错误地记成 0。方向仍写入，供降级进场动画判断逆放。
+    root.dataset.routeDir = dir
     flushSync(update)
-    resetContentScroll()
+    if (dir === 'forward') resetContentScroll()
+    clearMarks()
     return
   }
 
-  const root = document.documentElement
   // 仅路由转场命名内容区；必须在拍旧快照之前就绪
-  const token = ++routeToken
   root.dataset.routeVt = 'on'
+  root.dataset.routeDir = dir
 
   let transition: { finished?: Promise<void> } | undefined
   try {
     transition = doc.startViewTransition(() => {
       flushSync(update)
-      // 新内容就位后立即回到顶部，保证新快照从顶部开始
-      resetContentScroll()
+      // 新内容就位后立即回到顶部，保证新快照从顶部开始。
+      // **后退不归零**：后退要回到历史条目的原滚动位置，归零会把它记成 0（滚动恢复失效）。
+      if (dir === 'forward') resetContentScroll()
     })
   } catch {
-    // 抛错（如文档非 fully-active）：回退为直接切换并摘掉标记，避免残留
+    // 抛错（如文档非 fully-active）：回退为直接切换并摘掉命名标记（方向留待 clearMarks 清理）
     delete root.dataset.routeVt
     flushSync(update)
-    resetContentScroll()
+    if (dir === 'forward') resetContentScroll()
+    clearMarks()
     return
   }
 
-  // 转场结束后摘名；推迟到下一帧，躲开伪树拆除期（其间改样式会触发快照重建）。
-  // 只清「仍是最新一段」的标记，避免快速连续导航时被旧转场提前摘名。
-  const done = () =>
-    nextFrame(() => {
-      if (routeToken !== token) return
-      delete root.dataset.routeVt
-    })
-  if (transition?.finished) transition.finished.then(done, done)
-  else done()
+  if (transition?.finished) transition.finished.then(clearMarks, clearMarks)
+  else clearMarks()
 }

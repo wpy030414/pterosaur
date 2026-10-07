@@ -15,7 +15,8 @@ async function seedSavedAlbums(page: Page, count: number): Promise<void> {
   await page.evaluate(
     ({ db, key, count }) =>
       new Promise<void>((resolve, reject) => {
-        const req = indexedDB.open(db, 3)
+        // 不指定版本：库已由应用以最新版本（含 background store）建好，指定旧版本会 VersionError
+        const req = indexedDB.open(db)
         req.onupgradeneeded = () => {
           const d = req.result
           if (!d.objectStoreNames.contains('library'))

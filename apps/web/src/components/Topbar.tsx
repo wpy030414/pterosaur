@@ -18,7 +18,6 @@ import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { useAuth, activeSource } from '../store/auth.js'
 import type { MusicSource } from '@pterosaur/shared/types'
 import { useSync } from '../store/sync.js'
-import { syncNow } from '../lib/sync.js'
 import { useSidebarDrawer, useSettingsDialog } from '../store/ui.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
@@ -57,15 +56,11 @@ export function Topbar({ searchRef }: TopbarProps) {
   const openSettings = useSettingsDialog((s) => s.openSettings)
   const syncEnabled = useSync((s) => s.enabled)
 
-  /** 切换云同步开关：开启时绑定当前账号并立即同步一次。 */
+  /** 切换云同步开关：开启时绑定当前账号（进入同步即触发一次「云端权威」同步，见 useLibrarySync）。 */
   const toggleSync = () => {
     const store = useSync.getState()
-    if (store.enabled) {
-      store.disable()
-    } else {
-      store.enable(src ?? undefined, account?.userId)
-      void syncNow().catch((e) => console.warn('[sync] 首次同步失败', e))
-    }
+    if (store.enabled) store.disable()
+    else store.enable(src ?? undefined, account?.userId)
   }
 
   // URL 上的 q 变化时同步输入框（例如从其他页面跳来搜索）

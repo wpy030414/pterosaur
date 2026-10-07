@@ -12,7 +12,9 @@ import {
 import { usePlayer, currentPlayMode } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
+import { useSettings } from '../store/settings.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
+import { useBackgroundUrl } from '../hooks/useBackgroundUrl.js'
 import { seekTo } from '../hooks/audioElement.js'
 import { api } from '../api/client.js'
 import { getCachedLyric, putCachedLyric } from '../lib/lyricCache.js'
@@ -92,6 +94,11 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
    * 正是「有概率」复现的来源）。
    */
   const [bg, setBg] = useState<BgState>({ stable: null, incoming: null })
+
+  // 自定义应用背景：设置后，沉浸页隐藏封面、背景改用（高斯模糊的）自定义图。
+  const background = useSettings((s) => s.background)
+  const backgroundUrl = useBackgroundUrl()
+  const useCustomBg = !!background && !!backgroundUrl
 
   const coverUrl = current ? coverAt(current.cover, COVER_LARGE) : undefined
   useEffect(() => {
@@ -210,25 +217,37 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
 
   return (
     <div
-      className={`nowplaying${exiting ? ' nowplaying--exit' : ''}`}
+      className={`nowplaying${exiting ? ' nowplaying--exit' : ''}${useCustomBg ? ' nowplaying--nocover' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="正在播放"
       aria-hidden={!open}
     >
-      {/* 动态模糊背景：双层防闪（见组件内「切歌防闪背景」注释） */}
-      <div
-        className="nowplaying__bg"
-        style={bg.stable ? { backgroundImage: `url(${bg.stable})` } : undefined}
-        aria-hidden
-      />
-      {bg.incoming && (
+      {/* 动态模糊背景：设了自定义背景则用它（无需防闪双层），否则用当前封面双层防闪 */}
+      {useCustomBg ? (
         <div
-          key={bg.incoming}
-          className="nowplaying__bg nowplaying__bg-in"
-          style={{ backgroundImage: `url(${bg.incoming})` }}
+          className="nowplaying__bg"
+          style={{ backgroundImage: `url(${backgroundUrl})` }}
           aria-hidden
         />
+      ) : (
+        <>
+          <div
+            className="nowplaying__bg"
+            style={
+              bg.stable ? { backgroundImage: `url(${bg.stable})` } : undefined
+            }
+            aria-hidden
+          />
+          {bg.incoming && (
+            <div
+              key={bg.incoming}
+              className="nowplaying__bg nowplaying__bg-in"
+              style={{ backgroundImage: `url(${bg.incoming})` }}
+              aria-hidden
+            />
+          )}
+        </>
       )}
       <div
         className="nowplaying__scrim"
@@ -278,15 +297,17 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
         </header>
 
         <div className="nowplaying__body">
-          {/* 左：封面 */}
-          <div className="nowplaying__art">
-            <Cover
-              src={coverAt(current.cover, COVER_LARGE)}
-              alt={current.title}
-              radius="lg"
-              className={`nowplaying__cover${isPlaying ? ' nowplaying__cover--playing' : ''}`}
-            />
-          </div>
+          {/* 左：封面（设了自定义背景时不展示） */}
+          {!useCustomBg && (
+            <div className="nowplaying__art">
+              <Cover
+                src={coverAt(current.cover, COVER_LARGE)}
+                alt={current.title}
+                radius="lg"
+                className={`nowplaying__cover${isPlaying ? ' nowplaying__cover--playing' : ''}`}
+              />
+            </div>
+          )}
 
           {/* 右：歌词（上）+ 控制（下） */}
           <div className="nowplaying__panel">

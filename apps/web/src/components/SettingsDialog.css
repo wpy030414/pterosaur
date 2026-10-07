@@ -85,6 +85,13 @@
   color: var(--text-secondary);
 }
 
+.settings-dialog__error {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
 .settings-dialog__stat {
   display: flex;
   align-items: baseline;

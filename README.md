@@ -13,7 +13,7 @@
 
 ## 如何安装和运行？
 
-- 前置要求：Node.js ≥ 20，pnpm ≥ 12。
+- 前置要求：Node.js ≥ 23.4（云同步用内置 `node:sqlite`，22.5–23.3 需 `--experimental-sqlite`；建议 ≥ 24 LTS），pnpm ≥ 12。
 - 安装步骤：
 
 ```bash

@@ -209,6 +209,17 @@
   padding-top: 12px;
 }
 
+/* 设了自定义背景时不展示封面：主体收为单栏、面板居中。 */
+.nowplaying--nocover .nowplaying__body {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+.nowplaying--nocover .nowplaying__panel {
+  width: 100%;
+  max-width: 760px;
+}
+
 /* 左：封面 */
 .nowplaying__art {
   display: flex;

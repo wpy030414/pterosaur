@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { AppRouter } from './components/AppRouter.js'
 import type { MusicSource } from '@pterosaur/shared/types'
 import App from './App.js'
 import { useLibrary } from './store/library.js'
@@ -62,9 +62,9 @@ async function bootstrap(): Promise<void> {
 
   createRoot(rootEl as HTMLElement).render(
     <StrictMode>
-      <BrowserRouter>
+      <AppRouter>
         <App />
-      </BrowserRouter>
+      </AppRouter>
     </StrictMode>,
   )
 

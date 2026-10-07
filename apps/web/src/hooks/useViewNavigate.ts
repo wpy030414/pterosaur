@@ -1,23 +1,12 @@
-import { useCallback } from 'react'
-import { useNavigate, type NavigateOptions, type To } from 'react-router-dom'
-import { startRouteTransition } from '../lib/viewTransition.js'
+import { useNavigate } from 'react-router-dom'
 
 /**
- * 包装 `useNavigate`，让「跳转到新地址」经由 View Transition 播放内容区转场。
+ * 导航入口（薄封装）。
  *
- * 注意：`navigate(-1) / navigate(1)`（历史前进后退）依赖 `popstate` 异步更新，
- * 无法被 `startViewTransition` 同步包裹，故原样透传，不做转场。
+ * 内容区转场已**上移到路由器层**（见 `components/AppRouter.tsx`）：无论「跳转新地址」（push）
+ * 还是 popstate 前进 / 后退，都会在 `history.listen` 里被统一包进 View Transition。
+ * 故此 hook 只需原样透传 `useNavigate`——保留它只为维持既有调用点、并集中一处说明转场归属。
  */
 export function useViewNavigate() {
-  const navigate = useNavigate()
-  return useCallback(
-    (to: To | number, options?: NavigateOptions) => {
-      if (typeof to === 'number') {
-        navigate(to)
-        return
-      }
-      startRouteTransition(() => navigate(to, options))
-    },
-    [navigate],
-  )
+  return useNavigate()
 }

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { cors } from 'hono/cors'
+import { streamSSE } from 'hono/streaming'
 import { LRUCache } from 'lru-cache'
 import { adapterOf } from './sources/index.js'
 import type { SourceAdapter } from './sources/types.js'
@@ -20,7 +21,8 @@ import {
   type Artist,
   type Album,
 } from '@pterosaur/shared/types'
-import { isSyncEnvelope, readLibrary, writeLibrary } from './syncStore.js'
+import { isLibraryState, readLibrary, writeLibrary } from './syncStore.js'
+import { broadcast, subscribe } from './syncEvents.js'
 
 /**
  * 音频地址缓存：id|level|凭证指纹 -> **有序候选 https 地址**（首个优先）。
@@ -709,18 +711,55 @@ export function createApp() {
     }
   })
 
-  /** 覆盖写入本人 library 的云端副本（LWW：调用方负责携带更新的 updatedAt）。 */
+  /**
+   * 覆盖写入本人 library 的云端副本（整文档覆盖）。
+   * 版本号 / 写入时刻由**服务端**指派；成功后向同一账号的其它连接广播 `{ rev }`（SSE）。
+   */
   app.put('/api/sync/library', async (c) => {
     const identity = await requireIdentity(c)
     if (!identity) return c.json(fail('未登录', true), 401)
     const body: unknown = await c.req.json().catch(() => null)
-    if (!isSyncEnvelope(body)) return c.json(fail('同步载荷非法'), 400)
+    const state = (body as { state?: unknown } | null)?.state
+    if (!isLibraryState(state)) return c.json(fail('同步载荷非法'), 400)
+    const key = syncKey(identity)
     try {
-      await writeLibrary(syncKey(identity), body)
-      return c.json(ok<SyncEnvelope>(body))
+      const saved = await writeLibrary(key, state)
+      broadcast(key, { rev: saved.rev ?? 0 })
+      return c.json(ok<SyncEnvelope>(saved))
     } catch (e) {
       return c.json(fail(`写入云同步失败：${(e as Error).message}`), 400)
     }
+  })
+
+  /**
+   * 云同步的实时版本信号（SSE）。以访客本人 cookie 判定身份。
+   *
+   * 事件只携带 `{ rev }`；客户端据此按需重拉（见 `web/lib/sync.ts` 的 `startEventStream`）。
+   * 每隔约 25s 写一次心跳，压过 nginx / 代理的空闲超时；`X-Accel-Buffering: no` 关掉
+   * nginx 的响应缓冲，否则事件会被攒着不下发。
+   */
+  app.get('/api/sync/events', async (c) => {
+    const identity = await requireIdentity(c)
+    if (!identity) return c.json(fail('未登录', true), 401)
+    const key = syncKey(identity)
+    c.header('X-Accel-Buffering', 'no')
+    c.header('Cache-Control', 'no-cache')
+    return streamSSE(c, async (stream) => {
+      const unsubscribe = subscribe(key, stream)
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          stream.writeSSE({ event: 'ping', data: '' }).catch(() => {
+            clearInterval(timer)
+            resolve()
+          })
+        }, 25_000)
+        stream.onAbort(() => {
+          clearInterval(timer)
+          unsubscribe()
+          resolve()
+        })
+      })
+    })
   })
 
   /* ============================ 音频流代理 ============================ */

@@ -10,6 +10,7 @@ vi.mock('../../src/lib/idb.js', () => ({
   LIBRARY_STORE: 'library',
   MEDIA_STORE: 'media',
   MEDIA_META_STORE: 'mediaMeta',
+  BACKGROUND_STORE: 'background',
   idbClear: mocks.idbClear,
 }))
 vi.mock('../../src/lib/pwa.js', () => ({
@@ -26,11 +27,12 @@ beforeEach(() => {
 })
 
 describe('resetAll', () => {
-  it('清空三个 IDB store / 缓存 / SW 注册 / Web Storage，并触发刷新', async () => {
+  it('清空四个 IDB store / 缓存 / SW 注册 / Web Storage，并触发刷新', async () => {
     const reload = vi.fn()
     await resetAll({ reload })
 
     expect(mocks.idbClear.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'background',
       'library',
       'media',
       'mediaMeta',

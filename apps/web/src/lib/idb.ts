@@ -17,8 +17,9 @@ export const DB_NAME = 'pterosaur'
  * 库版本；新增 object store / 索引时递增。
  * v2 起用 `media` / `mediaMeta` 取代 v1 的 `audio` / `audioMeta`；
  * v3 因音频缓存键加入源前缀（`<source>:<id>|<level>`），旧键不再命中，升级时清空媒体缓存重建。
+ * v4 新增 `background` store（自定义应用背景的媒体本体）。
  */
-export const DB_VERSION = 3
+export const DB_VERSION = 4
 /** 存 zustand persist 封套 `{state, version}` 的通用键值 store（out-of-line key）。 */
 export const LIBRARY_STORE = 'library'
 /** 存**全部媒体** blob 的 store（音频 + 封面；out-of-line key = 缓存 key，值为裸 `Blob`）。 */
@@ -28,6 +29,12 @@ export const MEDIA_STORE = 'media'
  * 与 blob 分离，使 LRU 淘汰只需遍历轻量元数据、无需把全部 blob 载入内存。
  */
 export const MEDIA_META_STORE = 'mediaMeta'
+/**
+ * 存**自定义应用背景**的媒体本体（单条，out-of-line key 固定）。
+ * 独立于媒体缓存池：背景是本地设置，**不参与 LRU 淘汰**，也**不被登录 / 退出的清缓存波及**
+ * （见 `lib/clearCaches.ts`）。
+ */
+export const BACKGROUND_STORE = 'background'
 /** v1 遗留的音频 store 名（v2 升级时删除；缓存可弃，`library` 不受影响）。 */
 const LEGACY_AUDIO_STORE = 'audio'
 const LEGACY_AUDIO_META_STORE = 'audioMeta'
@@ -73,13 +80,33 @@ function openDB(): Promise<IDBDatabase | null> {
         // LRU 遍历/淘汰辅助索引
         meta.createIndex('lastAccess', 'lastAccess')
       }
+      if (!db.objectStoreNames.contains(BACKGROUND_STORE)) {
+        // 自定义应用背景的媒体本体（单条，out-of-line key 固定）
+        db.createObjectStore(BACKGROUND_STORE)
+      }
       // v1 的音频缓存 store 已被 media / mediaMeta 取代：缓存可弃，直接删除
       if (db.objectStoreNames.contains(LEGACY_AUDIO_STORE))
         db.deleteObjectStore(LEGACY_AUDIO_STORE)
       if (db.objectStoreNames.contains(LEGACY_AUDIO_META_STORE))
         db.deleteObjectStore(LEGACY_AUDIO_META_STORE)
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      // 他处请求更高版本时本连接必须让路：否则旧连接会把它永久阻塞（升级卡死）。
+      // 让路后清空缓存连接，使后续 getDB() 重新以新版本打开。
+      db.onversionchange = () => {
+        db.close()
+        dbPromise = null
+      }
+      resolve(db)
+    }
+    req.onblocked = () => {
+      console.warn(
+        '[idb] 升级被其它连接阻塞（可能有旧标签页或旧 Service Worker 持有连接）',
+      )
+      // 清空缓存连接，使后续 getDB() 能以新版本重试打开
+      dbPromise = null
+    }
     req.onerror = () => {
       console.warn('[idb] 打开 IndexedDB 失败，持久化降级为内存', req.error)
       resolve(null)

@@ -1,5 +1,6 @@
 import { clearAllCaches, unregisterServiceWorkers } from './pwa.js'
 import {
+  BACKGROUND_STORE,
   LIBRARY_STORE,
   MEDIA_META_STORE,
   MEDIA_STORE,
@@ -30,6 +31,7 @@ export async function resetAll(
       idbClear(LIBRARY_STORE),
       idbClear(MEDIA_STORE),
       idbClear(MEDIA_META_STORE),
+      idbClear(BACKGROUND_STORE),
     ]),
     clearAllCaches(),
     unregisterServiceWorkers(),

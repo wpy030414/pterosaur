@@ -13,6 +13,9 @@
 
 .app-shell {
   position: relative;
+  /* 建立独立层叠上下文：使自定义背景层的负 z-index 留在壳内（不逃到 body 之后），
+     同时不影响其上的网格内容（侧栏 / 主区 / 播放条）。 */
+  isolation: isolate;
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   grid-template-rows: 1fr var(--playerbar-height);
@@ -166,6 +169,11 @@
   animation: content-enter var(--dur-page-in) var(--ease-page) both;
 }
 
+/* 后退：降级进场动画同样逆速度播放（自上方滑入）。 */
+:root[data-vt='off'][data-route-dir='back'] .route-stage {
+  animation-name: content-enter-rev;
+}
+
 @keyframes content-enter {
   from {
     opacity: 0;
@@ -175,4 +183,33 @@
     opacity: 1;
     transform: none;
   }
+}
+
+@keyframes content-enter-rev {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================ 自定义应用背景 ============================ */
+/*
+ * 仅在设置了自定义背景时（由 AppBackground 在 <html> 打 data-has-bg）把三大区域调得更透明，
+ * 让背景图真正透出；未设置时保持默认外观。毛玻璃（backdrop-filter）保留。
+ * 特异性高于各组件的单类规则，故不必改 Sidebar.css / Topbar.css。
+ */
+:root[data-has-bg] .app-main {
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
+
+:root[data-has-bg] .sidebar {
+  background: color-mix(in srgb, var(--glass-sidebar) 42%, transparent);
+}
+
+:root[data-has-bg] .topbar {
+  background: color-mix(in srgb, var(--bg) 38%, transparent);
 }

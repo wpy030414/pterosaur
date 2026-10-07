@@ -220,7 +220,7 @@
 ## ADR-016：library 云同步——LWW + 服务端文件型存储（打破「无状态后端」）
 
 - 日期：2026-10-03
-- 状态：已采纳
+- 状态：**部分修订 by ADR-038**（存储改 SQLite、冲突策略改「云端权威」、新增 SSE）；激活条件与「身份只取本人 cookie」的边界仍有效
 - 背景：library（收藏 / 最近 / 自建歌单 / 收藏的网易云歌单 · 专辑）此前只存本机 IndexedDB（ADR-011），换设备即丢。需求：登录后于头像菜单新增「云同步」开关（默认关闭），开启后支持**多设备同步**。
 - 考虑过的方案：合并策略——① LWW（最新修改为准，整份覆盖）；② 两端并集合并。服务端存储——③ 文件型 JSON；④ 内存；⑤ 引入数据库。范围——仅 `library`。
 - 决策：① + ③。新增 `server/syncStore.ts`（`<DATA_DIR|仓库根/.data>/sync/<userId>.json`，**原子写** tmp→rename，形状与体积校验）；路由 `GET/PUT /api/sync/library` 以**访客本人 cookie** 解析 `userId`（身份接口，**绝不回退缺省凭证**），未登录 401。前端新增 `store/sync.ts`（持久化 `enabled` / `userId` / `updatedAt`）、`lib/sync.ts`（`decideSync` LWW 决策 + 订阅 library 变更防抖推送 + `applying` 回声抑制）、`hooks/useLibrarySync.ts`（挂 `App`）；开关在头像菜单、**「退出登录」上方**，默认关。
@@ -605,3 +605,54 @@
   - 预载失败在**本会话内不重试**（先登记再执行，避免失败循环）。
   - 登录 / 登出清空全部缓存（ADR-034）时同步清空页面去重表；但此时 `current/queue/index` 未变 → effect 不重跑，预载需**下次切歌**才恢复。
 - 何时重新审视：若引入音频分片缓存（ADR-012）可改为按需分段预热；若需给预载加显式取消协议或动态半径（如移动网络只预 ±1）。
+
+## ADR-038：云同步强化——SQLite 存储 + 服务端版本 + 云端权威 + SSE 实时推送 + 登录默认开启
+
+- 日期：2026-10-07
+- 状态：已采纳（**修订 ADR-016 / ADR-028**）
+- 背景：现网同步较薄——服务端按 `<source>-<id>` 存**单个 JSON 文件**（ADR-016），冲突用前端 `Date.now()` 时间戳做 LWW，开关默认**关闭**、须手动开，且没有任何**服务端 → 客户端**通道（换设备后要等本地再次触发才同步）。目标：更强、更适合规模、多设备近实时的同步。
+- 考虑过的方案：
+  - 存储：**A** 维持文件 JSON / **B** `node:sqlite`（内置、零依赖、磁盘索引）/ **C** `@seald-io/nedb`（Mongo 风格嵌入式）/ **D** `lowdb`。
+  - 冲突：**E** 维持 LWW（谁的时间戳新谁胜）/ **F** 云端权威（进入即云端覆盖本地，云端为空则本地为准并上传）。
+  - 实时：**G** 继续轮询 / **H** SSE（服务端推送版本信号）。
+- 决策：**B + F + H**，并**登录即默认开启**同步。
+  - 存储：新模块 `server/syncDb.ts` 用 `node:sqlite`（`DatabaseSync`）建表 `sync_docs(key PK, state JSON, rev, updated_at)`，库文件 `<DATA_DIR>/sync.db`（WAL）；首次打开把旧的 `sync/*.json` `INSERT OR IGNORE` 迁入。`syncStore.ts` 保持 `readLibrary/writeLibrary/clearLibrary` 的对外语义。
+  - **服务端指派版本**：`rev`（每次写入 +1）与 `updatedAt`（服务端 `Date.now()`）都由服务端产生，客户端不再传时间戳（旧 LWW 的时间戳在跨设备时钟偏差下不可靠）。
+  - 冲突：进入同步启用态（登录 / 开开关 / 打开页面）一律 `syncOnEntry()`：**拉到云端数据即以云端覆盖本地**，仅当**云端为空**才反过来以本地为准并上传（三处统一）。
+  - 实时：`GET /api/sync/events`（SSE，`hono/streaming` 的 `streamSSE`），按账号（`<source>-<id>`）分组注册。`PUT` 成功后 `broadcast(key, { rev })`（**只推 rev**）；客户端收 `rev` 大于本机已知版本时重拉并应用。断开后每 **5s** 重连、**永不停止**。
+  - 登录默认开启：`finishQrLogin` 成功后 `useSync.enable(source, userId)`。
+- 为什么选这个：
+  - **B**：零新依赖、磁盘索引 + WAL，比「每账号一个文件」更适合数据规模；仍按文档（`state` 存 JSON）使用，不涉关系建模。`node:sqlite` 可在 Node ≥ 22.5 使用，`23.4` 起无需 flag，故 `engines.node` 提升到 `>=23.4.0`。
+  - **F**：本地每次变更都即时上行，云端即最新版本；进入即以云端为准可直接收敛多设备。为规避「云端为空却覆盖本地」的数据丢失，保留「云端空 → 本地为准」这一唯一分支。
+  - **H**：SSE 比轮询省电省请求、延迟低；只推 `rev`（不推整份文档）使事件小、幂等、能容忍丢事件（断线重连后以重拉收敛）。
+- 为什么选其他：A 在账号数 / 数据量增长后是「海量小文件」，无索引；C 数据常驻内存、超大库不划算；D 仍是最轻的整文件 JSON。E 的客户端时钟偏差会让「快钟设备」总是胜出；G 轮询延迟高、请求多。
+- 后果 / 已知边界：
+  - **登录 / 开开关 / 打开页面即用云端覆盖本地**：本地**尚未上传**的改动会被丢弃（云端为空时例外）。这是「每次操作都上云」模型的前提，离线编辑不被保留（已与用户确认）。
+  - 部署：SSE 需 nginx `proxy_buffering off` + 足够长的 `proxy_read_timeout`（响应另带 `X-Accel-Buffering: no`）；后端仍为**单实例**（SQLite 不共享），水平扩展仍不成立。
+  - `engines.node` 由 `>=20` 提升为 `>=23.4.0`；`tsup` 需 `removeNodeProtocol: false`，否则 `node:sqlite` 被剥成 `sqlite` 而启动即崩。
+  - 身份边界不变：`/api/sync/*` 仍只以访客本人 cookie 解析身份，**绝不回退缺省凭证**。
+
+## ADR-039：自定义应用背景与「从背景取主题色」
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：需求——设置弹窗「音质」下方新增「背景」，允许上传图片 / 动图 / 视频作为应用背景（涵盖顶栏、侧边栏、主内容区，**不含底部播放条**），并自动从背景取色替换默认红主题色；此设置**仅存本地**。
+- 决策：
+  - 媒体本体落 **IndexedDB** 的**专用 `background` store**（IDB 库 v3 → v4；单条、固定键），settings store 只留轻量元数据 `{ kind, mime, accent }`（localStorage）。取色结果 `accent`（base hex）随元数据持久化，刷新无需重新取色、无闪变。
+  - 渲染：`components/AppBackground.tsx` 作 `.app-shell` 内绝对定位层（`z-index: -1`，配合 `.app-shell { isolation: isolate }`；`inset: 0 0 var(--playerbar-height) 0` 恰好排除底栏）。有背景时在 `<html>` 打 `data-has-bg`，CSS 据此把 `.app-main` / `.sidebar` / `.topbar` 调得更透明（默认外观不变）。
+  - 取色：`lib/accent.ts` 把图 / 视频首帧绘到 24×24 离屏 canvas 取平均色 → 规整到适合做强调色的饱和度 / 明度，派生 `--accent / --accent-hover / --accent-press / --accent-soft`；`hooks/useAccentFromBackground` 以 JS 覆写变量（仿 `useSourceTheme`），清除背景则回落 `:root` 的红。
+  - 沉浸播放页（`NowPlaying`）：设了自定义背景即**隐藏封面**、背景改用（高斯模糊的）自定义图；未设置则维持现状（封面 + 封面模糊）。
+  - 生命周期：`lib/clearCaches.ts`（登录 / 退出清缓存，ADR-034）**不触碰** `background` store（背景是本地设置、与账号无关）；`lib/reset.ts`（整库重置）会清它。
+- 为什么选这个：视频 / 动图动辄数 MB，localStorage ~5MB 且只存字符串，放不下 → 媒体本体必须落 IDB。独立 store 且**不参与媒体池 LRU**，避免被当作缓存淘汰。
+- 后果 / 已知边界：设置项**不同步到云**（本地项）；浅色 / 深色下背景可见度靠 `data-has-bg` 的 `color-mix` 透明度调节；取色对灰度图会回落接近默认红。
+
+## ADR-040：顶栏前进 / 后退也走内容区转场——自定义路由器包裹 popstate
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：内容区转场（Apple Music 风格交叉溶解）此前只覆盖「跳转新地址」（`useViewNavigate` 同步包裹 `startViewTransition`）；顶栏前进 / 后退按钮（`navigate(-1)/navigate(1)`）经 `history.go` 触发 **popstate**，其更新是异步的，无法同步包裹，故**没有转场**。
+- 考虑过的方案：① 维持现状；② 在早期 `popstate` 监听里起转场（依赖与 react-router 监听器的注册顺序，且其 `useSyncExternalStore` 式更新可能同步提交，`old` 快照会拍到新 DOM，脆弱）；③ **改用自定义路由器**，把转场统一上移到 `history.listen` 层。
+- 决策：③。新组件 `components/AppRouter.tsx` 镜像 react-router 的 `<BrowserRouter>`（`useRef` 惰性 `UNSAFE_createBrowserHistory({ v5Compat: true })` + `useLayoutEffect(() => history.listen(...))` + `<Router location navigationType navigator>`），但把状态提交经 `startRouteTransition(update, dir)`；`main.tsx` 用它替换 `<BrowserRouter>`。方向由 `window.history.state.idx` 的前后增减判定（增为前进、减为后退）。`startRouteTransition` 转场期间在 `<html>` 打 `data-route-vt` 与 `data-route-dir`；CSS 为 `back` 定义**镜像**关键帧（旧内容向下淡出、新内容自上方滑入 = 逆速度播放）。`useViewNavigate` 与 `AppLink` 因此简化为直通（转场不再由它们包裹，避免与路由器层双裹）。
+- 关键点：**后退不 `resetContentScroll()`**——后退要回到历史条目的原滚动位置，归零会把它记成 0 使滚动恢复失效（前进才归零）。
+- 为什么选这个：转场集中在**一处**（路由器层），push 与 pop 行为一致；顺带让浏览器前进 / 后退、触控板滑动也获得同样的转场；用 `idx` 判方向无需自建栈。
+- 后果 / 已知边界：依赖 react-router 的 `UNSAFE_createBrowserHistory`（标注为 unstable）；`data-route-vt` / `data-route-dir` 为瞬态标记，仅在转场期间存在。
