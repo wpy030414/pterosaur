@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
+  audioQuality,
   buildLyricFromSubtitles,
   buildParts,
   canonicalBiliImage,
@@ -11,6 +12,7 @@ import {
   mixinKey,
   normalizeBilibiliTrack,
   parseDuration,
+  parseSampleRate,
   pickAudio,
   pickSubtitleTracks,
   rankAudioUrls,
@@ -700,5 +702,170 @@ describe('getLyric（字幕 → 歌词，端到端桩）', () => {
     })
     // AI 中文轨不应被拉取（人工中文优先）
     expect(urls.some((u) => u.includes('subtitle/ai.json'))).toBe(false)
+  })
+})
+
+/* ---- 采样率探测（B 站 playurl 不回报 sr，读 fMP4 文件头） ---- */
+
+/** 构造一个 MP4 box：`[size:4][type:4][payload]`。 */
+const mp4Box = (type: string, payload: Uint8Array): Uint8Array => {
+  const out = new Uint8Array(8 + payload.length)
+  new DataView(out.buffer).setUint32(0, out.length)
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i)
+  out.set(payload, 8)
+  return out
+}
+
+const joinBytes = (parts: Uint8Array[]): Uint8Array => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let o = 0
+  for (const p of parts) {
+    out.set(p, o)
+    o += p.length
+  }
+  return out
+}
+
+/** AudioSampleEntry 载荷（28 字节）：采样率以 16.16 定点写在偏移 24 处。 */
+const audioEntry = (sr: number, fmt = 'mp4a'): Uint8Array => {
+  const p = new Uint8Array(28)
+  new DataView(p.buffer).setUint16(16, 2) // channelcount 占位
+  new DataView(p.buffer).setUint32(24, sr * 65536)
+  return mp4Box(fmt, p)
+}
+
+/** 最小音频 init segment：`ftyp + moov{ mvhd, trak{ mdia{ minf{ stbl{ stsd{ entry } } } } } }`。 */
+const initSegment = (entry: Uint8Array): Uint8Array =>
+  joinBytes([
+    mp4Box('ftyp', new Uint8Array(8)),
+    mp4Box(
+      'moov',
+      joinBytes([
+        mp4Box('mvhd', new Uint8Array(20)),
+        mp4Box(
+          'trak',
+          mp4Box(
+            'mdia',
+            mp4Box(
+              'minf',
+              mp4Box(
+                'stbl',
+                mp4Box('stsd', joinBytes([new Uint8Array(8), entry])),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    ),
+  ])
+
+describe('parseSampleRate（fMP4 init segment 解析采样率）', () => {
+  it('44100 / 48000 均从 stsd 首个 AudioSampleEntry 解出（16.16 定点取高 16 位）', () => {
+    expect(parseSampleRate(initSegment(audioEntry(44100)))).toBe(44100)
+    expect(parseSampleRate(initSegment(audioEntry(48000)))).toBe(48000)
+  })
+
+  it('stsd 首个 entry 非音频格式（如 avc1）→ undefined', () => {
+    expect(
+      parseSampleRate(initSegment(audioEntry(48000, 'avc1'))),
+    ).toBeUndefined()
+  })
+
+  it('乱字节 / 截断 / 空 → undefined 且不抛错', () => {
+    expect(parseSampleRate(new Uint8Array(0))).toBeUndefined()
+    expect(parseSampleRate(new Uint8Array(64).fill(0x5a))).toBeUndefined()
+    expect(
+      parseSampleRate(initSegment(audioEntry(48000)).slice(0, 12)),
+    ).toBeUndefined()
+  })
+})
+
+describe('audioQuality 采样率探测（回源读头 + 进程内缓存）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const jsonRes = (body: unknown) => ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  })
+
+  /** 打桩上游三段式：finger/spi + pagelist + playurl，CDN 部分由各用例自定义。 */
+  const stubApi = (
+    cdn: (url: string, init?: RequestInit) => Promise<unknown>,
+  ) => {
+    vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'b' } }))
+      if (url.includes('pagelist'))
+        return Promise.resolve(jsonRes({ code: 0, data: [{ cid: 7 }] }))
+      if (url.includes('playurl'))
+        return Promise.resolve(
+          jsonRes({
+            code: 0,
+            data: {
+              dash: {
+                audio: [
+                  {
+                    id: 30280,
+                    bandwidth: 204000,
+                    codecs: 'mp4a.40.2',
+                    mimeType: 'audio/mp4',
+                    baseUrl: 'https://upos-sz-mirror.bilivideo.com/a.m4s',
+                    backupUrl: ['https://upcdn.mcdn.bilivideo.cn/a.m4s'],
+                  },
+                ],
+              },
+            },
+          }),
+        )
+      return cdn(url, init)
+    })
+  }
+
+  it('官方 CDN 403 → 回退 mcdn 候选仍解出 sr；二次调用命中缓存不再回源', async () => {
+    const seg = initSegment(audioEntry(48000))
+    let cdnHits = 0
+    let sawRange = ''
+    stubApi((url, init) => {
+      if (url.includes('upos-sz-mirror'))
+        return Promise.resolve({ ok: false, status: 403 })
+      cdnHits++
+      sawRange = String(
+        (init?.headers as Record<string, string> | undefined)?.Range ?? '',
+      )
+      return Promise.resolve({
+        ok: true,
+        status: 206,
+        arrayBuffer: () => Promise.resolve(seg.buffer),
+      })
+    })
+    const id = 'BV1srProbeA'
+    await expect(audioQuality(id, undefined, 'exhigh')).resolves.toEqual({
+      codec: 'AAC',
+      br: 204000,
+      sr: 48000,
+    })
+    expect(cdnHits).toBe(1)
+    expect(sawRange).toMatch(/^bytes=0-/) // 只拉前缀，不取整文件
+    // 二次展示：进程内缓存生效，CDN 不再被请求
+    await expect(audioQuality(id, undefined, 'exhigh')).resolves.toEqual({
+      codec: 'AAC',
+      br: 204000,
+      sr: 48000,
+    })
+    expect(cdnHits).toBe(1)
+  })
+
+  it('CDN 全部 403 → sr 缺席，码率/编解码照常展示', async () => {
+    stubApi(() => Promise.resolve({ ok: false, status: 403 }))
+    await expect(
+      audioQuality('BV1srProbeB', undefined, 'exhigh'),
+    ).resolves.toEqual({
+      codec: 'AAC',
+      br: 204000,
+    })
   })
 })

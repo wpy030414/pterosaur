@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { RepeatMode, Track, MusicSource } from '@pterosaur/shared/types'
 import { streamUrlOf, keyOf, type AudioLevel } from '@pterosaur/shared/types'
+import { seekTo } from '../hooks/audioElement.js'
 
 /**
  * 播放模式：把「随机」与「循环」合并为单一 UI 概念，供播放条的合并按钮循环切换。
@@ -231,9 +232,12 @@ export const usePlayer = create<PlayerStore>()(
       prev: () => {
         const { queue, index, position } = get()
         if (!queue.length) return
-        // 已播放超过 3 秒则回到开头，符合主流播放器习惯
+        // 已播放超过 3 秒则回到开头，符合主流播放器习惯。
+        // 「回到开头」必须经 seekTo() 命令式驱动 <audio>：引擎对 position 是
+        // 单向回写（rAF 每帧以 audio.currentTime 覆盖 store），直接 set position
+        // 会在下一帧被真实播放位置覆盖，表现为点击后毫无反应。
         if (position > 3) {
-          set({ position: 0 })
+          seekTo(0)
           return
         }
         // 同 next：顺序游走（shuffle 的重排已在队列里），越界回绕到末尾

@@ -1,11 +1,11 @@
 # Pterosaur
 
-仿 Apple Music 的网页音乐播放器：**无需登录，随意畅听**；部署者可用 `pnpm log-in` 配置一份缺省账号，让未登录访客也能播放 VIP 曲目，访客登录自己的账号后则以本人账号为准。
+仿 Apple Music 的网页音乐播放器。音源来自网易云音乐 + B 站 MV 音频；部署者可用 `pnpm log-in` 配置缺省账号，让未登录访客播放 VIP 曲目；登录后自动多设备云同步资料库。
 
 ## 这是什么？
 
-- 定位：一个自托管的网页音乐播放器，音源来自网易云音乐，通过自带的 Hono 后端代理解析与串流。
-- 解决的核心问题：浏览器无法直连网易云音频（跨域 + `http://` 混合内容限制），也无法免登录播放 VIP 曲目。Pterosaur 用一层同源后端代理把这两件事都解决掉，前端只需关心播放体验。
+- 定位：一个自托管的网页音乐播放器，音源来自网易云音乐与 B 站 MV（只播音频），通过 Hono 后端代理解析、串流与扫码登录。
+- 解决的核心问题：浏览器无法直连网易云/B 站音频（跨域 + `http://` 混合内容），也无法免登录播放 VIP 曲目。Pterosaur 用同源后端代理解决，前端只关心播放体验。
 
 ## 为什么存在？
 
@@ -58,8 +58,8 @@ pnpm test:e2e     # Playwright 端到端（面向生产形态，会先自动 bui
 
 ## 核心技术
 
-- 前端：React 19、Vite 8、TypeScript、Zustand（状态 + localStorage 持久化）、React Router 7、lucide-react（图标）。
-- 后端：Hono 4 + `@hono/node-server`，`NeteaseCloudMusicApi` 解析，`lru-cache` 缓存音频地址。
+- 前端：React 19、Vite 8、TypeScript、Zustand（library 走 IndexedDB 持久化）、React Router 7、lucide-react（图标）、vite-plugin-pwa（PWA + Service Worker 媒体缓存）。
+- 后端：Hono 4 + `@hono/node-server`，`NeteaseCloudMusicApi`（网易云）、自研 B 站适配器（`dash.audio` + 字幕歌词）、`lru-cache`（音频地址缓存）、`node:sqlite`（云同步存储）。
 - 测试：Vitest + Testing Library（单元/组件）、Playwright（E2E）。
 
 更完整的设计说明见 [docs/](./docs)：[PRD](./docs/PRD.md)、[ARCHITECTURE](./docs/ARCHITECTURE.md)、[DECISIONS](./docs/DECISIONS.md)。

@@ -19,7 +19,11 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v))
 }
 
-function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+function rgbToHsl(
+  r: number,
+  g: number,
+  b: number,
+): { h: number; s: number; l: number } {
   r /= 255
   g /= 255
   b /= 255
@@ -47,7 +51,8 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
-  const h = (x: number) => clamp(Math.round(x), 0, 255).toString(16).padStart(2, '0')
+  const h = (x: number) =>
+    clamp(Math.round(x), 0, 255).toString(16).padStart(2, '0')
   return `#${h(r)}${h(g)}${h(b)}`
 }
 
@@ -90,9 +95,14 @@ function loadVideo(url: string): Promise<HTMLVideoElement> {
 
 /** 把媒体首帧绘到小 canvas 取平均色，返回 `#rrggbb`（失败 / 无 canvas 返回 `null`）。 */
 function sampleAverage(el: HTMLImageElement | HTMLVideoElement): string | null {
-  const isVideo = typeof HTMLVideoElement !== 'undefined' && el instanceof HTMLVideoElement
-  const w = isVideo ? (el as HTMLVideoElement).videoWidth : (el as HTMLImageElement).naturalWidth
-  const h = isVideo ? (el as HTMLVideoElement).videoHeight : (el as HTMLImageElement).naturalHeight
+  const isVideo =
+    typeof HTMLVideoElement !== 'undefined' && el instanceof HTMLVideoElement
+  const w = isVideo
+    ? (el as HTMLVideoElement).videoWidth
+    : (el as HTMLImageElement).naturalWidth
+  const h = isVideo
+    ? (el as HTMLVideoElement).videoHeight
+    : (el as HTMLImageElement).naturalHeight
   if (!w || !h) return null
   const size = 24
   const canvas = document.createElement('canvas')

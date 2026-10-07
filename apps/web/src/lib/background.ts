@@ -60,7 +60,8 @@ export async function saveBackground(blob: Blob): Promise<void> {
   // `idbPut` 在 store 缺失 / IDB 不可用时会静默降级为 no-op，故这里读回校验；
   // 失败即抛出，避免留下「设置了背景却看不到图」的幽灵状态（调用方据抛出决定不落配置）。
   const stored = await idbGet<Blob>(BACKGROUND_STORE, BACKGROUND_KEY)
-  if (!stored) throw new Error('背景写入失败（IndexedDB 不可用或 background store 缺失）')
+  if (!stored)
+    throw new Error('背景写入失败（IndexedDB 不可用或 background store 缺失）')
 }
 
 /** 删除背景媒体本体。 */

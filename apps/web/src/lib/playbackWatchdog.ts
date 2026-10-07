@@ -85,6 +85,22 @@ export function isPrematureEnd(
   )
 }
 
+/**
+ * 判定「播放实际健康」：未暂停、不在 seek 中、且已有当前帧与未来数据。
+ *
+ * 用途：缓冲态（buffering）由 waiting/stalled 置位、playing/canplay 解除，但媒体
+ * 事件会乱序与误报——典型如 Chromium 在 seek 目标已缓冲时**迟发** waiting（晚于
+ * playing，此后 readyState 不再跨越阈值，永远等不到解除事件）；stalled 则仅表示
+ * 网络取数暂无进展、不代表播放停滞。凡判定为健康，缓冲必为假，应立即纠正。
+ */
+export function isPlaybackHealthy(
+  paused: boolean,
+  seeking: boolean,
+  readyState: number,
+): boolean {
+  return !paused && !seeking && readyState >= HAVE_FUTURE_DATA
+}
+
 /** 创建看门狗状态机（无副作用，时间由调用方注入以便测试）。 */
 export function createWatchdog(
   config: WatchdogConfig = DEFAULT_WATCHDOG_CONFIG,

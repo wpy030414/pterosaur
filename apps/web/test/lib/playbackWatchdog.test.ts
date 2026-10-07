@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createWatchdog,
+  isPlaybackHealthy,
   isPrematureEnd,
   DEFAULT_WATCHDOG_CONFIG,
   HAVE_FUTURE_DATA,
@@ -36,6 +37,19 @@ describe('isPrematureEnd（截断流导致的提前结束判定）', () => {
     expect(isPrematureEnd(Number.NaN, 200)).toBe(false)
     expect(isPrematureEnd(0, 200)).toBe(false)
     expect(isPrematureEnd(Number.POSITIVE_INFINITY, 200)).toBe(false)
+  })
+})
+
+describe('isPlaybackHealthy（缓冲态误报判定）', () => {
+  it('播放中、非 seek、数据就绪 → 健康（迟发 waiting / stalled 误报应被忽略）', () => {
+    expect(isPlaybackHealthy(false, false, HAVE_FUTURE_DATA)).toBe(true)
+    expect(isPlaybackHealthy(false, false, HAVE_FUTURE_DATA + 1)).toBe(true)
+  })
+
+  it('暂停 / seek 进行中 / 未来数据不足 → 非健康（真缓冲提示应保留）', () => {
+    expect(isPlaybackHealthy(true, false, HAVE_FUTURE_DATA)).toBe(false)
+    expect(isPlaybackHealthy(false, true, HAVE_FUTURE_DATA)).toBe(false)
+    expect(isPlaybackHealthy(false, false, HAVE_FUTURE_DATA - 1)).toBe(false)
   })
 })
 

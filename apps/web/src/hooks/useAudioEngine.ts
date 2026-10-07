@@ -7,6 +7,7 @@ import { useSettings } from '../store/settings.js'
 import { audioEl } from './audioElement.js'
 import {
   createWatchdog,
+  isPlaybackHealthy,
   isPrematureEnd,
   type Watchdog,
 } from '../lib/playbackWatchdog.js'
@@ -164,9 +165,15 @@ export function useAudioEngine(): void {
       getState().setBuffering(false)
     }
 
-    // 缓冲耗尽（waiting / stalled）：数据未就绪，进入缓冲态
+    // 缓冲耗尽（waiting / stalled）：数据未就绪，进入缓冲态。
+    // 防御事件误报：Chromium 在 seek 目标已缓冲时会**迟发** waiting（晚于 playing，
+    // 且此后不再有 canplay/playing 来解除）；stalled 也仅表示网络取数暂无进展。
+    // 播放实际健康（未暂停、非 seek 中、有未来数据）时均为误报，直接忽略。
     const onWaiting = () => {
-      if (!disposed) getState().setBuffering(true)
+      if (disposed) return
+      if (isPlaybackHealthy(audio.paused, audio.seeking, audio.readyState))
+        return
+      getState().setBuffering(true)
     }
     // 数据就绪（playing / canplay）：退出缓冲态
     const onPlaybackReady = () => {
@@ -249,6 +256,15 @@ export function useAudioEngine(): void {
       const s = getState()
       if (!audio.paused && Math.abs(audio.currentTime - s.position) > 0.05) {
         s.setPosition(audio.currentTime)
+      }
+      // 缓冲态仲裁：事件侧防御（onWaiting）可能漏网（如迟发 waiting 到达时数据
+      // 尚未就绪、随后就绪但不再有任何解除事件），故每帧以真实播放状态为最终
+      // 事实——正在出声且数据就绪时，卡死的缓冲态立即纠正为 false。
+      if (
+        s.buffering &&
+        isPlaybackHealthy(audio.paused, audio.seeking, audio.readyState)
+      ) {
+        s.setBuffering(false)
       }
       // 弱网停滞看门狗：静默过久则尝试恢复，预算耗尽则暂停并提示
       const action = watchdog.tick(performance.now(), {

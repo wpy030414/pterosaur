@@ -6,6 +6,7 @@ import {
   currentPlayMode,
   audioSrc,
 } from '../../src/store/player.js'
+import { audioEl } from '../../src/hooks/audioElement.js'
 import type { Track } from '@pterosaur/shared/types'
 
 /** 构造测试用曲目。 */
@@ -198,6 +199,23 @@ describe('usePlayer.next / prev', () => {
     usePlayer.getState().prev()
     expect(usePlayer.getState().index).toBe(2)
     expect(usePlayer.getState().position).toBe(0)
+  })
+
+  it('position>3 时 prev 命令式回开头（驱动 audio.currentTime，防单向回写覆盖回归）', () => {
+    // 回归背景：曾用 set({position:0}) 实现，但引擎每帧以 audio.currentTime
+    // 回写 store.position，store 侧置 0 会被覆盖——点击表现为毫无反应。
+    // prev 必须经 seekTo 真正拨动 audio.currentTime。
+    const fake = { currentTime: 30, duration: 100 }
+    audioEl.current = fake as unknown as HTMLAudioElement
+    try {
+      usePlayer.setState({ index: 2, current: SONGS[2], position: 30 })
+      usePlayer.getState().prev()
+      expect(fake.currentTime).toBe(0)
+      expect(usePlayer.getState().position).toBe(0)
+      expect(usePlayer.getState().index).toBe(2)
+    } finally {
+      audioEl.current = null
+    }
   })
 
   it('开头 prev 回到末尾（repeat=all 语境）', () => {

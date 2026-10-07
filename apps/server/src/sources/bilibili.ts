@@ -366,6 +366,90 @@ function codecName(a: BiliAudio): string | undefined {
   return undefined
 }
 
+/* ============================ 采样率探测（fMP4 init segment） ============================ */
+
+/** MP4 box 树中需继续下钻的容器 box（init segment 的采样率深藏在 `moov/…/stbl/stsd` 里）。 */
+const MP4_CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl'])
+/** AudioSampleEntry 标准布局的音频格式（采样率字段偏移一致）；FLAC 轨走扩展布局，不在此路径。 */
+const MP4_AUDIO_FORMATS = new Set(['mp4a', 'ac-3', 'ec-3'])
+
+/**
+ * 从 fMP4 init segment（文件头部若干 KB）解析音频采样率（Hz）；解析不出返回 `undefined`。
+ *
+ * B 站 `playurl` **不回报采样率**（`dash.audio[]` 只有 id/bandwidth/mime/codecs），而共享
+ * `AudioQuality.sr` 有展示位——唯一诚实的取法是读文件头：音频 DASH 直链是完整 fMP4，
+ * `ftyp + moov` 在最前面，采样率就在 `stsd` 首个 sample entry（AudioSampleEntry，ISO 14496-12：
+ * box 头 8 字节 + SampleEntry 8 字节 + 保留 8 字节后，第 24 字节偏移处的 16.16 定点采样率）。
+ * 纯函数（递归走 box 树），导出供单测。
+ */
+export function parseSampleRate(bytes: Uint8Array): number | undefined {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const typeAt = (p: number): string =>
+    String.fromCharCode(bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3])
+
+  const find = (start: number, end: number): number | undefined => {
+    let pos = start
+    while (pos + 8 <= end) {
+      const size = view.getUint32(pos)
+      const type = typeAt(pos + 4)
+      const boxEnd = size === 0 ? end : pos + size // size=0：box 延伸到缓冲区末尾
+      if (boxEnd > end || boxEnd < pos + 8) return undefined // 脏数据：整段放弃
+      if (type === 'stsd') {
+        // 头 8 + version/flags 4 + entry_count 4 → 首个 sample entry
+        const entry = pos + 16
+        if (entry + 36 > boxEnd) return undefined
+        if (!MP4_AUDIO_FORMATS.has(typeAt(entry + 4))) return undefined
+        const sr = view.getUint32(entry + 8 + 24) >>> 16
+        return sr > 0 ? sr : undefined
+      }
+      if (MP4_CONTAINERS.has(type)) {
+        const hit = find(pos + 8, boxEnd)
+        if (hit !== undefined) return hit
+      }
+      pos = boxEnd
+    }
+    return undefined
+  }
+
+  return find(0, bytes.byteLength)
+}
+
+/** 采样率探测的进程内缓存（`<曲目id>#<音频流id>` → Hz），避免每次展示音质都回源头。 */
+const sampleRateCache = new Map<string, number>()
+const SAMPLE_RATE_CACHE_MAX = 500
+/** 探测一次取多少字节：音频 init segment（ftyp+moov）实测 < 4KB，取 32KB 裕量充足。 */
+const PROBE_BYTES = 32 * 1024
+
+/**
+ * 拉取音频直链头部（Range 前缀），解析 init segment 得采样率（Hz）。
+ * 逐个候选 URL 回退（与取流同思路，官方 upos 在前）；任何失败都只让 `sr` 缺席、
+ * 不影响码率/编解码展示。带超时，防单个 CDN 挂起拖住音质接口。
+ */
+async function probeSampleRate(
+  urls: string[],
+  cookie?: string,
+): Promise<number | undefined> {
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': UA,
+          Referer: REFERER,
+          Range: `bytes=0-${PROBE_BYTES - 1}`,
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!res.ok) continue
+      const hit = parseSampleRate(new Uint8Array(await res.arrayBuffer()))
+      if (hit !== undefined) return hit
+    } catch {
+      /* 试下一个候选 */
+    }
+  }
+  return undefined
+}
+
 /** 解析给定档位**实际**得到的音频流参数（供沉浸页顶部如实展示）：取选中音频条的实测码率与编解码。 */
 export async function audioQuality(
   id: string,
@@ -373,12 +457,27 @@ export async function audioQuality(
   level: AudioLevel = DEFAULT_AUDIO_LEVEL,
 ): Promise<AudioQuality | null> {
   try {
+    const cookie = await cookieWithBuvid(cred)
     const { urls, picked } = await resolveAudio(id, cred, level)
     if (!urls.length || !picked) return null
     const bw = picked.bandwidth
+    // 采样率：上游不回报，探测文件头一次并缓存（同一视频同一音频流文件不变）
+    const cacheKey = `${id}#${picked.id ?? bw ?? 'durl'}`
+    let sr = sampleRateCache.get(cacheKey)
+    if (sr === undefined) {
+      sr = await probeSampleRate(urls, cookie)
+      if (sr !== undefined) {
+        if (sampleRateCache.size >= SAMPLE_RATE_CACHE_MAX) {
+          const first = sampleRateCache.keys().next().value
+          if (first !== undefined) sampleRateCache.delete(first)
+        }
+        sampleRateCache.set(cacheKey, sr)
+      }
+    }
     return {
       codec: codecName(picked),
       br: typeof bw === 'number' && bw > 0 ? bw : undefined,
+      sr,
     }
   } catch {
     return null

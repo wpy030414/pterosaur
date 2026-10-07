@@ -55,9 +55,7 @@ export function syncDb(dir: string): DatabaseSync {
 export function getRow(dir: string, key: string): SyncRow | null {
   const row = syncDb(dir)
     .prepare('SELECT state, rev, updated_at FROM sync_docs WHERE key = ?')
-    .get(key) as
-    | { state: string; rev: number; updated_at: number }
-    | undefined
+    .get(key) as { state: string; rev: number; updated_at: number } | undefined
   if (!row) return null
   return { state: row.state, rev: row.rev, updatedAt: row.updated_at }
 }
@@ -117,17 +115,27 @@ function migrateFromJson(db: DatabaseSync, dir: string): void {
   for (const name of names) {
     if (!name.endsWith('.json')) continue
     try {
-      const parsed = JSON.parse(
-        readFileSync(join(jsonDir, name), 'utf8'),
-      ) as { state?: unknown; updatedAt?: unknown }
-      if (!parsed || typeof parsed.state !== 'object' || parsed.state === null) {
+      const parsed = JSON.parse(readFileSync(join(jsonDir, name), 'utf8')) as {
+        state?: unknown
+        updatedAt?: unknown
+      }
+      if (
+        !parsed ||
+        typeof parsed.state !== 'object' ||
+        parsed.state === null
+      ) {
         continue
       }
       const updatedAt =
-        typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+        typeof parsed.updatedAt === 'number' &&
+        Number.isFinite(parsed.updatedAt)
           ? parsed.updatedAt
           : Date.now()
-      stmt.run(name.slice(0, -'.json'.length), JSON.stringify(parsed.state), updatedAt)
+      stmt.run(
+        name.slice(0, -'.json'.length),
+        JSON.stringify(parsed.state),
+        updatedAt,
+      )
     } catch {
       /* 单个文件损坏 → 跳过 */
     }

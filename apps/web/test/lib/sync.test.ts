@@ -35,7 +35,10 @@ const track = (id: string): Track => ({
   fee: 'free',
 })
 
-const envelope = (rev: number, state: LibraryData = emptyLib()): SyncEnvelope => ({
+const envelope = (
+  rev: number,
+  state: LibraryData = emptyLib(),
+): SyncEnvelope => ({
   state,
   updatedAt: 0,
   rev,
