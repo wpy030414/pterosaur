@@ -17,6 +17,8 @@ interface TrackListProps {
   showHeader?: boolean
   /** 是否显示序号列 */
   showIndex?: boolean
+  /** 是否显示专辑列（MV 等「无专辑」语境的列表可关掉，标题列随之加宽） */
+  showAlbum?: boolean
   /** 空状态文案 */
   emptyText?: string
   /** 附加类名 */
@@ -37,6 +39,7 @@ export function TrackList({
   tracks,
   showHeader = true,
   showIndex = true,
+  showAlbum = true,
   emptyText = '暂无曲目',
   className,
   onPlayRow,
@@ -117,14 +120,14 @@ export function TrackList({
 
   return (
     <div
-      className={`track-list${className ? ` ${className}` : ''}`}
+      className={`track-list${showAlbum ? '' : ' track-list--no-album'}${className ? ` ${className}` : ''}`}
       role="list"
     >
       {showHeader && (
         <div className="track-list__head">
           {showIndex && <span className="col-index">#</span>}
           <span className="col-title">标题</span>
-          <span className="col-album">专辑</span>
+          {showAlbum && <span className="col-album">专辑</span>}
           <span className="col-duration">
             <Clock size={14} strokeWidth={2} />
           </span>
@@ -218,22 +221,24 @@ export function TrackList({
               </span>
             </span>
 
-            <span className="col-album ellipsis">
-              {t.albumId && t.album ? (
-                <button
-                  type="button"
-                  className="track-link"
-                  onClick={(e) =>
-                    openEntity(e, `/album/${t.source}/${t.albumId}`)
-                  }
-                  onKeyDown={stopKey}
-                >
-                  {t.album}
-                </button>
-              ) : (
-                t.album
-              )}
-            </span>
+            {showAlbum && (
+              <span className="col-album ellipsis">
+                {t.albumId && t.album ? (
+                  <button
+                    type="button"
+                    className="track-link"
+                    onClick={(e) =>
+                      openEntity(e, `/album/${t.source}/${t.albumId}`)
+                    }
+                    onKeyDown={stopKey}
+                  >
+                    {t.album}
+                  </button>
+                ) : (
+                  t.album
+                )}
+              </span>
+            )}
 
             <span className="col-duration">
               {t.duration ? formatTime(t.duration) : '--:--'}

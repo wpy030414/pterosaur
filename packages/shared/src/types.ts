@@ -312,10 +312,17 @@ export function streamUrlOf(
   return streamUrl(sourceOf(track), track.id, opts)
 }
 
-/** 将秒数格式化为 `m:ss`。 */
+/**
+ * 将秒数格式化为 `m:ss`；满 1 小时换算为 `h:mm:ss`（分钟与秒补零两位）。
+ * B 站视频动辄数小时，只用分钟标记（如 `185:05`）不可读。
+ */
 export function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
   const s = Math.floor(sec)
-  const m = Math.floor(s / 60)
-  return `${m}:${String(s - m * 60).padStart(2, '0')}`
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s - h * 3600) / 60)
+  const ss = s - h * 3600 - m * 60
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+  return `${m}:${String(ss).padStart(2, '0')}`
 }

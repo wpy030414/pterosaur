@@ -9,6 +9,7 @@
     "typecheck": "pnpm -r typecheck",
     "start": "pnpm --filter @pterosaur/server start",
     "log-in": "pnpm --filter @pterosaur/server log-in",
+    "log-in:bilibili": "pnpm --filter @pterosaur/server log-in:bilibili",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

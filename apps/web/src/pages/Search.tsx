@@ -284,9 +284,6 @@ export function SearchPage() {
             onClick={() => setTab(t.key)}
           >
             {t.label}
-            {counts[t.key] > 0 && !tabLoading && !tabError && (
-              <span className="search__tab-count">{counts[t.key]}</span>
-            )}
           </button>
         ))}
       </div>
@@ -303,9 +300,11 @@ export function SearchPage() {
           <>
             {activeTab === 'mv' ? (
               activeCount > 0 ? (
+                /* MV 无专辑概念，专辑列恒空 → 不显示（标题列随之加宽） */
                 <TrackList
                   tracks={mvTracks}
                   emptyText="没有找到相关 MV"
+                  showAlbum={false}
                   onPlayRow={(t) => void playMv(t)}
                 />
               ) : (

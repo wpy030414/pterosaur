@@ -1,5 +1,4 @@
 import { execSync } from 'node:child_process'
-import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -90,11 +89,6 @@ export default defineConfig({
   ],
   define: {
     __COMMIT_HASH__: JSON.stringify(commitHash()),
-  },
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
   },
   // dev 下 `/src/sw.ts` 作为模块 SW 加载，会静态 import workbox：预打包以避免裸模块解析问题
   optimizeDeps: {

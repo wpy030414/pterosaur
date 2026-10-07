@@ -476,7 +476,7 @@
   2. **传递链**：新增 `apps/web/src/store/settings.ts`（`persist`，`pterosaur-settings`）存 `level`；设置弹窗「音质」区块置于**最顶部**。`useAudioEngine` 订阅 `level` → `audioSrc(current, level)`，**换档保留播放位置**（复用弱网恢复的 `recoveringRef` 豁免：`load()` 后 `seekBack` + 续播）；下载链路（`download.ts` / `downloadPlaylist.ts` / `rip.ts`）同样带当前档。后端 `/stream/:source/:id?level=` **早已读该参数、缓存键含 level**，无需改动。
   3. **网易云**：`level` 直接透传 `song_url_v1`，上游自身按可得档降级。
   4. **QQ**：抽象档 → 复合档**候选链**（`M500` 128k / `M800` 320k / `F000` FLAC / `Q000` 臻品；`higher` 无真 192k 落 `exhigh` 链），**一次 `CgiGetVkey` 并发多档**（`songmid`/`filename`/`songtype` 按下标一一对应），取首个 `purl` 非空者——即「≤ 目标档的最高可得档」，天然降级；`media_mid` 取自 `music.trackInfo.UniformRuleCtrl`，进程内 LRU/TTL 缓存；候选全落空则回退**不带 `filename`** 的旧路径，保证零回归。
-  5. **画质两档**：`packages/shared/src/image.ts` 新增 `COVER_SMALL=300` / `COVER_LARGE=1200` 与 `coverAt(url, px)`（网易云设 `param`；QQ 替换 `T00?R{W}x{H}M000` 尺寸段；其它 CDN 原样）。后端**统一产出大图基准**（网易云 `1200y1200`、QQ `R1200x1200`），前端按场景 `coverAt` 降档——小图（`TrackList`/`QueuePanel`/`Home`/`Sidebar`/`PlayerBar`/`Topbar`/`EntityCards`/`PlaylistCard`）用 300；大图（`NowPlaying` 封面与背景、`Album`/`Artist`/`Playlist` hero、翻录封面）用 1200。`useNowPlayingPrefetch` 与 `NowPlaying` **必须同档**（1200）以保首帧显色门控。
+  5. **画质两档**：`packages/shared/src/image.ts` 新增 `COVER_SMALL=300` / `COVER_LARGE=1200` 与 `coverAt(url, px)`（网易云设 `param`；QQ 替换 `T00?R{W}x{H}M000` 尺寸段；其它 CDN 原样）。后端**统一产出大图基准**（网易云 `1200y1200`、QQ `R1200x1200`），前端按场景 `coverAt` 降档——小图（`TrackList`/`QueuePanel`/`Home`/`Sidebar`/`PlayerBar`/`Topbar`/`EntityCards`/`PlaylistCard`）用 300；大图（`NowPlaying` 封面与背景、`Album`/`Artist`/`Playlist` hero）用 1200；**翻录封面另设 `COVER_RIP=3000`**（2026-10-07 增补：实测网易云图片母带上限即 3000，`param` 请求再大也只回 3000×3000、不上采样——「尽可能大」取 3000 足矣）。`useNowPlayingPrefetch` 与 `NowPlaying` **必须同档**（1200）以保首帧显色门控。
 - 为什么选这个：档名与网易云一致 → 网易云零映射；抽象档 + 逐级降级让跨源体验一致，且不因高档不可得而断播；画质「大图基准 + 前端降档」把 CDN 细节收口在 `shared/image`，缓存键**天然即 URL**、无需改 SW/IDB（旧封面条目靠 7 天 TTL 自然回收，**无需 DB bump**）。
 - 为什么不选其他：分源设置让设置项翻倍且两源命名不统一；严格不降级会在未登录 / 无无损时频繁断播；画质做用户可选属过度设计；QQ 若恒取默认档则 `lossless` 等形同虚设。
 - 后果 / 已知边界：
@@ -553,3 +553,20 @@
   - 清媒体池为异步且可能较慢（大量 IDB 删除），但发生在登录 / 退出这类低频操作上，可接受。
   - **不改动**资料库（IDB 的 favorites / recent / playlists）与云同步数据。
 - 何时重新审视：若未来把凭证指纹纳入 SW 缓存键（缓存键本身能区分身份），本清空可降级为「仅登出时清」或取消。
+
+## ADR-035：B 站字幕作为 MV 渠道歌词（登录可见 + 主语言/中文双语）
+
+- 日期：2026-10-07
+- 状态：已采纳
+- 背景：MV 渠道（ADR-033）此前 `getLyric` 恒空（前端「暂无歌词」）。B 站视频自带 CC 字幕（UP 上传 + AI 生成）：`x/player/wbi/v2` 返回轨列表（`subtitle.subtitles[]`：`lan` / `is_lock` / `ai_type` / `subtitle_url`），`subtitle_url` 指向的 JSON 正文（`body[]`：`from`/`to`/`content`）天然是带时间轴的「歌词」。但**字幕列表要求登录**：匿名（无 SESSDATA）请求 `subtitles` 恒为空——wbi 签名也救不了（2026-10 实测），与网页端未登录看不到 CC 一致。需求：主语言非中文时引入多语言、且必含中文。
+- 决策：适配器实现 `getLyric`，全链路失败一律降级空歌词（前端「暂无歌词」），不打挂播放链路：
+  1. **通道**：`id` 解析（`<bvid>` 取首P / `<bvid>:<cid>` 分P 定位，与 `songUrl` 同规）→ **wbi 签名**的 `player/wbi/v2` 取轨列表（密钥取自 `nav.wbi_img`，盐表混淆成 32 位 mixinKey，进程内缓存 24h；签名失败回落非签名 `player/v2` 一次）→ 拉 `subtitle_url` JSON（`//` 补 https，主/中两轨并行）→ 构建共享 `Lyric`。
+  2. **语言策略——双语模式**（`pickSubtitleTracks`，对齐 B 站播放器「原文在上、中文在下」的双语字幕）：**原文轨优先**：主轨 = 首条**非中文人工轨** → 锁定轨 → 列表首条；主轨**已是中文** → 单语直接用（华语视频 / 仅 `ai-zh` 的外语视频皆然）；主轨非中文 → **中文轨作 `translation`**（复用网易云「原文 + 译文」模型与 `LyricLine.translation` 单译文槽，**前端零改动**）；中文轨**人工 CC 优先、AI 字幕兜底**；完全无中文轨则尽力而为只出主语言；无 `subtitle_url` 的轨不参与（未登录时 AI 轨常无地址）。
+  3. **时间对齐**（`buildLyricFromSubtitles`）：两轨常出自不同作者、**分段不一致**（实测乔布斯演讲：en 原文 395 行 vs zh 意译 186 行），不能像 `parseLrc` 那样按时间相等（±0.01s）配对，改为**最大重叠挂载**：每条中文行挂到与其重叠时长最大的原文行（并列取更早；多条中文挂同一原文行按时间序空格连接；落在原文间隙的丢弃）。两轨分段一致（同作者逐句对照）时自然退化为逐行精确配对，无需特判。
+  4. **实证采样（2026-10，登录态）**：① 轨列表字段 `type`：**0 = 人工 CC、1 = AI**（与 `ai_type` 冗余，判 AI 取任一命中或 `ai-` 前缀语言码）；② `is_lock` 现代数据几乎恒 false，不再是可靠的「默认轨」信号；③ 人工中文译轨常排在原文轨**之前**（乔布斯演讲 `[zh, en, ai-zh]`），按列表顺序取首条会把译文当主语言——原文轨优先即为此设；④ `asr_language`（原以为的原声语言权威信号）实测恒空，弃用；⑤ `subtitle_url_v2`（`subtitle.bilibili.com` 混淆地址）对非浏览器客户端 TLS 直接拒连，弃用，老地址带 `auth_key` 时效签名、现拉现用；⑥ AI 对外语视频只产出 `ai-zh` 翻译轨（无原文识别轨），此时无从双语、中文单语；AI 正文 JSON 多 `sid`/`music` 等字段，解析时忽略。
+- 为什么选这个：`LyricLine` 本就 text + 单译文槽，主轨 + 中文恰好两个语言槽，不扩数据模型、前端零改动；「原文 + 译文」与网易云心智一致。
+- 后果 / 已知边界：
+  - **未登录看不到字幕**是 B 站上游限制（非本系统 bug）；浏览器内扫码登录 B 站，或服务端配 `BILIBILI_COOKIE`（`pnpm log-in:bilibili` 写入，`login.ts` 已参数化支持 `netease|bilibili`）均可解锁；登录/退出会清空歌词缓存（ADR-034），凭证切换不残留旧结果。
+  - AI 字幕（`ai-zh` 等）仅登录后可见且地址带签名 token，拉取时同样带 cookie。
+  - 超过两门语言（如 en + ja + zh 同存）只引入主轨 + 中文两门，其余不展示。
+  - 字幕点击可跳转（`timed: true`，`time = from`），空正文行已过滤、多行空白折叠为单行。

@@ -8,7 +8,7 @@ const WEB_PORT = Number(process.env.E2E_PORT ?? 4173)
  * 与线上 https 服务器的部署形态一致（单一同源，无 CORS / 混合内容问题）。
  */
 export default defineConfig({
-  testDir: './e2e',
+  testDir: './test',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   // 本套 E2E 依赖实时网易云：偶发限流（405「操作频繁」）会让搜索类用例抖动，故本地与 CI 均开启重试。

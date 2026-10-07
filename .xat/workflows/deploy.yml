@@ -29,5 +29,5 @@ steps:
   - name: Run
     run: |
       pm2 delete pterosaur 2>/dev/null || true
-      pm2 start 'PORT=8788 pnpm start' --name pterosaur
+      pm2 start 'PORT=8788 pnpm start' --name pterosaur --cwd "$(pwd)"
       pm2 save

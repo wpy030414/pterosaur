@@ -55,6 +55,12 @@ export function canonicalNeteaseImage(url: string): string {
 export const COVER_SMALL = 300
 /** 大图边长（px）：沉浸页封面与背景、专辑/艺人/歌单详情 hero。 */
 export const COVER_LARGE = 1200
+/**
+ * 翻录（打包下载）专辑封面边长（px）：**尽可能大**——实测（2026-10）网易云图片母带
+ * 上限即 3000，`param` 请求再大也只回 3000×3000（体积相同、不上采样），故取 3000。
+ * 若上游放宽上限，调大此常量即可。
+ */
+export const COVER_RIP = 3000
 
 /**
  * 把封面/头像 URL 改写为指定边长（px），用于「按使用场景选画质」。

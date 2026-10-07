@@ -8,7 +8,8 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "start": "cross-env NODE_ENV=production node dist/index.js",
-    "log-in": "tsx src/cli/login.ts"
+    "log-in": "tsx src/cli/login.ts netease",
+    "log-in:bilibili": "tsx src/cli/login.ts bilibili"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",

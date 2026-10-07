@@ -8,8 +8,6 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] },
     "types": ["vite/client", "@testing-library/jest-dom"]
   },
   "include": ["src"]

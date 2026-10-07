@@ -12,7 +12,7 @@ import {
   isMusicSource,
   type MusicSource,
 } from '@pterosaur/shared/types'
-import { coverAt, COVER_LARGE } from '@pterosaur/shared/image'
+import { coverAt, COVER_LARGE, COVER_RIP } from '@pterosaur/shared/image'
 import { useSettings } from '../store/settings.js'
 import { TrackList } from '../components/TrackList.js'
 import { Cover } from '../components/Cover.js'
@@ -82,7 +82,9 @@ export function AlbumPage() {
       key: ripKey,
       tracks,
       zipName: `${album.name} - ${album.artist}`,
-      coverUrl: coverAt(album.cover, COVER_LARGE),
+      // 翻录封面取尽可能大的档（COVER_RIP=3000，母带上限）——入 ZIP 的封面不进缓存、
+      // 无需顾及流量，与页面展示（COVER_LARGE）分档互不影响
+      coverUrl: coverAt(album.cover, COVER_RIP),
       level,
     })
   }
