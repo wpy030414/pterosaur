@@ -3,24 +3,11 @@ import {
   type AudioLevel,
   type Track,
 } from '@pterosaur/shared/types'
+import { extFromMime, safeRipName } from '@pterosaur/shared/rip'
 
-/** 根据 Content-Type 推断音频文件扩展名，默认 mp3。 */
-function extFromMime(mime: string | null): string {
-  if (!mime) return 'mp3'
-  const m = mime.toLowerCase()
-  if (m.includes('flac')) return 'flac'
-  if (m.includes('wav')) return 'wav'
-  if (m.includes('ogg')) return 'ogg'
-  if (m.includes('aac') || m.includes('mp4') || m.includes('m4a')) return 'm4a'
-  return 'mp3'
-}
-
-/** 将曲目名清洗为安全的文件名（去除路径分隔符与非法字符）。 */
+/** 将曲目名清洗为安全的文件名（命名工具与翻录共用，见 `@pterosaur/shared/rip`）。 */
 function safeFileName(track: Track, ext: string): string {
-  const base = `${track.title} - ${track.artist}`
-    .replace(/[\\/:*?"<>|]/g, '_')
-    .trim()
-  return `${base || 'track'}.${ext}`
+  return `${safeRipName(`${track.title} - ${track.artist}`)}.${ext}`
 }
 
 /**

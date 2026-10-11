@@ -5,33 +5,12 @@ import {
   type AudioLevel,
   type Track,
 } from '@pterosaur/shared/types'
-
-/** 根据 Content-Type 推断音频文件扩展名，默认 mp3。 */
-function extFromMime(mime: string | null): string {
-  if (!mime) return 'mp3'
-  const m = mime.toLowerCase()
-  if (m.includes('flac')) return 'flac'
-  if (m.includes('wav')) return 'wav'
-  if (m.includes('ogg')) return 'ogg'
-  if (m.includes('aac') || m.includes('mp4') || m.includes('m4a')) return 'm4a'
-  return 'mp3'
-}
-
-/** 根据图片 Content-Type 推断扩展名，默认 jpg。 */
-export function extFromImageMime(mime: string | null): string {
-  const m = (mime ?? '').toLowerCase()
-  if (m.includes('png')) return 'png'
-  if (m.includes('webp')) return 'webp'
-  if (m.includes('gif')) return 'gif'
-  if (m.includes('avif')) return 'avif'
-  if (m.includes('bmp')) return 'bmp'
-  return 'jpg'
-}
-
-/** 将曲目名清洗为安全的文件名。 */
-function safeName(title: string): string {
-  return title.replace(/[\\/:*?"<>|]/g, '_').trim() || 'track'
-}
+import {
+  extFromImageMime,
+  extFromMime,
+  ripFileName,
+  safeRipName,
+} from '@pterosaur/shared/rip'
 
 /**
  * 拉取封面图片并以 `cover.<ext>` 写入 ZIP。
@@ -65,7 +44,7 @@ export interface DownloadProgress {
  * 将歌单 / 专辑曲目打包为 ZIP 下载。
  *
  * 逐首通过同源音频代理 `/stream/:id` 拉取字节流，文件名按序号排列
- * （如 `01 - 曲名.mp3`），最终以 browser Blob 触发保存。
+ * （如 `01 - 曲名.mp3`，命名工具见 `@pterosaur/shared/rip`），最终以 browser Blob 触发保存。
  * 若提供 `coverUrl`（专辑翻录），另在 ZIP 根目录写入封面 `cover.<ext>`。
  *
  * @param tracks  曲目列表
@@ -82,7 +61,6 @@ export async function downloadPlaylist(
   level?: AudioLevel,
 ): Promise<void> {
   const zip = new JSZip()
-  const digits = String(tracks.length).length
 
   // 封面先入包：即便后续曲目全部失败，封面仍在
   if (coverUrl) await addCoverToZip(zip, coverUrl)
@@ -111,12 +89,10 @@ export async function downloadPlaylist(
       continue
     }
 
-    const num = String(i + 1).padStart(digits, '0')
-    const name = `${num} - ${safeName(t.title)}.${ext}`
-    zip.file(name, blob)
+    zip.file(ripFileName(i + 1, tracks.length, t.title, ext), blob)
     onProgress?.({ current: i + 1, total: tracks.length, lastError: null })
   }
 
   const archive = await zip.generateAsync({ type: 'blob' })
-  saveAs(archive, `${safeName(zipName)}.zip`)
+  saveAs(archive, `${safeRipName(zipName)}.zip`)
 }

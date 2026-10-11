@@ -1,11 +1,18 @@
 import { DiscAlbum } from 'lucide-react'
+import type { RipPhase } from '@pterosaur/shared/rip'
 import { IconButton } from './IconButton.js'
 import './RipButton.css'
 
-/** 翻录进度：已处理曲目数 / 总曲目数。 */
+/** 翻录进度：已处理曲目数 / 总曲目数（+ 阶段）。 */
 export interface RipProgress {
   current: number
   total: number
+  /** 所处阶段；缺省视为 `fetch`（数字分发的既有形态）。 */
+  phase?: RipPhase
+  /**
+   * 阶段百分比；仅刻录阶段有意义且恒为 `null`（不确定进度），保留字段以对齐事件协议。
+   */
+  percent?: number | null
 }
 
 interface RipButtonProps {
@@ -26,6 +33,8 @@ const CIRCUMFERENCE = 2 * Math.PI * RING_R
  * 「翻录」按钮。
  *
  * 空闲时是下载图标按钮；进行中**就地**变为环形进度条，环内显示「已完成/总数」。
+ * 实体刻录链路的 `convert` 阶段沿用真实进度；`burn` 阶段因拿不到真实百分比，
+ * 渲染**不确定进度**（旋转弧 + 「刻录」）——详见 ADR-048。
  * 歌单 / 我喜欢的音乐 / 专辑三页共用，保证翻录反馈一致。
  */
 export function RipButton({ disabled, progress, onClick }: RipButtonProps) {
@@ -37,10 +46,18 @@ export function RipButton({ disabled, progress, onClick }: RipButtonProps) {
     )
   }
 
+  const phase = progress.phase ?? 'fetch'
+  const burn = phase === 'burn'
   const total = Math.max(0, progress.total)
   const current = Math.min(Math.max(0, progress.current), total)
   const ratio = total > 0 ? current / total : 0
   const center = RING_SIZE / 2
+
+  const label = burn
+    ? '正在刻录光盘'
+    : phase === 'convert'
+      ? `正在转换音频 ${current} / ${total}`
+      : `正在翻录 ${current} / ${total}`
 
   return (
     <div
@@ -48,10 +65,12 @@ export function RipButton({ disabled, progress, onClick }: RipButtonProps) {
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={total}
-      aria-valuenow={current}
-      aria-label={`正在翻录 ${current} / ${total}`}
-      title={`正在翻录 ${current} / ${total}`}
+      aria-valuenow={burn ? undefined : current}
+      aria-busy={burn || undefined}
+      aria-label={label}
+      title={label}
       data-testid="rip-progress"
+      data-phase={phase}
     >
       <svg
         className="rip-progress__svg"
@@ -69,20 +88,20 @@ export function RipButton({ disabled, progress, onClick }: RipButtonProps) {
           strokeWidth={RING_STROKE}
         />
         <circle
-          className="rip-progress__bar"
+          className={`rip-progress__bar${burn ? ' rip-progress__bar--spin' : ''}`}
           cx={center}
           cy={center}
           r={RING_R}
           fill="none"
           strokeWidth={RING_STROKE}
           strokeLinecap="round"
-          strokeDasharray={CIRCUMFERENCE}
-          strokeDashoffset={CIRCUMFERENCE * (1 - ratio)}
+          strokeDasharray={burn ? CIRCUMFERENCE * 0.3 : CIRCUMFERENCE}
+          strokeDashoffset={burn ? 0 : CIRCUMFERENCE * (1 - ratio)}
           transform={`rotate(-90 ${center} ${center})`}
         />
       </svg>
       <span className="rip-progress__text">
-        {current}/{total}
+        {burn ? '刻录' : `${current}/${total}`}
       </span>
     </div>
   )

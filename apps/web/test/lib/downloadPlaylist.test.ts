@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extFromImageMime } from '../../src/lib/downloadPlaylist.js'
+import { extFromImageMime } from '@pterosaur/shared/rip'
 
 describe('extFromImageMime', () => {
   it('按 Content-Type 推断封面扩展名', () => {

@@ -22,6 +22,25 @@
   transition: stroke-dashoffset var(--dur) var(--ease);
 }
 
+/* 刻录阶段：不确定进度（真实百分比不可得，见 ADR-048）——固定弧长绕圆心旋转 */
+.rip-progress__bar--spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rip-progress-spin 1.2s linear infinite;
+}
+
+@keyframes rip-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rip-progress__bar--spin {
+    animation: none;
+  }
+}
+
 .rip-progress__text {
   position: absolute;
   inset: 0;
