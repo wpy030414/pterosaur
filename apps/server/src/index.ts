@@ -2,12 +2,16 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app.js'
 import { loadEnv } from './env.js'
+import { sweepStaleBurnDirs } from './rip.js'
 
 // 先加载仓库根 .env（缺省凭证 NETEASE_COOKIE，以及可选的 PORT / HOST 等），
 // 必须在读取 process.env 之前调用。
 loadEnv()
 
 const app = createApp()
+
+// 清扫刻录暂存残留（进程崩溃 / 强杀后的孤儿目录）；best-effort，不阻塞启动
+void sweepStaleBurnDirs()
 
 const isProd = process.env.NODE_ENV === 'production'
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8788)

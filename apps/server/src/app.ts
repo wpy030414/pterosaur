@@ -29,6 +29,17 @@ import {
   audioContentTypeFromUrl,
   fetchAudioCandidate,
 } from './audioFetch.js'
+import { getConnInfo } from '@hono/node-server/conninfo'
+import { isLoopbackHost, type RipEvent } from '@pterosaur/shared/rip'
+import { isFakeBurn } from './imapi.js'
+import {
+  jobSnapshot,
+  lastResultSnapshot,
+  ripCapabilities,
+  startBurn,
+  subscribeRip,
+  validateBurnBody,
+} from './rip.js'
 
 /**
  * 音频地址缓存：id|level|凭证指纹 -> **有序候选 https 地址**（首个优先）。
@@ -173,6 +184,21 @@ async function requireIdentity(
 /** 云同步的文件键：`<source>-<账号id>`（单活动账号，故与源绑定）。 */
 function syncKey(identity: { source: MusicSource; id: string }): string {
   return `${identity.source}-${identity.id}`
+}
+
+/**
+ * 直刻路由的**回环硬门控**（见 ADR-048）：仅允许后端所在设备本机访问
+ * （`localhost` / `127.x.y.z` / `::1`）。连接信息探测失败一律拒绝（fail-closed）。
+ *
+ * 已知边界：同机 nginx 反代下对端恒为回环、本门控退化为纵深防御——前端
+ * `location.hostname` 门控为主，故**请勿将本服务暴露至公网**。
+ */
+function requireLoopback(c: Context): boolean {
+  try {
+    return isLoopbackHost(getConnInfo(c).remote.address ?? '')
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -794,6 +820,92 @@ export function createApp() {
         })
       })
     })
+  })
+
+  /* ============================ 翻录（实体直刻） ============================ */
+
+  /*
+   * 直刻操作的是**后端所在设备**的光驱，故以下路由全部经 `requireLoopback`
+   * 硬门控：远端访问一律 403（见 ADR-048）。
+   */
+
+  /** 直刻能力（刻录机 / 介质 / ffmpeg / 平台）。 */
+  app.get('/api/rip/capabilities', async (c) => {
+    if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
+    try {
+      return c.json(ok(await ripCapabilities()))
+    } catch (e) {
+      return c.json(fail(e instanceof Error ? e.message : '刻录能力探测失败'), 502)
+    }
+  })
+
+  /** 当前刻录任务快照与最近终态（SSE 断线的兜底轮询）。 */
+  app.get('/api/rip/status', (c) => {
+    if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
+    return c.json(ok({ job: jobSnapshot(), last: lastResultSnapshot() }))
+  })
+
+  /**
+   * 刻录事件流（SSE）。连接建立后先发**快照帧**（当前任务 + 最近终态），
+   * 消除「订阅晚于任务启动 / 任务刚结束」的竞态；随后转发任务事件。
+   * 25s 心跳压过反代空闲超时；`X-Accel-Buffering: no` 关 nginx 缓冲。
+   */
+  app.get('/api/rip/events', async (c) => {
+    if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
+    c.header('X-Accel-Buffering', 'no')
+    c.header('Cache-Control', 'no-cache')
+    return streamSSE(c, async (stream) => {
+      const snapshot: RipEvent = {
+        type: 'state',
+        job: jobSnapshot(),
+        last: lastResultSnapshot(),
+      }
+      await stream.writeSSE({ event: 'message', data: JSON.stringify(snapshot) })
+      const unsubscribe = subscribeRip((ev) => {
+        void stream
+          .writeSSE({ event: 'message', data: JSON.stringify(ev) })
+          .catch(() => {
+            /* 连接已断开：交给 onAbort 清理 */
+          })
+      })
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          stream.writeSSE({ event: 'ping', data: '' }).catch(() => {
+            clearInterval(timer)
+            unsubscribe()
+            resolve()
+          })
+        }, 25_000)
+        stream.onAbort(() => {
+          clearInterval(timer)
+          unsubscribe()
+          resolve()
+        })
+      })
+    })
+  })
+
+  /**
+   * 发起一次实体刻录（`{ meta, tracks, discType, level }`）。
+   * 立即回 **202**（任务后台执行），进度经 `/api/rip/events` 下发；
+   * 单任务：已有任务进行中回 409；非 Windows（且未开模拟刻录）回 501。
+   */
+  app.post('/api/rip/burn', async (c) => {
+    if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
+    if (jobSnapshot()) return c.json(fail('已有刻录任务进行中'), 409)
+    const body: unknown = await c.req.json().catch(() => null)
+    const validated = validateBurnBody(body)
+    if (!validated.ok) return c.json(fail(validated.error), 400)
+    if (process.platform !== 'win32' && !isFakeBurn())
+      return c.json(fail('当前平台不支持直刻（仅 Windows）'), 501)
+    const adapter = adapterOf(validated.value.tracks[0].source)
+    if (!adapter) return c.json(fail('未知音源'), 404)
+    const started = startBurn({
+      ...validated.value,
+      credential: credentialOf(c, adapter),
+    })
+    if ('busy' in started) return c.json(fail('已有刻录任务进行中'), 409)
+    return c.json(ok({ jobId: started.id }), 202)
   })
 
   /* ============================ 音频流代理 ============================ */
