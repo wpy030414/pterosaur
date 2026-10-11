@@ -24,6 +24,11 @@ import {
 } from '@pterosaur/shared/types'
 import { isLibraryState, readLibrary, writeLibrary } from './syncStore.js'
 import { broadcast, subscribe } from './syncEvents.js'
+import {
+  UA,
+  audioContentTypeFromUrl,
+  fetchAudioCandidate,
+} from './audioFetch.js'
 
 /**
  * 音频地址缓存：id|level|凭证指纹 -> **有序候选 https 地址**（首个优先）。
@@ -75,16 +80,6 @@ async function cached<T extends object>(
   return value
 }
 
-const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-
-/**
- * 上游 CDN 响应头超时（毫秒）：仅约束连接建立阶段——CDN 挂起时避免请求被拖到
- * undici 默认的 300s body timeout（生产另受 nginx 60s read timeout 限制）。
- * body 阶段不设整体超时：长音频在弱网下慢速下载属正常。
- */
-const UPSTREAM_HEADERS_TIMEOUT_MS = 10_000
-
 /** 统一成功响应。 */
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
@@ -95,7 +90,9 @@ function fail(error: string, needLogin = false): ApiResult<never> {
   return { ok: false, error, needLogin: needLogin || undefined }
 }
 
-/** 从 `?source=` 查询参数解析音源；缺省为缺省源（网易云）。 */
+/**
+ * 从 `?source=` 查询参数解析音源；缺省为缺省源（网易云）。
+ */
 function sourceQuery(c: Context): MusicSource {
   const s = c.req.query('source')
   return isMusicSource(s) ? s : DEFAULT_SOURCE
@@ -202,35 +199,6 @@ function forwardSessionCookies(
 }
 
 /**
- * 由**解析出的音频直链后缀**推断响应的 `Content-Type`。
- *
- * 上游常谎报类型：网易云对 `.flac`（无损 / Hi-Res）仍回 `audio/mpeg`，B 站 m4s 回
- * `application/octet-stream`。若照抄上游，浏览器下载会落成 `.mp3`（前端 `extFromMime` 依
- * `Content-Type` 推后缀），SW 也会因非 `audio/*` 而跳过缓存。**URL 后缀才是权威格式**，故优先它。
- * 无法判定时返回 `undefined`，调用方回退上游头、再回退 `audio/mpeg`。
- */
-export function audioContentTypeFromUrl(url: string): string | undefined {
-  let pathname: string
-  try {
-    pathname = new URL(url).pathname.toLowerCase()
-  } catch {
-    return undefined
-  }
-  if (pathname.endsWith('.flac')) return 'audio/flac'
-  if (pathname.endsWith('.mp3')) return 'audio/mpeg'
-  if (
-    pathname.endsWith('.m4a') ||
-    pathname.endsWith('.mp4') ||
-    pathname.endsWith('.m4s')
-  )
-    return 'audio/mp4'
-  if (pathname.endsWith('.wav')) return 'audio/wav'
-  if (pathname.endsWith('.ogg') || pathname.endsWith('.oga')) return 'audio/ogg'
-  if (pathname.endsWith('.aac')) return 'audio/aac'
-  return undefined
-}
-
-/**
  * 音频流代理处理器：`GET|HEAD /stream/:id`。
  *
  * 浏览器 `<audio>` 直接请求本地址；服务端解析真实 CDN 地址、改写为 https，
@@ -274,41 +242,17 @@ async function streamHandler(c: Context): Promise<Response> {
   }
   if (range) upstreamHeaders['Range'] = range
 
-  // 依次尝试候选地址：B 站等源的直链含多个 CDN 镜像，单节点故障不应直接判死。
-  // 每次尝试独立计时，连接建立超时即中止该候选、换下一个。
-  let upstream: Response | undefined
-  let usedUrl = urls[0]
-  for (const candidate of urls) {
-    const controller = new AbortController()
-    const timer = setTimeout(
-      () => controller.abort(),
-      UPSTREAM_HEADERS_TIMEOUT_MS,
-    )
-    try {
-      const res = await fetch(candidate, {
-        headers: upstreamHeaders,
-        redirect: 'follow',
-        signal: controller.signal,
-      })
-      if (res.ok || res.status === 206) {
-        upstream = res
-        usedUrl = candidate
-        break
-      }
-      // 非 2xx / 非 206：丢弃该连接的响应体，继续下一个候选
-      void res.body?.cancel()
-    } catch {
-      /* 连接失败 / 超时：继续下一个候选 */
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-
-  if (!upstream) {
+  // 依次尝试候选地址（B 站等源的直链含多个 CDN 镜像，单节点故障不应直接判死）；
+  // 候选轮换 / 连接超时 / 丢弃重试的韧性逻辑收敛在 audioFetch.fetchAudioCandidate，
+  // 与翻录直刻模块共用同一实现。
+  const fetched = await fetchAudioCandidate(urls, upstreamHeaders)
+  if (!fetched) {
     // 全部候选失败（地址过期 / 节点故障）：淘汰缓存，下次请求重新解析
     urlCache.delete(cacheKey)
     return c.json(fail('音频源不可用'), 502)
   }
+  const upstream = fetched.res
+  const usedUrl = fetched.usedUrl
 
   // 命中的非首位候选提到队首，下次直接先用它，避免反复白撞已知坏节点
   if (usedUrl !== urls[0]) {
