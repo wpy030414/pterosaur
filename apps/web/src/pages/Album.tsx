@@ -5,7 +5,7 @@ import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { usePlayer } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
-import { confirmDialog } from '../store/ui.js'
+import { ripDialog } from '../store/ui.js'
 import type { Album, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
@@ -47,10 +47,7 @@ export function AlbumPage() {
   // 翻录进度：从全局 store 认领属于本专辑的那份（切走再回自动恢复）
   const ripKey = `album:${source}:${id}`
   const ripJob = useRip((s) => s.job)
-  const myRip =
-    ripJob?.key === ripKey
-      ? { current: ripJob.current, total: ripJob.total }
-      : null
+  const myRip = ripJob?.key === ripKey ? ripJob : null
 
   const { data, loading, error, reload } = useAsync<AlbumDetail>(
     () => api.album(source, id),
@@ -70,22 +67,31 @@ export function AlbumPage() {
 
   const handleDownloadPlaylist = async () => {
     if (!album || !tracks.length || isRipping()) return
-    const dur = tracks.reduce((sum, t) => sum + (t.duration || 0), 0)
-    const durStr = dur > 0 ? `，总时长约 ${Math.round(dur / 60)} 分钟` : ''
-    const ok = await confirmDialog({
-      title: '翻录专辑？',
-      message: `将打包下载 ${tracks.length} 首曲目${durStr}，并附带专辑封面。`,
-      confirmText: '开始翻录',
+    // 翻录封面取尽可能大的档（COVER_RIP=3000，母带上限）——入 ZIP / 上盘 / 元信息共用同一地址，
+    // 与页面展示（COVER_LARGE）分档互不影响
+    const coverUrl = coverAt(album.cover, COVER_RIP)
+    const name = `${album.name} - ${album.artist}`
+    const mixed = new Set(tracks.map((t) => t.source)).size > 1
+    const choice = await ripDialog({
+      name,
+      trackCount: tracks.length,
+      totalDuration: tracks.reduce((sum, t) => sum + (t.duration || 0), 0),
+      mixedSources: mixed,
     })
-    if (!ok) return
+    if (!choice) return
     await runRip({
       key: ripKey,
       tracks,
-      zipName: `${album.name} - ${album.artist}`,
-      // 翻录封面取尽可能大的档（COVER_RIP=3000，母带上限）——入 ZIP 的封面不进缓存、
-      // 无需顾及流量，与页面展示（COVER_LARGE）分档互不影响
-      coverUrl: coverAt(album.cover, COVER_RIP),
+      meta: {
+        kind: 'album',
+        name,
+        source: mixed ? undefined : (tracks[0]?.source ?? source),
+        sourceId: id,
+        creator: album.artist,
+      },
+      coverUrl,
       level,
+      choice,
     })
   }
 

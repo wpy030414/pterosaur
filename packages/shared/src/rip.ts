@@ -70,8 +70,8 @@ export interface RipMeta {
   discType?: DiscType
   kind: RipKind
   name: string
-  /** 合集所属源（音源 / 磁带渠道）。 */
-  source: MusicSource
+  /** 合集所属源（音源 / 磁带渠道）；**跨源合集**（如混合收藏）缺省。 */
+  source?: MusicSource
   /** 源内合集 id（`favorites` 无）。 */
   sourceId?: string
   /** 合集创建者（歌单作者 / 专辑艺人由 tracks 承载，磁带为 UP 主）。 */
@@ -95,7 +95,8 @@ export interface RipMetaInput {
   discType?: DiscType
   kind: RipKind
   name: string
-  source: MusicSource
+  /** 合集所属源；跨源合集（如混合收藏）缺省。 */
+  source?: MusicSource
   sourceId?: string
   creator?: string
   /** 封面原始地址（已规范化）；是否真正入包由调用方依获取结果决定。 */
@@ -168,9 +169,20 @@ export function audioCdFits(durations: number[]): boolean {
     (sum, d) => sum + (Number.isFinite(d) && d > 0 ? d : 0),
     0,
   )
-  return (
-    total + AUDIO_CD_TRACK_GAP_SECONDS * durations.length <= AUDIO_CD_MAX_SECONDS
-  )
+  return audioCdFitsTotal(total, durations.length)
+}
+
+/**
+ * 由「总时长 + 曲数」直接判定音频 CD 容量。
+ * 翻录对话框只有合集级汇总（无逐曲时长数组），走此入口保持与 {@link audioCdFits} 同一口径。
+ */
+export function audioCdFitsTotal(
+  totalDuration: number,
+  trackCount: number,
+): boolean {
+  const total =
+    Number.isFinite(totalDuration) && totalDuration > 0 ? totalDuration : 0
+  return total + AUDIO_CD_TRACK_GAP_SECONDS * trackCount <= AUDIO_CD_MAX_SECONDS
 }
 
 /**

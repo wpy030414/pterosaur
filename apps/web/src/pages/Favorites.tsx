@@ -8,7 +8,7 @@ import { Empty } from '../components/States.js'
 import { useRip } from '../store/rip.js'
 import { useSettings } from '../store/settings.js'
 import { isRipping, runRip } from '../lib/rip.js'
-import { confirmDialog } from '../store/ui.js'
+import { ripDialog } from '../store/ui.js'
 
 /**
  * 我喜欢的音乐。展示收藏曲目，支持顺序 / 随机播放。
@@ -22,10 +22,7 @@ export function FavoritesPage() {
   // 翻录进度：从全局 store 认领「我喜欢的音乐」那份（切走再回自动恢复）
   const ripKey = 'favorites'
   const ripJob = useRip((s) => s.job)
-  const myRip =
-    ripJob?.key === ripKey
-      ? { current: ripJob.current, total: ripJob.total }
-      : null
+  const myRip = ripJob?.key === ripKey ? ripJob : null
 
   const handlePlay = (shuffle = false) => {
     if (!favorites.length) return
@@ -38,19 +35,24 @@ export function FavoritesPage() {
 
   const handleDownloadPlaylist = async () => {
     if (!favorites.length || isRipping()) return
-    const dur = favorites.reduce((sum, t) => sum + (t.duration || 0), 0)
-    const durStr = dur > 0 ? `，总时长约 ${Math.round(dur / 60)} 分钟` : ''
-    const ok = await confirmDialog({
-      title: '翻录歌单？',
-      message: `将打包下载 ${favorites.length} 首曲目${durStr}。`,
-      confirmText: '开始翻录',
+    const mixed = new Set(favorites.map((t) => t.source)).size > 1
+    const choice = await ripDialog({
+      name: '我喜欢的音乐',
+      trackCount: favorites.length,
+      totalDuration: favorites.reduce((sum, t) => sum + (t.duration || 0), 0),
+      mixedSources: mixed,
     })
-    if (!ok) return
+    if (!choice) return
     await runRip({
       key: ripKey,
       tracks: favorites,
-      zipName: '我喜欢的音乐',
+      meta: {
+        kind: 'favorites',
+        name: '我喜欢的音乐',
+        source: mixed ? undefined : favorites[0]?.source,
+      },
       level,
+      choice,
     })
   }
 

@@ -3,6 +3,7 @@ import {
   AUDIO_CD_MAX_SECONDS,
   RIP_META_SCHEMA,
   audioCdFits,
+  audioCdFitsTotal,
   buildRipMeta,
   extFromImageMime,
   extFromMime,
@@ -166,6 +167,13 @@ describe('audioCdFits', () => {
   it('非法时长按 0 计', () => {
     expect(audioCdFits([NaN, 100])).toBe(true)
     expect(audioCdFits([-5, 100])).toBe(true)
+  })
+
+  it('audioCdFitsTotal 与 audioCdFits 同口径', () => {
+    expect(audioCdFitsTotal(4736, 2)).toBe(true) // 4736 + 2×2 = 4740
+    expect(audioCdFitsTotal(4737, 2)).toBe(false)
+    expect(audioCdFitsTotal(NaN, 3)).toBe(true)
+    expect(audioCdFitsTotal(4740, 0)).toBe(true)
   })
 })
 

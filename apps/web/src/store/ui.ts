@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Track } from '@pterosaur/shared/types'
+import type { RipChoice } from '@pterosaur/shared/rip'
 
 /**
  * 临时 UI 状态（不持久化）：队列面板开合等。
@@ -125,6 +126,64 @@ export const useConfirmDialog = create<ConfirmUiState>()((set, get) => ({
  */
 export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
   return useConfirmDialog.getState().confirm(opts)
+}
+
+/** 翻录方式选择弹窗的参数（合集级摘要信息）。 */
+export interface RipDialogOptions {
+  /** 合集名（标题与产物命名）。 */
+  name: string
+  /** 曲目数。 */
+  trackCount: number
+  /** 曲目总时长（秒），供音频 CD 容量预检。 */
+  totalDuration: number
+  /** 曲目是否跨多个音源（跨源合集无法由后端直刻，见 ADR-048）。 */
+  mixedSources?: boolean
+}
+
+interface RipDialogUiState {
+  open: boolean
+  options: RipDialogOptions | null
+  /** 内部：当前挂起的 Promise resolve，供弹窗关闭时回填选择结果。 */
+  resolve: ((value: RipChoice | null) => void) | null
+  /**
+   * 打开翻录方式弹窗，返回用户选择（数字 / 实体 + 光盘类型），取消返回 null。
+   *
+   * 取代三页原先的 `confirmDialog({ title: '翻录…' })` 纯确认——
+   * 「后续将数字分发 / 后续将实体分发」在弹窗内一并选定。
+   */
+  openRip: (opts: RipDialogOptions) => Promise<RipChoice | null>
+  /** 结束弹窗并回填结果。 */
+  settle: (value: RipChoice | null) => void
+}
+
+/**
+ * 翻录方式选择弹窗的 UI 状态（弹窗挂载在 App 顶层）。
+ */
+export const useRipDialog = create<RipDialogUiState>()((set, get) => ({
+  open: false,
+  options: null,
+  resolve: null,
+  openRip: (opts) =>
+    new Promise<RipChoice | null>((resolve) => {
+      // 若已有挂起的弹窗，先以「取消」结清，避免 Promise 泄漏（与 confirmDialog 同策略）
+      get().resolve?.(null)
+      set({ open: true, options: opts, resolve })
+    }),
+  settle: (value) => {
+    get().resolve?.(value)
+    set({ open: false, options: null, resolve: null })
+  },
+}))
+
+/**
+ * 打开翻录方式弹窗的命令式入口。
+ *
+ * @example
+ * const choice = await ripDialog({ name, trackCount, totalDuration })
+ * if (choice) await runRip({ ..., choice })
+ */
+export function ripDialog(opts: RipDialogOptions): Promise<RipChoice | null> {
+  return useRipDialog.getState().openRip(opts)
 }
 
 /** 设置弹窗（缓存管理 / 检查更新）的开合状态。 */

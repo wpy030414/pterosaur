@@ -1,0 +1,209 @@
+/* 翻录方式选择弹窗：视觉语言对齐 ConfirmDialog（遮罩 / 卡片 / 动效），
+   分段选择控件对齐 SettingsDialog 的 __segmented。 */
+
+.rip-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rip-dialog__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+.rip-dialog__card {
+  position: relative;
+  z-index: 1;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  padding: 22px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--separator);
+  box-shadow: var(--shadow-lg);
+  animation: rip-dialog-in var(--dur-slow) var(--ease);
+}
+
+@keyframes rip-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.rip-dialog__title {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.rip-dialog__summary {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.rip-dialog__section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--separator);
+}
+
+.rip-dialog__segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rip-dialog__seg-btn {
+  flex: 1 1 auto;
+  min-width: 96px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rip-dialog__seg-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.rip-dialog__seg-btn--active,
+.rip-dialog__seg-btn--active:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.rip-dialog__seg-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rip-dialog__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.rip-dialog__caps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rip-dialog__redetect {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.rip-dialog__redetect:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rip-dialog__redetect:hover:not(:disabled) {
+  color: var(--accent-hover);
+}
+
+.rip-dialog__reason {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--danger, #ff453a);
+}
+
+.rip-dialog__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.rip-dialog__warning svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.rip-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.rip-dialog__btn {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    filter var(--dur-fast) var(--ease);
+}
+
+.rip-dialog__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rip-dialog__btn--ghost {
+  color: var(--text-secondary);
+}
+
+.rip-dialog__btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.rip-dialog__btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.rip-dialog__btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.rip-dialog__btn--danger {
+  background: var(--danger, #ff453a);
+  color: #fff;
+}
+
+.rip-dialog__btn--danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}

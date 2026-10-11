@@ -9,6 +9,7 @@ import { QueuePanel } from './components/QueuePanel.js'
 import { LoginModal } from './components/LoginModal.js'
 import { CreatePlaylistModal } from './components/CreatePlaylistModal.js'
 import { ConfirmDialog } from './components/ConfirmDialog.js'
+import { RipDialog } from './components/RipDialog.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import { PlayErrorToast } from './components/PlayErrorToast.js'
 import { Home } from './pages/Home.js'
@@ -129,12 +130,13 @@ export default function App() {
 
       <PlayerBar />
 
-      {/* 浮层：全屏播放页 / 队列 / 登录 / 新建歌单 / 设置 / 播放错误 */}
+      {/* 浮层：全屏播放页 / 队列 / 登录 / 新建歌单 / 翻录方式 / 设置 / 播放错误 */}
       <NowPlayingLayer />
       <QueuePanel />
       {modalOpen && <LoginModal />}
       <CreatePlaylistModal />
       <ConfirmDialog />
+      <RipDialog />
       <SettingsDialog />
       <PlayErrorToast />
     </div>

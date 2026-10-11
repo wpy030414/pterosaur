@@ -14,6 +14,12 @@ import type {
   Track,
 } from '@pterosaur/shared/types'
 import { API_BASE } from '@pterosaur/shared/types'
+import type {
+  RipBurnRequestBody,
+  RipCapabilities,
+  RipJobSnapshot,
+  RipLastResult,
+} from '@pterosaur/shared/rip'
 
 /** 统一的 GET JSON 请求，解析后端 `ApiResult` 包裹。 */
 async function get<T>(
@@ -172,6 +178,25 @@ export const api = {
   /** 覆盖写入本人 library 的云端副本（整文档）；返回服务端指派版本后的封套。 */
   syncPut: (state: LibraryData) =>
     put<SyncEnvelope>(`${API_BASE}/sync/library`, { state }),
+
+  /* ------------------------- 翻录（实体直刻，见 ADR-048） ------------------------- */
+
+  /**
+   * 后端直刻能力（刻录机 / 介质 / ffmpeg / 平台）。
+   * 仅同机（回环）访问可用——远端请求后端回 403。
+   */
+  ripCapabilities: () =>
+    get<RipCapabilities>(`${API_BASE}/rip/capabilities`),
+
+  /** 发起一次实体刻录（异步任务，202 返回 jobId；进度经 SSE `/api/rip/events`）。 */
+  ripBurn: (body: RipBurnRequestBody) =>
+    post<{ jobId: string }>(`${API_BASE}/rip/burn`, body),
+
+  /** 当前任务快照与最近终态（SSE 断线的兜底轮询）。 */
+  ripStatus: () =>
+    get<{ job: RipJobSnapshot | null; last: RipLastResult | null }>(
+      `${API_BASE}/rip/status`,
+    ),
 }
 
 export type Api = typeof api

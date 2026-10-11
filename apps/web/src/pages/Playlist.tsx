@@ -6,7 +6,7 @@ import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { usePlayer } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
-import { confirmDialog } from '../store/ui.js'
+import { confirmDialog, ripDialog } from '../store/ui.js'
 import type { Playlist, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
@@ -69,10 +69,7 @@ export function PlaylistPage() {
   // 翻录进度：从全局 store 认领属于本歌单的那份（切走再回自动恢复）
   const ripKey = `playlist:${source}:${id}`
   const ripJob = useRip((s) => s.job)
-  const myRip =
-    ripJob?.key === ripKey
-      ? { current: ripJob.current, total: ripJob.total }
-      : null
+  const myRip = ripJob?.key === ripKey ? ripJob : null
 
   // 本地歌单：直接从 store 取
   const local = useMemo(
@@ -161,19 +158,27 @@ export function PlaylistPage() {
 
   const handleDownloadPlaylist = async () => {
     if (!tracks.length || isRipping()) return
-    const dur = tracks.reduce((sum, t) => sum + (t.duration || 0), 0)
-    const durStr = dur > 0 ? `，总时长约 ${Math.round(dur / 60)} 分钟` : ''
-    const ok = await confirmDialog({
-      title: '翻录歌单？',
-      message: `将打包下载 ${tracks.length} 首曲目${durStr}。`,
-      confirmText: '开始翻录',
+    const name = playlist?.name ?? '歌单'
+    const mixed = new Set(tracks.map((t) => t.source)).size > 1
+    const choice = await ripDialog({
+      name,
+      trackCount: tracks.length,
+      totalDuration: tracks.reduce((sum, t) => sum + (t.duration || 0), 0),
+      mixedSources: mixed,
     })
-    if (!ok) return
+    if (!choice) return
     await runRip({
       key: ripKey,
       tracks,
-      zipName: playlist?.name ?? '歌单',
+      meta: {
+        kind: 'playlist',
+        name,
+        source: mixed ? undefined : (tracks[0]?.source ?? source),
+        sourceId: isLocal ? undefined : id,
+        creator: playlist?.creator,
+      },
       level,
+      choice,
     })
   }
 
