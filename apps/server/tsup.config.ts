@@ -5,7 +5,12 @@ export default defineConfig({
   format: ['esm'],
   clean: true,
   outDir: 'dist',
-  external: ['NeteaseCloudMusicApi', '@hono/node-server'],
+  external: [
+    'NeteaseCloudMusicApi',
+    '@hono/node-server',
+    // ffmpeg 静态包内部做平台二进制路径探测与 JSON require，打包必坏 → 运行时从 node_modules 解析
+    '@ffmpeg-installer/ffmpeg',
+  ],
   noExternal: ['@pterosaur/shared'],
   // tsup 默认会剥掉 `node:` 前缀（为兼容 Node < 14.18）。但部分内建**只能**以 `node:` 访问，
   // 如 `node:sqlite`（云同步存储）——剥成 `sqlite` 会被当作不存在的包、启动即崩。
