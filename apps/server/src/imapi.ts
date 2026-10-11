@@ -35,7 +35,7 @@ export interface DiscProbe {
   capacityBytes?: number
   /** 数据 CD 刻录是否受支持（CD 介质 + 可写 + `IsCurrentMediaSupported`）。 */
   dataSupported: boolean
-  /** 音频 CD 刻录是否受支持（同上，按 TrackAtOnce 格式查询）。 */
+  /** 音频 CD 刻录是否受支持（同上，按 DiscAtOnce/RawCD 格式查询，见 ADR-048）。 */
   audioSupported: boolean
   /** 是否为模拟刻录。 */
   simulated: boolean
@@ -329,8 +329,8 @@ function parseProbePayload(
  *   WRITE_PROTECTED / FINALIZED / UNSUPPORTED_MEDIA）。**不可用 `CurrentProfileType`
  *   判断介质类型**——空白介质上它回 NONE(0)（实测于 CD-RW，见 ADR-048），改用
  *   `CurrentPhysicalMediaType`（CDR=2 / CDRW=3 / DVDDASHR=9 / DVDDASHRW=10 …）。
- * - 可刻性以官方能力查询 `IsCurrentMediaSupported(recorder)` 为准（数据 / 音频分别用
- *   `MsftDiscFormat2Data` 与 `MsftDiscFormat2TrackAtOnce` 查询；介质限 CD 系）。
+ * - 可刻性以官方能力查询 `IsCurrentMediaSupported(recorder)` 为准（数据用 `MsftDiscFormat2Data`、
+ *   音频用 `MsftDiscFormat2RawCD`（DiscAtOnce 路线，见 ADR-048）查询；介质限 CD 系）。
  */
 export const PS_PROBE_SCRIPT = `$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -376,9 +376,9 @@ try {
         $isCd = (($mediaType -eq 2) -or ($mediaType -eq 3))
         if ($isCd -and $writable) {
           $dataSupported = [bool]$fmt.IsCurrentMediaSupported($rec)
-          $toc = New-Object -ComObject IMAPI2.MsftDiscFormat2TrackAtOnce
-          $toc.Recorder = $rec
-          $audioSupported = [bool]$toc.IsCurrentMediaSupported($rec)
+          $rawFmt = New-Object -ComObject IMAPI2.MsftDiscFormat2RawCD
+          $rawFmt.Recorder = $rec
+          $audioSupported = [bool]$rawFmt.IsCurrentMediaSupported($rec)
         }
       }
     }
@@ -393,7 +393,9 @@ try {
 
 /**
  * 刻录脚本：data 模式走 MsftFileSystemImage（ISO+Joliet+UDF）→ MsftDiscFormat2Data.Write；
- * audio 模式走 MsftDiscFormat2TrackAtOnce（PrepareMedia → 逐轨 AddAudioTrack → ReleaseMedia）。
+ * audio 模式走 **DiscAtOnce**：MsftRawCDImageCreator 在内存构建整盘镜像
+ * （逐轨 `AddTrack(0=IMAPI_CD_SECTOR_AUDIO, IStream)`，流为 2352 字节/扇区的裸 PCM）
+ * → MsftDiscFormat2RawCD.WriteMedia(镜像流)（见 ADR-048；TrackAtOnce 因实机反复拒流已弃用）。
  *
  * 写入前**复检**介质（探测与刻录之间可能换过盘）：
  * - 可写性：`IMAPI_FORMAT2_DATA_MEDIA_STATE` 的 `UNSUPPORTED_MASK(0xFC00)` 为空且可写位
@@ -411,6 +413,16 @@ $ErrorActionPreference = 'Stop'
 
 function Emit($obj) { Write-Output ($obj | ConvertTo-Json -Compress -Depth 5) }
 function Fail($code, $detail) { Emit @{ event = 'error'; code = "$code"; detail = "$detail" }; exit 1 }
+
+# Native OLE stream factory used to feed the raw image creator (see ADR-048).
+try {
+  Add-Type -Namespace Pterosaur -Name Native -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("shlwapi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, PreserveSig = false)]
+public static extern void SHCreateStreamOnFileW(string pszFile, uint grfMode, out System.Runtime.InteropServices.ComTypes.IStream ppstm);
+'@
+} catch {
+  Fail 'burn_failed' ("Add-Type failed: " + $_.Exception.Message)
+}
 
 try {
   $cfg = Get-Content -Raw -Encoding UTF8 -LiteralPath $ConfigPath | ConvertFrom-Json
@@ -460,17 +472,36 @@ try {
     Emit @{ event = 'phase'; phase = 'writing' }
     $probe.Write($image.ImageStream)
   } else {
-    $toc = New-Object -ComObject IMAPI2.MsftDiscFormat2TrackAtOnce
-    $toc.Recorder = $rec
-    $toc.ClientName = 'Pterosaur'
-    if (-not ($toc.IsCurrentMediaSupported($rec))) { Fail 'media_unsupported_audio' ("mediaType=" + $mediaType) }
-    Emit @{ event = 'phase'; phase = 'writing' }
-    $toc.PrepareMedia()
-    foreach ($wav in $cfg.audioTracks) {
-      $stream = [System.IO.File]::OpenRead("$wav")
-      try { $toc.AddAudioTrack($stream) } finally { $stream.Dispose() }
+    # Disc-At-Once (raw CD image): build the whole disc image in memory from the
+    # header-less CD-DA PCM tracks (2352 bytes per sector = 588 four-byte stereo
+    # samples), then write it in one shot. WriteMedia consumes an IMAPI-produced
+    # stream (pure COM-to-COM) - the fragile per-track stream hand-off of the
+    # TrackAtOnce path is avoided entirely (see ADR-048).
+    $streams = New-Object System.Collections.ArrayList
+    try {
+      $img = New-Object -ComObject IMAPI2.MsftRawCDImageCreator
+      foreach ($pcm in $cfg.audioTracks) {
+        $s = $null
+        [Pterosaur.Native]::SHCreateStreamOnFileW("$pcm", 0, [ref]$s)
+        [void]$streams.Add($s)
+        [void]$img.AddTrack(0, $s)   # 0 = IMAPI_CD_SECTOR_AUDIO
+      }
+      Emit @{ event = 'phase'; phase = 'preparing' }
+      $image = $img.CreateResultImage()
+
+      $rawFmt = New-Object -ComObject IMAPI2.MsftDiscFormat2RawCD
+      $rawFmt.Recorder = $rec
+      $rawFmt.ClientName = 'Pterosaur'
+      if (-not ($rawFmt.IsCurrentMediaSupported($rec))) { Fail 'media_unsupported_audio' ("mediaType=" + $mediaType) }
+      $rawFmt.PrepareMedia()
+      Emit @{ event = 'phase'; phase = 'writing' }
+      $rawFmt.WriteMedia($image)
+      $rawFmt.ReleaseMedia()
+    } finally {
+      foreach ($s in $streams) {
+        try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($s) } catch { }
+      }
     }
-    $toc.ReleaseMedia()
   }
 
   # Try to eject the disc so the user can take it out (best effort).
@@ -478,6 +509,6 @@ try {
   Emit @{ event = 'done' }
   exit 0
 } catch {
-  Fail 'burn_failed' $_.Exception.Message
+  Fail 'burn_failed' ($_.Exception.Message + ' [0x' + ('{0:X8}' -f $_.Exception.HResult) + ']')
 }
 `

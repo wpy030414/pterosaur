@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { appendFile, stat } from 'node:fs/promises'
 
 /**
  * 静态集成的 ffmpeg（音频 CD 转码依赖，见 ADR-048）。
@@ -48,8 +49,13 @@ export async function ffmpegVersion(bin: string): Promise<string | null> {
   }
 }
 
-/** CD-DA 标准参数：44.1kHz / 16bit / 立体声 PCM WAV（IMAPI2 AddAudioTrack 的硬要求）。 */
-export function cdWavArgs(input: string, output: string): string[] {
+/**
+ * CD-DA 标准参数：44.1kHz / 16bit / 立体声，输出**裸 PCM**（`s16le`，无 RIFF 头）。
+ *
+ * IMAPI2 `AddAudioTrack` 的流须是「WAV 去掉头部」的裸采样数据（MSDN 原文；
+ * 喂带头的 WAV 会被判 `E_IMAPI_DF2TAO_STREAM_NOT_SUPPORTED`，见 ADR-048 真机修正）。
+ */
+export function cdPcmArgs(input: string, output: string): string[] {
   return [
     '-y',
     '-hide_banner',
@@ -64,18 +70,31 @@ export function cdWavArgs(input: string, output: string): string[] {
     '-sample_fmt',
     's16',
     '-f',
-    'wav',
+    's16le',
     output,
   ]
 }
 
-/** 把任意源音频转成可刻录的 CD-DA WAV；失败抛出（携 stderr 尾部）。 */
-export async function toCdWav(
+/** 把任意源音频转成可刻录的 CD-DA 裸 PCM；失败抛出（携 stderr 尾部）。 */
+export async function toCdPcm(
   bin: string,
   input: string,
   output: string,
 ): Promise<void> {
-  await runProcess(bin, cdWavArgs(input, output), 10 * 60_000)
+  await runProcess(bin, cdPcmArgs(input, output), 10 * 60_000)
+}
+
+/**
+ * 将 PCM 文件补零对齐到 **CD 扇区边界**（2352 字节）。
+ *
+ * 部分源的时长与元数据存在亚秒级偏差（实测专辑《David Tao》15 轨中 2 轨未对齐），
+ * 而 CD-DA 的帧是定长的——尾帧不足即以静音补满，保证 `AddTrack` 消费的流严格
+ * 按扇区成立（见 ADR-048）。
+ */
+export async function padToCdSector(path: string): Promise<void> {
+  const { size } = await stat(path)
+  const pad = (2352 - (size % 2352)) % 2352
+  if (pad > 0) await appendFile(path, Buffer.alloc(pad))
 }
 
 /** 运行外部进程：收集 stdout、环形保留 stderr 尾 10 行；超时强杀、非 0 退出抛错。 */

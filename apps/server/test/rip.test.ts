@@ -13,7 +13,7 @@ import {
   subscribeRip,
   validateBurnBody,
 } from '../src/rip.js'
-import { toCdWav } from '../src/ffmpeg.js'
+import { toCdPcm } from '../src/ffmpeg.js'
 import { probeDisc } from '../src/imapi.js'
 import { fakeProbe } from '../src/imapiFake.js'
 
@@ -21,7 +21,8 @@ import { fakeProbe } from '../src/imapiFake.js'
 vi.mock('../src/ffmpeg.js', () => ({
   resolveFfmpegPath: vi.fn(async () => 'fake-ffmpeg'),
   ffmpegVersion: vi.fn(async () => 'test'),
-  toCdWav: vi.fn(async () => {}),
+  toCdPcm: vi.fn(async () => {}),
+  padToCdSector: vi.fn(async () => {}),
   _resetFfmpegForTest: vi.fn(),
 }))
 
@@ -339,7 +340,7 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     expect(result.meta?.discType).toBe('audio')
     expect(result.meta?.tracks[0].file).toBeUndefined()
     expect(result.meta?.cover).toBeUndefined()
-    expect(vi.mocked(toCdWav)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(toCdPcm)).toHaveBeenCalledTimes(1)
     expect(
       events.some((e) => e.type === 'progress' && e.phase === 'convert'),
     ).toBe(true)

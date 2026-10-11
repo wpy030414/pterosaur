@@ -50,8 +50,13 @@ describe('PS 模板守卫', () => {
       'MsftFileSystemImage',
       'FileSystemsToCreate = 7',
       'MsftDiscFormat2Data',
-      'MsftDiscFormat2TrackAtOnce',
-      'AddAudioTrack',
+      'MsftRawCDImageCreator',
+      'MsftDiscFormat2RawCD',
+      'AddTrack',
+      'CreateResultImage',
+      'WriteMedia',
+      'SHCreateStreamOnFileW',
+      'ReleaseComObject',
       'PrepareMedia',
       'ReleaseMedia',
       '[Console]::OutputEncoding',
@@ -64,6 +69,13 @@ describe('PS 模板守卫', () => {
       expect(PS_BURN_SCRIPT, token).toContain(token)
   })
 
+  it('音频轨禁用被实机否决的路径（FileStream / ADODB / TrackAtOnce，见 ADR-048）', () => {
+    expect(PS_BURN_SCRIPT.includes('OpenRead')).toBe(false)
+    expect(PS_BURN_SCRIPT.includes('ADODB')).toBe(false)
+    expect(PS_BURN_SCRIPT.includes('AddAudioTrack')).toBe(false)
+    expect(PS_BURN_SCRIPT.includes('MsftDiscFormat2TrackAtOnce')).toBe(false)
+  })
+
   it('模板不使用 CurrentProfileType（空白介质回 NONE=0，见 ADR-048 首测修正）', () => {
     expect(PS_PROBE_SCRIPT.includes('CurrentProfileType')).toBe(false)
     expect(PS_BURN_SCRIPT.includes('CurrentProfileType')).toBe(false)
@@ -73,7 +85,7 @@ describe('PS 模板守卫', () => {
     for (const token of [
       'MsftDiscMaster2',
       'MsftDiscFormat2Data',
-      'MsftDiscFormat2TrackAtOnce',
+      'MsftDiscFormat2RawCD',
       'CurrentMediaStatus',
       'CurrentPhysicalMediaType',
       'IsCurrentMediaSupported',

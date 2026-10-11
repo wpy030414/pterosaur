@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   _resetFfmpegForTest,
-  cdWavArgs,
+  cdPcmArgs,
+  padToCdSector,
   resolveFfmpegPath,
 } from '../src/ffmpeg.js'
 
@@ -27,15 +31,33 @@ describe('resolveFfmpegPath', () => {
   })
 })
 
-describe('cdWavArgs', () => {
-  it('CD-DA 参数：44.1kHz / 16bit PCM / 立体声 / WAV', () => {
-    const args = cdWavArgs('in.flac', 'out.wav')
-    expect(args).toContain('-ar')
+describe('cdPcmArgs', () => {
+  it('CD-DA 参数：44.1kHz / 16bit 立体声 / 裸 PCM（s16le，无 WAV 头）', () => {
+    const args = cdPcmArgs('in.flac', 'out.pcm')
     expect(args[args.indexOf('-ar') + 1]).toBe('44100')
     expect(args[args.indexOf('-ac') + 1]).toBe('2')
     expect(args[args.indexOf('-sample_fmt') + 1]).toBe('s16')
-    expect(args).toContain('wav')
-    expect(args.at(-1)).toBe('out.wav')
+    expect(args[args.indexOf('-f') + 1]).toBe('s16le')
+    expect(args.at(-1)).toBe('out.pcm')
     expect(args).toContain('in.flac')
+  })
+})
+
+describe('padToCdSector', () => {
+  it('未对齐补零到 2352 边界；已对齐不动', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pterosaur-pad-'))
+    try {
+      const odd = join(dir, 'odd.pcm')
+      await writeFile(odd, Buffer.alloc(2352 + 100))
+      await padToCdSector(odd)
+      expect((await stat(odd)).size).toBe(2352 * 2)
+
+      const aligned = join(dir, 'aligned.pcm')
+      await writeFile(aligned, Buffer.alloc(2352 * 3))
+      await padToCdSector(aligned)
+      expect((await stat(aligned)).size).toBe(2352 * 3)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

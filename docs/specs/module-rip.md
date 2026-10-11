@@ -31,7 +31,7 @@
 
 - `meta.json` 与命名工具（`safeRipName` / `ripFileName` / `extFromMime` / `extFromImageMime`）**只在** `shared/rip.ts` 一份实现；两端产物同构。
 - 回环双门控 fail-closed：前端 hostname + 后端 `getConnInfo` 对端地址；`/api/rip/*` 非回环一律 403。
-- 直刻仅 Windows（IMAPI2）；PS 模板 ASCII-only、配置走 UTF-8 JSON、stdout JSON lines、错误码→中文映射在 Node 侧；写入前复检介质可写性（MediaState：UNSUPPORTED_MASK `0xFC00` 为空且 `OVERWRITE_ONLY|BLANK|APPENDABLE`(0x7) 非空）并限 CD-R / CD-RW；可刻性以 `IsCurrentMediaSupported` 为准，**不用 `CurrentProfileType`**（空白介质回 NONE=0，见 ADR-048 首测修正）。
+- 直刻仅 Windows（IMAPI2）；PS 模板 ASCII-only、配置走 UTF-8 JSON、stdout JSON lines、错误码→中文映射在 Node 侧；写入前复检介质可写性（MediaState：UNSUPPORTED_MASK `0xFC00` 为空且 `OVERWRITE_ONLY|BLANK|APPENDABLE`(0x7) 非空）并限 CD-R / CD-RW；可刻性以 `IsCurrentMediaSupported` 为准，**不用 `CurrentProfileType`**（空白介质回 NONE=0）；音频 CD 走 **DiscAtOnce**（`MsftRawCDImageCreator` 内存构建整盘镜像：逐轨 `AddTrack(0, IStream)` 消费 2352 字节/扇区**裸 PCM**（无 RIFF 头），再 `MsftDiscFormat2RawCD.WriteMedia(镜像流)` 一次写入——镜像流 IMAPI 自产、纯 COM→COM）；TrackAtOnce 路线（FileStream / ADODB / SHCreateStreamOnFile 三种流形态）均被实机判拒、已弃用加守卫——均见 ADR-048 首测修正。
 - ffmpeg 解析顺序：`PTEROSAUR_FFMPEG_PATH` → `@ffmpeg-installer/ffmpeg`（静态包，无可执行时仅音频 CD 禁用）。
 - staging：`os.tmpdir()/pterosaur-burn-*`，成败均清，启动清扫 24h 残留；文件名全走 `safeRipName`（防路径穿越）；封面 URL 白名单（https 的 `*.music.126.net` / `*.hdslb.com`，防 SSRF）。
 - 刻录阶段 `percent` 恒为 `null`（IMAPI 不可得，见 ADR-048）；前端快照帧按请求发起时刻过滤陈旧终态。

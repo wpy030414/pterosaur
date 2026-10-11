@@ -35,7 +35,12 @@ import {
 } from './audioFetch.js'
 import { adapterOf } from './sources/index.js'
 import { burnDisc, isFakeBurn, probeDisc, psErrorMessage } from './imapi.js'
-import { ffmpegVersion, resolveFfmpegPath, toCdWav } from './ffmpeg.js'
+import {
+  ffmpegVersion,
+  padToCdSector,
+  resolveFfmpegPath,
+  toCdPcm,
+} from './ffmpeg.js'
 
 /**
  * 实体刻录（后端直刻光驱）的任务引擎，见 ADR-048。
@@ -469,7 +474,8 @@ async function runJob(input: RunBurnInput): Promise<void> {
       emitProgress('fetch', i + 1, input.tracks.length)
     }
 
-    // 3) 音频 CD：逐轨转码为 CD-DA 规格 WAV（44.1kHz/16bit 立体声）
+    // 3) 音频 CD：逐轨转码为 CD-DA 规格**裸 PCM**（44.1kHz/16bit 立体声，无 RIFF 头——
+    //    DiscAtOnce 镜像的 AddTrack 按 2352 字节/扇区消费裸 PCM，见 ADR-048）
     const audioTracks: string[] | undefined = []
     if (input.discType === 'audio') {
       const bin = await resolveFfmpegPath()
@@ -477,18 +483,20 @@ async function runJob(input: RunBurnInput): Promise<void> {
         throw new Error(
           '未找到可用的 ffmpeg，无法转码音频 CD（可设 PTEROSAUR_FFMPEG_PATH）',
         )
-      const wavDir = join(stagingRoot, 'wav')
-      await mkdir(wavDir, { recursive: true })
+      const pcmDir = join(stagingRoot, 'pcm')
+      await mkdir(pcmDir, { recursive: true })
       emitProgress('convert', 0, input.tracks.length)
       for (let i = 0; i < input.tracks.length; i++) {
         const t = input.tracks[i]
         const src = join(discDir, files.get(i + 1)!)
-        const wav = join(
-          wavDir,
-          ripFileName(i + 1, input.tracks.length, t.title, 'wav'),
+        const pcm = join(
+          pcmDir,
+          ripFileName(i + 1, input.tracks.length, t.title, 'pcm'),
         )
-        await toCdWav(bin, src, wav)
-        audioTracks.push(wav)
+        await toCdPcm(bin, src, pcm)
+        // CD-DA 帧定长：元数据时长的亚秒偏差会让尾帧不足，补零对齐到扇区边界
+        await padToCdSector(pcm)
+        audioTracks.push(pcm)
         emitProgress('convert', i + 1, input.tracks.length)
       }
     }
