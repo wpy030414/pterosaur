@@ -1,6 +1,13 @@
+import { saveAs } from 'file-saver'
 import type { AudioLevel, MusicSource, Track } from '@pterosaur/shared/types'
 import { DEFAULT_AUDIO_LEVEL } from '@pterosaur/shared/types'
-import type { RipChoice, RipKind, RipMetaInput } from '@pterosaur/shared/rip'
+import {
+  RIP_META_FILE,
+  type RipChoice,
+  type RipKind,
+  type RipMetaInput,
+} from '@pterosaur/shared/rip'
+import { burnPlaylist } from './burn.js'
 import { downloadPlaylist } from './downloadPlaylist.js'
 import { confirmDialog } from '../store/ui.js'
 import { useRip } from '../store/rip.js'
@@ -37,19 +44,20 @@ export interface RunRipOptions {
 }
 
 /**
- * 启动一次翻录（全局单任务），按用户所选**分发方式**分流：
+ * 启动一次翻录（全局单任务），按用户所选**分发方式**分流（见 ADR-047/048）：
  *
  * - `digital`：浏览器 JSZip 打包下载（音频 + 封面 + `meta.json`），沿既有前台链路；
- * - `physical`：后端直刻本机光驱（仅同机访问开放），进度经 SSE 回传——
- *   接线见 `lib/burn.ts`（随服务端直刻模块一并启用）。
+ * - `physical`：后端直刻本机光驱（仅同机访问开放），进度经 SSE 回传；刻录成功后
+ *   浏览器另存一份 `meta.json`（数据 CD 已随盘上盘，音频 CD 无文件系统）。
  *
- * 进度写入 {@link useRip} 全局 store，因此**切换页面再回来仍能恢复环形进度**；下载在后台继续，
+ * 进度写入 {@link useRip} 全局 store，因此**切换页面再回来仍能恢复环形进度**；下载 / 刻录在后台继续，
  * 不随发起组件卸载而中止。若已有翻录未结束，直接忽略本次调用（避免并发翻录）。
  * 失败统一在此弹出提示（数字链路的单曲失败在包内记为 `skipped`，不打断整包）。
  */
 export async function runRip(opts: RunRipOptions): Promise<void> {
   if (useRip.getState().job) return
   useRip.getState().start(opts.key, opts.tracks.length)
+  const level = opts.level ?? DEFAULT_AUDIO_LEVEL
   try {
     if (opts.choice.distribution === 'digital') {
       const metaInput: RipMetaInput = {
@@ -60,7 +68,7 @@ export async function runRip(opts: RunRipOptions): Promise<void> {
         sourceId: opts.meta.sourceId,
         creator: opts.meta.creator,
         coverUrl: opts.coverUrl,
-        level: opts.level ?? DEFAULT_AUDIO_LEVEL,
+        level,
       }
       await downloadPlaylist(
         opts.tracks,
@@ -71,9 +79,37 @@ export async function runRip(opts: RunRipOptions): Promise<void> {
         { metaInput },
       )
     } else {
-      // 实体刻录链路（lib/burn.ts）随服务端直刻模块一并接通；
-      // 过渡态中对话框因 capabilities 不可得而已禁用该路径，正常不会到达。
-      throw new Error('实体刻录尚未就绪')
+      const metaInput: RipMetaInput = {
+        distribution: 'physical',
+        discType: opts.choice.discType,
+        kind: opts.meta.kind,
+        name: opts.meta.name,
+        source: opts.meta.source,
+        sourceId: opts.meta.sourceId,
+        creator: opts.meta.creator,
+        coverUrl: opts.coverUrl,
+        level,
+      }
+      const meta = await burnPlaylist(
+        {
+          tracks: opts.tracks,
+          meta: metaInput,
+          discType: opts.choice.discType,
+          level,
+        },
+        (p) => {
+          useRip.getState().setPhase(p.phase)
+          useRip.getState().setProgress(p.current, p.total)
+          useRip.getState().setPercent(p.percent)
+        },
+      )
+      // 刻录成功：另存 meta.json（浏览器下载一份，与「两种方式产物都含 meta.json」对齐）
+      saveAs(
+        new Blob([JSON.stringify(meta, null, 2)], {
+          type: 'application/json',
+        }),
+        RIP_META_FILE,
+      )
     }
   } catch (err) {
     await confirmDialog({
