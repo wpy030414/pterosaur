@@ -16,7 +16,13 @@ const caps = (over: Partial<RipCapabilities> = {}): RipCapabilities => ({
   simulated: false,
   supported: true,
   recorders: [{ id: 'fake-drive', product: 'Fake Burner' }],
-  media: { present: true, blank: true, profile: 'CD-R' },
+  media: {
+    present: true,
+    blank: true,
+    profile: 'CD-RW',
+    dataSupported: true,
+    audioSupported: true,
+  },
   ffmpeg: { available: true, version: '4.1' },
   audioCd: { maxSeconds: 4740 },
   ...over,
@@ -80,6 +86,53 @@ describe('RipDialog', () => {
     )
     expect(screen.getByTestId('rip-disc-audio')).toBeDisabled()
     expect(screen.getByTestId('rip-audio-reason')).toHaveTextContent(/ffmpeg/)
+  })
+
+  it('介质不支持音频 CD：禁用并给原因（IsCurrentMediaSupported 口径）', async () => {
+    mockedCaps.mockResolvedValue(
+      caps({
+        media: {
+          present: true,
+          blank: true,
+          profile: 'CD-RW',
+          dataSupported: true,
+          audioSupported: false,
+        },
+      }),
+    )
+    ripDialog(opts)
+    render(<RipDialog loopback={true} />)
+    fireEvent.click(screen.getByTestId('rip-dist-physical'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rip-caps')).toHaveTextContent('刻录机 1 台'),
+    )
+    expect(screen.getByTestId('rip-disc-audio')).toBeDisabled()
+    expect(screen.getByTestId('rip-audio-reason')).toHaveTextContent(
+      /不支持音频 CD 刻录/,
+    )
+  })
+
+  it('介质不支持数据 CD：数据模式下不可开始并给原因', async () => {
+    mockedCaps.mockResolvedValue(
+      caps({
+        media: {
+          present: true,
+          blank: true,
+          profile: 'DVD-R',
+          dataSupported: false,
+        },
+      }),
+    )
+    ripDialog(opts)
+    render(<RipDialog loopback={true} />)
+    fireEvent.click(screen.getByTestId('rip-dist-physical'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rip-caps')).toHaveTextContent('刻录机 1 台'),
+    )
+    expect(screen.getByTestId('rip-data-reason')).toHaveTextContent(
+      /不支持数据刻录/,
+    )
+    expect(screen.getByRole('button', { name: '开始刻录' })).toBeDisabled()
   })
 
   it('总时长超出音频 CD 上限：音频 CD 禁用并给原因', async () => {

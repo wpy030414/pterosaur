@@ -77,6 +77,8 @@ export function RipDialog({ loopback: loopbackProp }: RipDialogProps = {}) {
   if (!open || !options) return null
 
   const recorderCount = caps?.recorders.length ?? 0
+  /** 介质处于可写就绪态（能力查询里两种格式的支持位以此刻为准）。 */
+  const mediaUsable = !!caps?.media.present && caps.media.blank
 
   /** 实体链路不可用的原因（null = 可用）。 */
   const physicalReason = !loopback
@@ -94,23 +96,32 @@ export function RipDialog({ loopback: loopbackProp }: RipDialogProps = {}) {
               : !caps.media.present
                 ? '光驱中未放入光盘（请放入空白 CD-R）'
                 : !caps.media.blank
-                  ? '光盘非空白，请更换空白 CD-R'
+                  ? '光盘不可写（非空白 / 已终结 / 写保护），请更换空白 CD-R'
                   : null
 
-  /** 音频 CD 不可用的原因（null = 可用）。 */
+  /** 数据 CD 不可用的原因（null = 可用；仅介质就绪时才有意义）。 */
+  const dataReason =
+    mediaUsable && caps!.media.dataSupported === false
+      ? '当前介质不支持数据刻录（请更换空白 CD-R / CD-RW）'
+      : null
+
+  /** 音频 CD 不可用的原因（null = 可用；仅介质就绪时才有意义）。 */
   const audioFits = audioCdFitsTotal(options.totalDuration, options.trackCount)
-  const audioReason =
-    caps && recorderCount > 0
-      ? !caps.ffmpeg.available
+  const audioReason = mediaUsable
+    ? caps!.media.audioSupported === false
+      ? '当前光驱或介质不支持音频 CD 刻录'
+      : !caps!.ffmpeg.available
         ? '未找到可用的 ffmpeg，无法转码音频 CD'
         : !audioFits
           ? `总时长约 ${Math.ceil(options.totalDuration / 60)} 分钟，超出音频 CD 上限（约 ${Math.round(AUDIO_CD_MAX_SECONDS / 60)} 分钟）`
           : null
-      : null
+    : null
 
   const startDisabled =
     dist === 'physical' &&
-    (physicalReason !== null || (discType === 'audio' && audioReason !== null))
+    (physicalReason !== null ||
+      (discType === 'data' && dataReason !== null) ||
+      (discType === 'audio' && audioReason !== null))
 
   const confirm = () => {
     if (dist === 'digital') settle({ distribution: 'digital' })
@@ -124,7 +135,7 @@ export function RipDialog({ loopback: loopbackProp }: RipDialogProps = {}) {
           caps.media.present
             ? caps.media.blank
               ? `${caps.media.profile ?? '可写介质'} 已就绪`
-              : '介质非空白'
+              : '介质不可写'
             : '未放盘'
         }`
       : '未检测到刻录机'
@@ -237,6 +248,11 @@ export function RipDialog({ loopback: loopbackProp }: RipDialogProps = {}) {
             {physicalReason && (
               <p className="rip-dialog__reason" data-testid="rip-reason">
                 {physicalReason}
+              </p>
+            )}
+            {dataReason && (
+              <p className="rip-dialog__reason" data-testid="rip-data-reason">
+                {dataReason}
               </p>
             )}
             {audioReason && (

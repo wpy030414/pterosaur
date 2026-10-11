@@ -14,6 +14,8 @@ import {
   validateBurnBody,
 } from '../src/rip.js'
 import { toCdWav } from '../src/ffmpeg.js'
+import { probeDisc } from '../src/imapi.js'
+import { fakeProbe } from '../src/imapiFake.js'
 
 // 转码在单测里不落真实二进制：ffmpeg 模块整体替换（音频分支只关心编排）
 vi.mock('../src/ffmpeg.js', () => ({
@@ -231,8 +233,30 @@ describe('回环门控', () => {
     expect(caps.supported).toBe(true)
     expect(caps.recorders).toHaveLength(1)
     expect(caps.media.blank).toBe(true)
+    expect(caps.media.dataSupported).toBe(true)
+    expect(caps.media.audioSupported).toBe(true)
     expect(caps.ffmpeg.available).toBe(true)
     expect(caps.audioCd.maxSeconds).toBe(79 * 60)
+  })
+
+  it('介质不支持目标格式：先行失败（在拉取任何音频之前）', async () => {
+    vi.mocked(probeDisc).mockResolvedValueOnce({
+      ...fakeProbe(),
+      dataSupported: false,
+    })
+    const songUrl = vi
+      .spyOn(neteaseAdapter, 'songUrl')
+      .mockResolvedValue(['https://cdn.example/x.flac'])
+
+    expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(202)
+    await vi.waitFor(
+      () => {
+        expect(lastResultSnapshot()?.status).toBe('error')
+      },
+      { timeout: 8000 },
+    )
+    expect(lastResultSnapshot()?.error).toContain('不支持数据刻录')
+    expect(songUrl).not.toHaveBeenCalled()
   })
 })
 

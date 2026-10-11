@@ -275,12 +275,16 @@ export interface RipCapabilities {
   /** 当前已就绪介质的状态（取第一台刻录机）。 */
   media: {
     present: boolean
-    /** 是否为空白 / 可追加介质（可刻录的前提）。 */
+    /** 介质是否**可写**（空白 / 可追加 / 可覆写，且无损伤 / 擦除要求 / 写保护 / 已终结等状态）。 */
     blank: boolean
-    /** 介质配置，如 `CD-R` / `CD-RW` / `DVD-R`。 */
+    /** 介质类型标签（如 `CD-R` / `CD-RW`，经 `CurrentPhysicalMediaType` 归一）。 */
     profile?: string
     /** 介质总容量（字节）。 */
     capacityBytes?: number
+    /** 数据 CD 刻录是否受支持（CD 介质 + 可写 + IMAPI 能力查询，见 ADR-048）。 */
+    dataSupported?: boolean
+    /** 音频 CD 刻录是否受支持（同上，按 TrackAtOnce 格式查询）。 */
+    audioSupported?: boolean
   }
   /** 静态集成的 ffmpeg 可用性（音频 CD 转码依赖）。 */
   ffmpeg: { available: boolean; version?: string }

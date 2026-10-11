@@ -308,6 +308,8 @@ export async function ripCapabilities(): Promise<RipCapabilities> {
           blank: probe.blank,
           profile: probe.profile,
           capacityBytes: probe.capacityBytes,
+          dataSupported: probe.dataSupported,
+          audioSupported: probe.audioSupported,
         },
         ffmpeg,
         audioCd,
@@ -402,12 +404,16 @@ async function runJob(input: RunBurnInput): Promise<void> {
     stagingRoot = await mkdtemp(join(tmpdir(), 'pterosaur-burn-'))
     const discDir = join(stagingRoot, 'disc')
 
-    // 1) 先探测刻录机与介质：无盘 / 非空白立即失败（在拉取任何音频之前）
+    // 1) 先探测刻录机与介质：无盘 / 不可写 / 目标格式不受支持立即失败（在拉取任何音频之前）
     const probe = await probeDisc()
     if (probe.recorders.length === 0)
       throw new Error(psErrorMessage('no_recorder'))
     if (!probe.mediaPresent) throw new Error(psErrorMessage('no_media'))
     if (!probe.blank) throw new Error(psErrorMessage('media_not_blank'))
+    if (input.discType === 'data' && !probe.dataSupported)
+      throw new Error(psErrorMessage('media_unsupported_data', probe.profile))
+    if (input.discType === 'audio' && !probe.audioSupported)
+      throw new Error(psErrorMessage('media_unsupported_audio', probe.profile))
 
     // 2) 逐轨拉取落盘（流式写入；单轨失败 fail-fast——半成品刻进盘不可挽回）。
     //    模拟模式下取流一并模拟（合成 WAV），使全链路演练 / E2E 完全封闭。

@@ -22,12 +22,21 @@ export interface DiscProbe {
   recorders: { id: string; product?: string }[]
   /** 光驱中是否有介质。 */
   mediaPresent: boolean
-  /** 介质是否空白 / 可追加（可刻录的前提）。 */
+  /**
+   * 介质是否**可写**（空白 / 可追加 / 可覆写，且无损伤、擦除要求、写保护、已终结等
+   * 不可写状态）——即 `IMAPI_FORMAT2_DATA_MEDIA_STATE` 的 `UNSUPPORTED_MASK(0xFC00)`
+   * 为空且可写位（`OVERWRITE_ONLY|BLANK|APPENDABLE`）非空（常量按官方
+   * Checking Media Support 样例校正，见 ADR-048）。
+   */
   blank: boolean
-  /** 介质配置标签（CD-R / CD-RW 等；未知为 `0x..`）。 */
+  /** 介质类型标签（经 `CurrentPhysicalMediaType`，如 CD-R / CD-RW）。 */
   profile?: string
-  /** 介质容量（字节，按介质档位估算）。 */
+  /** 介质容量（字节，按介质类型估算）。 */
   capacityBytes?: number
+  /** 数据 CD 刻录是否受支持（CD 介质 + 可写 + `IsCurrentMediaSupported`）。 */
+  dataSupported: boolean
+  /** 音频 CD 刻录是否受支持（同上，按 TrackAtOnce 格式查询）。 */
+  audioSupported: boolean
   /** 是否为模拟刻录。 */
   simulated: boolean
 }
@@ -55,8 +64,10 @@ const PS_ERROR_MESSAGES: Record<string, string> = {
   config_unreadable: '刻录配置不可读',
   no_recorder: '未检测到刻录机',
   no_media: '光驱中未放入光盘（请放入空白 CD-R）',
-  media_not_blank: '光盘非空白，请更换空白 CD-R',
-  media_unsupported: '介质不受支持（请使用 CD-R / CD-RW）',
+  media_not_blank: '光盘不可写（非空白 / 已终结 / 写保护），请更换空白 CD-R',
+  media_unsupported_data: '当前介质不支持数据刻录（请使用空白 CD-R / CD-RW）',
+  media_unsupported_audio:
+    '当前光驱或介质不支持音频 CD 刻录（请更换 CD-R/CD-RW，或改刻数据 CD）',
   burn_failed: '刻录写入失败',
 }
 
@@ -296,6 +307,8 @@ function parseProbePayload(
       profile: typeof o.profile === 'string' ? o.profile : undefined,
       capacityBytes:
         typeof o.capacityBytes === 'number' ? o.capacityBytes : undefined,
+      dataSupported: !!o.dataSupported,
+      audioSupported: !!o.audioSupported,
     }
   }
   return null
@@ -308,9 +321,16 @@ function parseProbePayload(
  */
 
 /**
- * 探测脚本：枚举刻录机（取第一台的介质状态与配置档）。
- * IMAPI_FORMAT2_DATA_MEDIA_STATE：BLANK=0x1、APPENDABLE=0x2（其余位忽略）；
- * IMAPI_PROFILE_TYPE：CD-R=0x9、CD-RW=0xA。
+ * 探测脚本：枚举刻录机（取第一台的介质状态、介质类型与两种格式的可刻性）。
+ *
+ * 依据官方 Checking Media Support 样例（见 ADR-048）：
+ * - `IMAPI_FORMAT2_DATA_MEDIA_STATE`：`OVERWRITE_ONLY=0x1`、`BLANK=0x2`、`APPENDABLE=0x4`；
+ *   `0xFC00` 为 UNSUPPORTED_MASK（DAMAGED / ERASE_REQUIRED / NON_EMPTY_SESSION /
+ *   WRITE_PROTECTED / FINALIZED / UNSUPPORTED_MEDIA）。**不可用 `CurrentProfileType`
+ *   判断介质类型**——空白介质上它回 NONE(0)（实测于 CD-RW，见 ADR-048），改用
+ *   `CurrentPhysicalMediaType`（CDR=2 / CDRW=3 / DVDDASHR=9 / DVDDASHRW=10 …）。
+ * - 可刻性以官方能力查询 `IsCurrentMediaSupported(recorder)` 为准（数据 / 音频分别用
+ *   `MsftDiscFormat2Data` 与 `MsftDiscFormat2TrackAtOnce` 查询；介质限 CD 系）。
  */
 export const PS_PROBE_SCRIPT = `$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -320,9 +340,11 @@ function Emit($obj) { Write-Output ($obj | ConvertTo-Json -Compress -Depth 5) }
 try {
   $recorders = @()
   $mediaPresent = $false
-  $blank = $false
+  $writable = $false
   $profile = $null
   $capacityBytes = $null
+  $dataSupported = $false
+  $audioSupported = $false
 
   $dm = New-Object -ComObject IMAPI2.MsftDiscMaster2
   foreach ($id in $dm) {
@@ -337,18 +359,32 @@ try {
       $status = [int]$fmt.CurrentMediaStatus
       if ($status -ne 0) {
         $mediaPresent = $true
-        $blank = (($status -band 0x1) -ne 0) -or (($status -band 0x2) -ne 0)
-        $profileId = [int]$fmt.CurrentProfileType
-        switch ($profileId) {
-          0x9 { $profile = 'CD-R'; $capacityBytes = 700MB }
-          0xA { $profile = 'CD-RW'; $capacityBytes = 700MB }
-          default { $profile = "0x" + $profileId.ToString('X') }
+        $writable = ((($status -band 0xFC00) -eq 0) -and (($status -band 0x7) -ne 0))
+        $mediaType = [int]$fmt.CurrentPhysicalMediaType
+        switch ($mediaType) {
+          1  { $profile = 'CD-ROM' }
+          2  { $profile = 'CD-R';  $capacityBytes = 700MB }
+          3  { $profile = 'CD-RW'; $capacityBytes = 700MB }
+          4  { $profile = 'DVD-ROM' }
+          5  { $profile = 'DVD-RAM' }
+          6  { $profile = 'DVD+R'; $capacityBytes = 4700MB }
+          7  { $profile = 'DVD+RW'; $capacityBytes = 4700MB }
+          9  { $profile = 'DVD-R'; $capacityBytes = 4700MB }
+          10 { $profile = 'DVD-RW'; $capacityBytes = 4700MB }
+          default { $profile = "mediaType=" + $mediaType }
+        }
+        $isCd = (($mediaType -eq 2) -or ($mediaType -eq 3))
+        if ($isCd -and $writable) {
+          $dataSupported = [bool]$fmt.IsCurrentMediaSupported($rec)
+          $toc = New-Object -ComObject IMAPI2.MsftDiscFormat2TrackAtOnce
+          $toc.Recorder = $rec
+          $audioSupported = [bool]$toc.IsCurrentMediaSupported($rec)
         }
       }
     }
   }
 
-  Emit @{ recorders = $recorders; mediaPresent = $mediaPresent; blank = $blank; profile = $profile; capacityBytes = $capacityBytes }
+  Emit @{ recorders = $recorders; mediaPresent = $mediaPresent; blank = $writable; profile = $profile; capacityBytes = $capacityBytes; dataSupported = $dataSupported; audioSupported = $audioSupported }
 } catch {
   Emit @{ error = $_.Exception.Message }
   exit 1
@@ -358,7 +394,14 @@ try {
 /**
  * 刻录脚本：data 模式走 MsftFileSystemImage（ISO+Joliet+UDF）→ MsftDiscFormat2Data.Write；
  * audio 模式走 MsftDiscFormat2TrackAtOnce（PrepareMedia → 逐轨 AddAudioTrack → ReleaseMedia）。
- * 写入前复检介质状态（探测与刻录之间可能换过盘）；只接受 CD-R / CD-RW（0x9 / 0xA）。
+ *
+ * 写入前**复检**介质（探测与刻录之间可能换过盘）：
+ * - 可写性：`IMAPI_FORMAT2_DATA_MEDIA_STATE` 的 `UNSUPPORTED_MASK(0xFC00)` 为空且可写位
+ *   （`OVERWRITE_ONLY|BLANK|APPENDABLE` = 0x7）非空；
+ * - 介质类型经 `CurrentPhysicalMediaType` 限 CD 系（CD-R / CD-RW）——**不用**
+ *   `CurrentProfileType`（空白介质回 NONE=0，实测，见 ADR-048）；
+ * - 可刻性以 `IsCurrentMediaSupported(recorder)` 为准（data / audio 各用自己的格式对象）。
+ * 客户端名（ClientName）须在 Write 前设置。
  */
 export const PS_BURN_SCRIPT = `param(
   [Parameter(Mandatory = $true)][string]$ConfigPath
@@ -386,15 +429,26 @@ try {
   }
   if ($null -eq $rec) { Fail 'no_recorder' '' }
 
+  # Re-check media (the disc may have been swapped since the probe).
   $probe = New-Object -ComObject IMAPI2.MsftDiscFormat2Data
   $probe.Recorder = $rec
+  $probe.ClientName = 'Pterosaur'
   $status = [int]$probe.CurrentMediaStatus
   if ($status -eq 0) { Fail 'no_media' '' }
-  if ((($status -band 0x1) -eq 0) -and (($status -band 0x2) -eq 0)) { Fail 'media_not_blank' ("status=" + $status) }
-  $profileId = [int]$probe.CurrentProfileType
-  if (($profileId -ne 0x9) -and ($profileId -ne 0xA)) { Fail 'media_unsupported' ("profile=" + $profileId) }
+  # Writable when no UNSUPPORTED_MASK(0xFC00) bit is set and a writable bit (0x7) is set.
+  if ((($status -band 0xFC00) -ne 0) -or (($status -band 0x7) -eq 0)) { Fail 'media_not_blank' ("status=" + $status) }
+
+  # Media type via CurrentPhysicalMediaType (CDR=2 / CDRW=3). Do not use the
+  # profile-type property: it returns NONE=0 on blank media on some drives.
+  $mediaType = [int]$probe.CurrentPhysicalMediaType
+  $isCd = (($mediaType -eq 2) -or ($mediaType -eq 3))
+  if (-not $isCd) {
+    if ($cfg.mode -eq 'data') { Fail 'media_unsupported_data' ("mediaType=" + $mediaType) }
+    Fail 'media_unsupported_audio' ("mediaType=" + $mediaType)
+  }
 
   if ($cfg.mode -eq 'data') {
+    if (-not ($probe.IsCurrentMediaSupported($rec))) { Fail 'media_unsupported_data' ("mediaType=" + $mediaType) }
     Emit @{ event = 'phase'; phase = 'preparing' }
     $fsi = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
     $fsi.FileSystemsToCreate = 7
@@ -406,10 +460,11 @@ try {
     Emit @{ event = 'phase'; phase = 'writing' }
     $probe.Write($image.ImageStream)
   } else {
-    Emit @{ event = 'phase'; phase = 'writing' }
     $toc = New-Object -ComObject IMAPI2.MsftDiscFormat2TrackAtOnce
     $toc.Recorder = $rec
     $toc.ClientName = 'Pterosaur'
+    if (-not ($toc.IsCurrentMediaSupported($rec))) { Fail 'media_unsupported_audio' ("mediaType=" + $mediaType) }
+    Emit @{ event = 'phase'; phase = 'writing' }
     $toc.PrepareMedia()
     foreach ($wav in $cfg.audioTracks) {
       $stream = [System.IO.File]::OpenRead("$wav")

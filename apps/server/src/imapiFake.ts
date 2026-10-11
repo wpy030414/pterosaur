@@ -12,7 +12,7 @@ import type { BurnRequest, DiscProbe, PsEvent } from './imapi.js'
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** 模拟一台就绪的刻录机 + 空白 CD-R。 */
+/** 模拟一台就绪的刻录机 + 空白 CD-RW。 */
 export function fakeProbe(): DiscProbe {
   return {
     recorders: [
@@ -20,8 +20,10 @@ export function fakeProbe(): DiscProbe {
     ],
     mediaPresent: true,
     blank: true,
-    profile: 'CD-R',
+    profile: 'CD-RW',
     capacityBytes: 700 * 1024 * 1024,
+    dataSupported: true,
+    audioSupported: true,
     simulated: true,
   }
 }

@@ -56,17 +56,27 @@ describe('PS 模板守卫', () => {
       'ReleaseMedia',
       '[Console]::OutputEncoding',
       'media_not_blank',
-      'media_unsupported',
+      'media_unsupported_data',
+      'media_unsupported_audio',
+      'IsCurrentMediaSupported',
+      'CurrentPhysicalMediaType',
     ])
       expect(PS_BURN_SCRIPT, token).toContain(token)
+  })
+
+  it('模板不使用 CurrentProfileType（空白介质回 NONE=0，见 ADR-048 首测修正）', () => {
+    expect(PS_PROBE_SCRIPT.includes('CurrentProfileType')).toBe(false)
+    expect(PS_BURN_SCRIPT.includes('CurrentProfileType')).toBe(false)
   })
 
   it('探测模板含关键 API', () => {
     for (const token of [
       'MsftDiscMaster2',
       'MsftDiscFormat2Data',
+      'MsftDiscFormat2TrackAtOnce',
       'CurrentMediaStatus',
-      'CurrentProfileType',
+      'CurrentPhysicalMediaType',
+      'IsCurrentMediaSupported',
     ])
       expect(PS_PROBE_SCRIPT, token).toContain(token)
   })
@@ -80,18 +90,24 @@ describe('psErrorMessage', () => {
     expect(psErrorMessage('burn_failed', 'HRESULT 0x80004005')).toContain(
       'HRESULT 0x80004005',
     )
+    expect(psErrorMessage('media_unsupported_data')).toContain('不支持数据刻录')
+    expect(psErrorMessage('media_unsupported_audio', 'mediaType=9')).toContain(
+      '不支持音频 CD 刻录',
+    )
     expect(psErrorMessage('unknown_code')).toContain('刻录失败')
   })
 })
 
 describe('模拟刻录缝（imapiFake）', () => {
-  it('fakeProbe 报告模拟刻录机与空白 CD-R', () => {
+  it('fakeProbe 报告模拟刻录机与可写的 CD-RW', () => {
     const p = fakeProbe()
     expect(p.simulated).toBe(true)
     expect(p.recorders).toHaveLength(1)
     expect(p.mediaPresent).toBe(true)
     expect(p.blank).toBe(true)
-    expect(p.profile).toBe('CD-R')
+    expect(p.profile).toBe('CD-RW')
+    expect(p.dataSupported).toBe(true)
+    expect(p.audioSupported).toBe(true)
   })
 
   it('fakeBurn 校验 data 模式产物含 meta.json，并按相位推进到 done', async () => {

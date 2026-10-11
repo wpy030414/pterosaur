@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Pterosaur — 网页音乐播放器",
   "scripts": {
-    "dev": "concurrently -k -n api,web -c magenta,cyan \"pnpm --filter @pterosaur/server dev\" \"wait-on tcp:8788 && pnpm --filter @pterosaur/web dev\"",
+    "dev": "concurrently -k --raw \"pnpm --filter @pterosaur/server dev\" \"wait-on tcp:8788 && pnpm --filter @pterosaur/web dev\"",
     "build": "pnpm --filter @pterosaur/server build && pnpm --filter @pterosaur/web build",
     "typecheck": "pnpm -r typecheck",
     "start": "pnpm --filter @pterosaur/server start",

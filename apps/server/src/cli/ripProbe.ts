@@ -28,7 +28,7 @@ async function main(): Promise<void> {
         probe.mediaPresent
           ? probe.blank
             ? `${probe.profile ?? '可写介质'}（可刻录）`
-            : `${probe.profile ?? '未知介质'}（非空白）`
+            : `${probe.profile ?? '未知介质'}（不可写）`
           : '未放盘'
       }`,
     )
@@ -36,6 +36,14 @@ async function main(): Promise<void> {
       console.log(
         `  容量：约 ${Math.round(probe.capacityBytes / 1024 / 1024)} MB`,
       )
+    if (probe.mediaPresent) {
+      console.log(
+        `  数据 CD：${probe.dataSupported ? '可刻录' : '不支持当前介质'}`,
+      )
+      console.log(
+        `  音频 CD：${probe.audioSupported ? '可刻录（另需 ffmpeg 转码）' : '不支持当前介质'}`,
+      )
+    }
   } catch (err) {
     console.error(`  探测失败：${err instanceof Error ? err.message : err}`)
     process.exitCode = 1
