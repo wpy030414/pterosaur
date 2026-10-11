@@ -6,7 +6,8 @@
   "exports": {
     "./types": "./src/types.ts",
     "./lyric": "./src/lyric.ts",
-    "./image": "./src/image.ts"
+    "./image": "./src/image.ts",
+    "./rip": "./src/rip.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
