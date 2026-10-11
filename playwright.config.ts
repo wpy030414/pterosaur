@@ -25,7 +25,9 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `pnpm build && cross-env NODE_ENV=production PORT=${WEB_PORT} API_PORT=${API_PORT} pnpm start`,
+    // PTEROSAUR_RIP_FAKE_BURN：翻录 E2E 的模拟刻录缝（探测 / 取流 / 刻录全模拟，
+    // 无光驱环境全链路封闭；见 ADR-048）。仅影响 /api/rip/* 与实体刻录任务。
+    command: `pnpm build && cross-env NODE_ENV=production PTEROSAUR_RIP_FAKE_BURN=1 PORT=${WEB_PORT} API_PORT=${API_PORT} pnpm start`,
     url: `http://127.0.0.1:${WEB_PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

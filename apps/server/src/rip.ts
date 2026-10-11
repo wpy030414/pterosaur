@@ -1,7 +1,7 @@
 import { createWriteStream } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import {
@@ -367,6 +367,30 @@ export function startBurn(input: RunBurnInput): { id: string } | { busy: true } 
 const COVER_MAX_BYTES = 30 * 1024 * 1024
 const COVER_TIMEOUT_MS = 10_000
 
+/**
+ * 模拟模式（`PTEROSAUR_RIP_FAKE_BURN=1`）下替代真实取流的**合成音频**：
+ * 0.1s 44.1kHz/16bit 立体声静音 WAV——是**真实可转码**的合法 PCM，
+ * 故音频 CD 的模拟链路仍会经过真实 ffmpeg；数据 CD 直接上盘。
+ */
+const FAKE_AUDIO_WAV: Buffer = (() => {
+  const dataBytes = 17640 // 0.1s × 44100Hz × 2ch × 2bytes
+  const buf = Buffer.alloc(44 + dataBytes)
+  buf.write('RIFF', 0)
+  buf.writeUInt32LE(36 + dataBytes, 4)
+  buf.write('WAVE', 8)
+  buf.write('fmt ', 12)
+  buf.writeUInt32LE(16, 16)
+  buf.writeUInt16LE(1, 20) // PCM
+  buf.writeUInt16LE(2, 22) // 立体声
+  buf.writeUInt32LE(44100, 24)
+  buf.writeUInt32LE(44100 * 4, 28)
+  buf.writeUInt16LE(4, 32)
+  buf.writeUInt16LE(16, 34)
+  buf.write('data', 36)
+  buf.writeUInt32LE(dataBytes, 40)
+  return buf
+})()
+
 async function runJob(input: RunBurnInput): Promise<void> {
   let stagingRoot: string | null = null
   try {
@@ -379,43 +403,52 @@ async function runJob(input: RunBurnInput): Promise<void> {
     if (!probe.mediaPresent) throw new Error(psErrorMessage('no_media'))
     if (!probe.blank) throw new Error(psErrorMessage('media_not_blank'))
 
-    const adapter = adapterOf(input.tracks[0].source)
-    if (!adapter) throw new Error('未知音源')
+    // 2) 逐轨拉取落盘（流式写入；单轨失败 fail-fast——半成品刻进盘不可挽回）。
+    //    模拟模式下取流一并模拟（合成 WAV），使全链路演练 / E2E 完全封闭。
+    const fake = isFakeBurn()
+    const adapter = fake ? undefined : adapterOf(input.tracks[0].source)
+    if (!fake && !adapter) throw new Error('未知音源')
 
-    // 2) 逐轨拉取落盘（流式写入；单轨失败 fail-fast——半成品刻进盘不可挽回）
     await mkdir(discDir, { recursive: true })
     const files = new Map<number, string>()
     let totalBytes = 0
     for (let i = 0; i < input.tracks.length; i++) {
       const t = input.tracks[i]
-      const urls = await adapter.songUrl(t.id, input.credential, input.level)
-      if (!urls.length)
-        throw new Error(
-          `「${t.title}」不可获取（VIP / 版权受限）；请检查服务端凭证（pnpm log-in）`,
-        )
-      const fetched = await fetchAudioCandidate(urls, {
-        'User-Agent': UA,
-        ...adapter.streamHeaders?.(t.id),
-      })
-      if (!fetched) throw new Error(`「${t.title}」音频源不可用`)
+      let ext: string
+      const destOf = (e: string) =>
+        join(discDir, ripFileName(i + 1, input.tracks.length, t.title, e))
 
-      const ext = extFromMime(
-        audioContentTypeFromUrl(fetched.usedUrl) ??
-          fetched.res.headers.get('content-type'),
-      )
-      const name = ripFileName(i + 1, input.tracks.length, t.title, ext)
-      const dest = join(discDir, name)
-      await pipeline(
-        Readable.fromWeb(
-          fetched.res.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
-        ),
-        createWriteStream(dest),
-      )
-      files.set(i + 1, name)
+      if (fake) {
+        ext = 'wav'
+      } else {
+        const urls = await adapter!.songUrl(t.id, input.credential, input.level)
+        if (!urls.length)
+          throw new Error(
+            `「${t.title}」不可获取（VIP / 版权受限）；请检查服务端凭证（pnpm log-in）`,
+          )
+        const fetched = await fetchAudioCandidate(urls, {
+          'User-Agent': UA,
+          ...adapter!.streamHeaders?.(t.id),
+        })
+        if (!fetched) throw new Error(`「${t.title}」音频源不可用`)
+        ext = extFromMime(
+          audioContentTypeFromUrl(fetched.usedUrl) ??
+            fetched.res.headers.get('content-type'),
+        )
+        await pipeline(
+          Readable.fromWeb(
+            fetched.res.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
+          ),
+          createWriteStream(destOf(ext)),
+        )
+      }
+
+      if (fake) await writeFile(destOf(ext), FAKE_AUDIO_WAV)
+      files.set(i + 1, basename(destOf(ext)))
 
       // 数据 CD：累计落盘字节守护介质容量（超出即中止，写入前发现）
       if (input.discType === 'data' && probe.capacityBytes) {
-        totalBytes += (await stat(dest)).size
+        totalBytes += (await stat(destOf(ext))).size
         if (totalBytes > probe.capacityBytes)
           throw new Error('刻录内容超出光盘容量（约 700MB），请减少曲目')
       }

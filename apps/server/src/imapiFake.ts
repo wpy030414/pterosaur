@@ -35,11 +35,12 @@ export async function fakeBurn(
     throw new Error('模拟刻录失败：音频 CD 缺少转码轨道')
   }
 
+  // 刻录阶段刻意放慢（~0.5s）：让前端 / E2E 能稳定观察到不确定进度环
   onEvent({ event: 'phase', phase: 'preparing' })
-  await delay(30)
+  await delay(50)
   onEvent({ event: 'phase', phase: 'writing' })
-  await delay(60)
+  await delay(400)
   onEvent({ event: 'phase', phase: 'finalizing' })
-  await delay(30)
+  await delay(50)
   onEvent({ event: 'done' })
 }

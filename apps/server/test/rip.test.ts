@@ -15,13 +15,29 @@ import {
 } from '../src/rip.js'
 import { toCdWav } from '../src/ffmpeg.js'
 
-// 转码/探测在单测里不落真实二进制：ffmpeg 模块整体替换（音频分支只关心编排）
+// 转码在单测里不落真实二进制：ffmpeg 模块整体替换（音频分支只关心编排）
 vi.mock('../src/ffmpeg.js', () => ({
   resolveFfmpegPath: vi.fn(async () => 'fake-ffmpeg'),
   ffmpegVersion: vi.fn(async () => 'test'),
   toCdWav: vi.fn(async () => {}),
   _resetFfmpegForTest: vi.fn(),
 }))
+
+// 刻录侧（probe/burn）经 imapiFake 替换，但 `isFakeBurn` 保持 false——
+// 让单测走**真实取流路径**（songUrl spy + 假 fetch），与模拟模式的封闭链路互补
+vi.mock('../src/imapi.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/imapi.js')>()
+  const fake = await import('../src/imapiFake.js')
+  return {
+    ...real,
+    isFakeBurn: () => false,
+    probeDisc: vi.fn(() => fake.fakeProbe()),
+    burnDisc: vi.fn(
+      (req: Parameters<typeof fake.fakeBurn>[0], onEvent: Parameters<typeof fake.fakeBurn>[1]) =>
+        fake.fakeBurn(req, onEvent),
+    ),
+  }
+})
 
 const app = createApp()
 
@@ -106,7 +122,6 @@ const burnRequest = (body: unknown, env: unknown) =>
 
 beforeEach(() => {
   _resetRipForTest()
-  vi.stubEnv('PTEROSAUR_RIP_FAKE_BURN', '1')
 })
 
 afterEach(() => {
