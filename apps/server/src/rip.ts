@@ -28,7 +28,11 @@ import {
   type RipMetaInput,
   type RipPhase,
 } from '@pterosaur/shared/rip'
-import { UA, audioContentTypeFromUrl, fetchAudioCandidate } from './audioFetch.js'
+import {
+  UA,
+  audioContentTypeFromUrl,
+  fetchAudioCandidate,
+} from './audioFetch.js'
 import { adapterOf } from './sources/index.js'
 import { burnDisc, isFakeBurn, probeDisc, psErrorMessage } from './imapi.js'
 import { ffmpegVersion, resolveFfmpegPath, toCdWav } from './ffmpeg.js'
@@ -193,8 +197,7 @@ export function validateBurnBody(body: unknown): BurnValidation {
   const m = rawMeta as Record<string, unknown>
   if (typeof m.name !== 'string' || !m.name.trim())
     return { ok: false, error: '合集名称为空' }
-  if (m.name.length > MAX_TEXT_LEN)
-    return { ok: false, error: '合集名称过长' }
+  if (m.name.length > MAX_TEXT_LEN) return { ok: false, error: '合集名称过长' }
   const kind = m.kind
   if (kind !== 'playlist' && kind !== 'album' && kind !== 'favorites')
     return { ok: false, error: '未知的合集类型' }
@@ -341,7 +344,9 @@ export interface RunBurnInput {
  * 发起一次刻录（**立即返回**，任务后台执行；进度经 {@link subscribeRip} 广播）。
  * 已有任务在跑时返回 `{ busy: true }`（路由回 409）。
  */
-export function startBurn(input: RunBurnInput): { id: string } | { busy: true } {
+export function startBurn(
+  input: RunBurnInput,
+): { id: string } | { busy: true } {
   if (job) return { busy: true }
   const id = `burn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   job = {
@@ -399,7 +404,8 @@ async function runJob(input: RunBurnInput): Promise<void> {
 
     // 1) 先探测刻录机与介质：无盘 / 非空白立即失败（在拉取任何音频之前）
     const probe = await probeDisc()
-    if (probe.recorders.length === 0) throw new Error(psErrorMessage('no_recorder'))
+    if (probe.recorders.length === 0)
+      throw new Error(psErrorMessage('no_recorder'))
     if (!probe.mediaPresent) throw new Error(psErrorMessage('no_media'))
     if (!probe.blank) throw new Error(psErrorMessage('media_not_blank'))
 
@@ -437,7 +443,8 @@ async function runJob(input: RunBurnInput): Promise<void> {
         )
         await pipeline(
           Readable.fromWeb(
-            fetched.res.body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
+            fetched.res
+              .body as unknown as import('node:stream/web').ReadableStream<Uint8Array>,
           ),
           createWriteStream(destOf(ext)),
         )
@@ -470,7 +477,10 @@ async function runJob(input: RunBurnInput): Promise<void> {
       for (let i = 0; i < input.tracks.length; i++) {
         const t = input.tracks[i]
         const src = join(discDir, files.get(i + 1)!)
-        const wav = join(wavDir, ripFileName(i + 1, input.tracks.length, t.title, 'wav'))
+        const wav = join(
+          wavDir,
+          ripFileName(i + 1, input.tracks.length, t.title, 'wav'),
+        )
         await toCdWav(bin, src, wav)
         audioTracks.push(wav)
         emitProgress('convert', i + 1, input.tracks.length)
@@ -482,13 +492,18 @@ async function runJob(input: RunBurnInput): Promise<void> {
     if (input.discType === 'data') {
       let coverFile: string | undefined
       if (input.meta.coverUrl && isAllowedCoverUrl(input.meta.coverUrl)) {
-        coverFile = (await fetchCover(input.meta.coverUrl, discDir)) ?? undefined
+        coverFile =
+          (await fetchCover(input.meta.coverUrl, discDir)) ?? undefined
       }
       meta = buildRipMeta(input.meta, input.tracks, {
         fileOf: (index) => files.get(index),
         coverFile,
       })
-      await writeFile(join(discDir, RIP_META_FILE), JSON.stringify(meta, null, 2), 'utf8')
+      await writeFile(
+        join(discDir, RIP_META_FILE),
+        JSON.stringify(meta, null, 2),
+        'utf8',
+      )
     } else {
       meta = buildRipMeta(input.meta, input.tracks, {})
     }
@@ -526,7 +541,10 @@ async function runJob(input: RunBurnInput): Promise<void> {
 }
 
 /** 服务端拉取封面（白名单已由调用方先行校验）；失败返回 null。 */
-async function fetchCover(url: string, destDir: string): Promise<string | null> {
+async function fetchCover(
+  url: string,
+  destDir: string,
+): Promise<string | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), COVER_TIMEOUT_MS)
   try {

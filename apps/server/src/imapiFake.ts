@@ -15,7 +15,9 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
 /** 模拟一台就绪的刻录机 + 空白 CD-R。 */
 export function fakeProbe(): DiscProbe {
   return {
-    recorders: [{ id: 'pterosaur-fake-drive', product: 'Pterosaur Fake Burner' }],
+    recorders: [
+      { id: 'pterosaur-fake-drive', product: 'Pterosaur Fake Burner' },
+    ],
     mediaPresent: true,
     blank: true,
     profile: 'CD-R',

@@ -46,8 +46,7 @@ function stubFetch() {
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/cover'))
-        return fakeRes(true, 'image/png')
+      if (url.includes('/cover')) return fakeRes(true, 'image/png')
       if (url.includes('bad')) return fakeRes(false, null)
       return fakeRes(true, 'audio/flac')
     }),
@@ -105,7 +104,11 @@ describe('downloadPlaylist 打包（含 meta.json）', () => {
       url: 'https://p3.music.126.net/cover.jpg',
     })
     expect(meta.skipped).toHaveLength(1)
-    expect(meta.skipped[0]).toMatchObject({ index: 2, title: '坏曲', reason: 'HTTP 403' })
+    expect(meta.skipped[0]).toMatchObject({
+      index: 2,
+      title: '坏曲',
+      reason: 'HTTP 403',
+    })
 
     // 进度回调：第 2 首带失败信息，其余为 null
     expect(events).toEqual(['1/3', '2/3!坏曲: HTTP 403', '3/3'])

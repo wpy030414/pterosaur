@@ -67,14 +67,20 @@ describe('buildRipMeta', () => {
   })
 
   it('cover 需 coverUrl 与 coverFile 同时具备', () => {
-    const both = buildRipMeta(input({ coverUrl: 'https://p3.music.126.net/c.jpg' }), [track()], {
-      coverFile: 'cover.jpg',
-    })
+    const both = buildRipMeta(
+      input({ coverUrl: 'https://p3.music.126.net/c.jpg' }),
+      [track()],
+      {
+        coverFile: 'cover.jpg',
+      },
+    )
     expect(both.cover).toEqual({
       file: 'cover.jpg',
       url: 'https://p3.music.126.net/c.jpg',
     })
-    expect(buildRipMeta(input({ coverUrl: 'https://x/c.jpg' }), [track()]).cover).toBeUndefined()
+    expect(
+      buildRipMeta(input({ coverUrl: 'https://x/c.jpg' }), [track()]).cover,
+    ).toBeUndefined()
     expect(
       buildRipMeta(input(), [track()], { coverFile: 'cover.jpg' }).cover,
     ).toBeUndefined()
@@ -82,7 +88,9 @@ describe('buildRipMeta', () => {
 
   it('skipped 仅在非空时携带', () => {
     expect(buildRipMeta(input(), [track()]).skipped).toBeUndefined()
-    expect(buildRipMeta(input(), [track()], { skipped: [] }).skipped).toBeUndefined()
+    expect(
+      buildRipMeta(input(), [track()], { skipped: [] }).skipped,
+    ).toBeUndefined()
     const meta = buildRipMeta(input(), [track()], {
       skipped: [{ index: 1, title: 'x', reason: 'HTTP 403' }],
     })

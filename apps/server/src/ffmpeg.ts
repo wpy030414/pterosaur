@@ -121,7 +121,9 @@ function runProcess(
       }
       if (code !== 0) {
         reject(
-          new Error(`${cmd} 退出码 ${code}：${stderrTail.join(' | ') || '无输出'}`),
+          new Error(
+            `${cmd} 退出码 ${code}：${stderrTail.join(' | ') || '无输出'}`,
+          ),
         )
         return
       }

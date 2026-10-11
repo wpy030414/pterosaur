@@ -214,7 +214,10 @@ export function safeRipName(title: string): string {
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
-  const limited = [...cleaned].slice(0, 80).join('').replace(/[. ]+$/, '')
+  const limited = [...cleaned]
+    .slice(0, 80)
+    .join('')
+    .replace(/[. ]+$/, '')
   return limited || 'track'
 }
 
@@ -287,8 +290,7 @@ export interface RipCapabilities {
 
 /** 用户在翻录对话框中的选择结果。 */
 export type RipChoice =
-  | { distribution: 'digital' }
-  | { distribution: 'physical'; discType: DiscType }
+  { distribution: 'digital' } | { distribution: 'physical'; discType: DiscType }
 
 /** 进行中任务的快照（SSE 首帧 / `GET /api/rip/status`）。 */
 export interface RipJobSnapshot {

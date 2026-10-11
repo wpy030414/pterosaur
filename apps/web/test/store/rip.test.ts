@@ -41,7 +41,10 @@ describe('rip store 生命周期', () => {
 
     useRip.getState().setPhase('burn')
     useRip.getState().setPercent(null)
-    expect(useRip.getState().job).toMatchObject({ phase: 'burn', percent: null })
+    expect(useRip.getState().job).toMatchObject({
+      phase: 'burn',
+      percent: null,
+    })
   })
 
   it('空闲时 setProgress / setPhase / setPercent 为 no-op', () => {

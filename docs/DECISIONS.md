@@ -770,3 +770,40 @@
 - 后果 / 已知边界：累积列表长度可能小于「页数 × 每页」（重复项被丢），故「`res.X.length >= PAGE_SIZE` ⇒ 还有下一页」的判据略有偏差（下一页会补回），不影响正确性。
 - 回归：单测 `apps/web/test/lib/dedupe.test.ts`（含「模拟上游跨页重复」用例）；E2E `test/navigation.spec.ts`「磁带 tab 翻页后切到其他 tab：不得有磁带卡混进来」（去掉去重 → `toHaveCount` 得到 1，必红），并断言控制台无重复 key 警告。
 - 何时重新审视：若上游改成分页不重叠，此去重成为多余但无害的防御。
+
+## ADR-047：翻录双通道——分发方式选择与统一 meta.json
+
+- 日期：2026-10-11
+- 状态：已采纳
+- 背景：翻录原为纯前端 JSZip 打包下载（音频 + 专辑封面），产物无机器可读的元信息；规划中要把它扩展为「按后续分发方式产出」——数字分发（打包上传/传递）或实体分发（刻录光盘赠送），且两种产物都应携带 `meta.json` 元信息（曲序、来源 id、时长、产物内文件名等），以便接收方重新打标、归档。
+- 决策：
+  1. **分发方式在翻录时选择**：点「翻录」不再弹纯确认框，而是 `RipDialog`（store 命令式入口 `ripDialog()`，仿 `confirmDialog`），选择「后续将数字分发」（JSZip 打包）或「后续将实体分发」（后端直刻，见 ADR-048，仅同机访问开放）；取消返回 null。
+  2. **meta.json 单一来源**：`packages/shared/src/rip.ts` 的 `buildRipMeta()` 同时服务两端（数字端在 `downloadPlaylist` 内构建、实体端在服务端 `rip.ts` 构建），schema 标识 `pterosaur-rip@1`；`distribution` / `discType` 字段区分产品形态。数字分发时 zip 根写入 `meta.json`；实体分发时数据 CD 一并上盘、刻录成功后浏览器另存一份（音频 CD 无文件系统，只能走后者）。
+  3. **数字链路的逐曲文件名以实际响应回填**：`downloadPlaylist` 逐首成功后把实际入包文件名经 `fileOf` 回调写进 `meta.tracks[].file`（扩展名取自响应 Content-Type）；单首失败跳过并记入 `meta.skipped`，不阻断整包。
+  4. 命名工具（`safeRipName` / `ripFileName` / `extFromMime` / `extFromImageMime`）从 web 侧迁入 shared，两端（与单曲下载 `download.ts`）共用一份实现；`safeRipName` 增补控制字符剥离、长度上限与 Windows 文件名合法化（尾部 `.` / 空格）。
+  5. 单曲下载（曲目行菜单「下载到本地」）**不带** meta.json——它是单文件直存，meta.json 的用途是合集分发。
+- 考虑过的方案：① 只加方式选择、两端各自拼 meta——否决：schema 必然漂移（同一首歌两处扩展名推断逻辑就会不一致）；② meta.json 也随单曲下载——否决：单曲没有「合集」语义，产出两个文件反而错愕；③ 方式选择放设置里记忆——否决：分发意图是**每次翻录**的决策，不是持久偏好。
+- 为什么选这个：`buildRipMeta` + 命名工具收敛到 shared 后，两端产物天然同构；「先选意图、再产材料」把数字/实体两条链路的差异限制在**传输通道**（浏览器 zip / 后端光驱），而产物内容（音频 + 封面 + meta.json）保持同构。
+- 后果 / 已知边界：zip / 盘内文件名的补零位宽 = `String(总曲数).length`（3 首为 `1 -`，12 首为 `01 -`），与旧版一致；音频 CD 的 `meta.tracks[].file` 缺省、`cover` 缺省（盘上没有文件系统）；`skipped` 仅数字链路可能非空。
+- 回归：单测 `packages/shared/test/rip.test.ts`（buildRipMeta 全字段）、`apps/web/test/lib/downloadPlaylist.test.ts`（zip 读回断言 meta.json 与文件名回填、跳过清单）、`apps/web/test/components/RipDialog.test.tsx`（方式选择与门控）；E2E `test/rip.spec.ts`「数字分发：ZIP 下载含音频与 meta.json」。
+- 何时重新审视：若消费端 schema 演进（如新增 gapless / replaygain 元数据），递增 `@` 后缀并保持旧字段兼容。
+
+## ADR-048：实体分发——后端直刻本机光驱（IMAPI2 + 回环门控 + 静态 ffmpeg）
+
+- 日期：2026-10-11
+- 状态：已采纳
+- 背景：实体分发的目标是「把翻录内容刻成 CD 送人 / 归档」。浏览器无法访问光驱，唯一可行路径是**后端进程驱动其所在设备的光驱**——因此该能力只在浏览器与后端**同机**（地址为 `localhost` / `127.0.0.1` / `::1`）时有意义，也必须只在该条件下开放（否则等于把别人的刻录机暴露给远端）。刻一张盘是**不可逆**物理操作，整个链路按「宁可少刻、不可刻废」设计。
+- 决策：
+  1. **通道选 IMAPI2（Windows 系统自带 COM）**：Node `spawn('powershell.exe')` 执行**内嵌 ASCII-only PS 模板**——PS 5.1 按 ANSI（中文系统 GBK）解析 `.ps1`，模板含中文会乱码甚至解析失败，故脚本只回**错误码**、中文文案集中在 Node 侧映射；动态配置经 **UTF-8 JSON 文件**传递，进度 / 结果经 stdout **JSON lines** 协议回传（`parsePsLine`）；脚本首行显式 `[Console]::OutputEncoding = UTF8`。非 Windows 平台能力报 `supported:false`（Linux 换 `cdrdao`/`wodim` 留作扩展位）。
+  2. **两种光盘形态**：数据 CD（`MsftFileSystemImage`，`FileSystemsToCreate=7`（ISO9660+Joliet+UDF，显式写死）、`Root.AddFile` 逐文件 → `MsftDiscFormat2Data.Write`，音频原样 + 封面 + `meta.json` 上盘）与标准音频 CD（`MsftDiscFormat2TrackAtOnce`：`PrepareMedia` → 逐轨 `AddAudioTrack` → `ReleaseMedia`）。写入前**复检**介质（探测与刻录之间可能换盘），只接受 CD-R / CD-RW（profile `0x9` / `0xA`）。
+  3. **音频 CD 需 44.1kHz/16bit 立体声 PCM**：静态集成 `@ffmpeg-installer/ffmpeg`（平台二进制走 **optionalDependencies**，无 postinstall、npmmirror 镜像友好、pnpm 下路径探测可用），逐轨 `toCdWav` 转码；逃生舱 `PTEROSAUR_FFMPEG_PATH`；ffmpeg 不可用时**仅**音频 CD 禁用（数据 CD 与数字分发不受影响）。「NodeWASM FFmpeg」记录为应变项，未实现。二进制为 GPL 构建，以**独立进程外调**方式使用（不链接进产物）。
+  4. **容量策略**：音频 CD 按「Σ时长 + 2s×曲数 ≤ 79 分钟」**预检拒绝**（不分盘——换盘状态机与失败面在 v1 不成比例）；数据 CD 落盘累计超介质估算容量即中止（写盘前发现）。
+  5. **回环双门控（fail-closed）**：前端以 `isLoopbackHost(location.hostname)` 决定实体选项是否可用（缺失原因就地展示）；后端对全部 `/api/rip/*` 以连接对端地址判定（`getConnInfo` 探测失败即拒绝）。**已知边界**：同机 nginx 反代下对端恒为回环、服务端门控退化为纵深防御——前端门控为主，**请勿把服务暴露公网**（预留 XFF 扩展点）。
+  6. **任务模型**：全局单任务（重复发起 409）；`POST /api/rip/burn` 立即回 **202**，进度经 `GET /api/rip/events`（SSE：连接先发**快照帧**、终态保留 60s 供竞态/重连回放、25s 心跳）+ `GET /api/rip/status` 兜底；前端**先建 SSE 再 POST** 且按请求发起时刻过滤陈旧终态（60s 回放窗口内连烧两张的边界）。**刻录阶段拿不到真实百分比**（IMAPI 是晚绑定 COM、PS 5.1 无法订阅其事件，`Write()` 阻塞）→ 协议 `percent:null`，前端渲染**不确定进度**环。
+  7. **fail-fast 与清理**：先探测刻录机/介质（无盘立即失败，在拉取任何音频之前）；逐轨流式落盘，单轨失败**终止整单**（防半成品盘）；暂存 `os.tmpdir()/pterosaur-burn-*` 成败均清，进程启动清扫 24h 残留。安全：staging 文件名全走 `safeRipName`（防路径穿越）、曲目**必须同源**（凭证单源）、封面 URL 白名单（仅 https 的 `*.music.126.net` / `*.hdslb.com`，防 SSRF，失败仅丢封面）、输入限长（曲目 500 条上限）。
+  8. **服务端凭证边界**：后端取流走 `credentialOf`（访客会话 ?? 缺省凭证）——与数字链路（浏览器本人会话）的差异记录在案；VIP 可用性以服务端凭证为准。
+  9. **模拟缝**：`PTEROSAUR_RIP_FAKE_BURN=1` 启用**全链路模拟**（探测假刻录机 / 取流写合成合法 WAV——真实 ffmpeg 仍可转码 / 刻录按相位推进），capabilities 报 `simulated:true`；供无光驱开发机演练与 E2E 全离线封闭。单测则反向 mock `imapi` 走**真实取流路径**（songUrl spy + 假 fetch），两条链路互补。
+- 考虑过的方案：① ffmpeg 列为前置依赖手动安装——否决：主人要求后端内静态集成、开箱即用；② ffmpeg-static（postinstall 走 GitHub 下载）——否决：中国镜像欠奉 + pnpm 构建白名单摩擦，`@ffmpeg-installer` 走 npm registry 更顺；③ 音频 CD 自动分盘——v1 否决（首版复杂度），超限拒绝并提示；④ 直接写 ISO 镜像供下载——否决：下载物落在浏览器所在机器，与「后端设备的光驱」错位，门控意义丧失；⑤ NodeWASM 转码——应变项（静态包在目标平台不可用时再启用）。
+- 后果 / 已知边界：仅 win32；介质限 CD-R/CD-RW（DVD/BD 待重审）；刻录中断无恢复（重新整单）；刻录期间关闭页面任务仍在服务端继续、重开后经 `status` 可查（前端 store 不持久化，与现状一致）；错误信息携 PS 原始 detail（含 HRESULT）便于按码对照修正。
+- 回归：单测 `apps/server/test/rip.test.ts`（校验器、回环三例、数据/音频 CD 编排、409、fail-fast）、`apps/server/test/imapi.test.ts`（模板守卫 / parsePsLine / 错误映射 / 模拟缝）、`apps/server/test/ffmpeg.test.ts`（解析顺序 / CD-DA 参数）、`apps/web/test/lib/burn.test.ts`（ES 先于 POST / 终态收敛 / 陈旧回放过滤 / watchdog）；E2E `test/rip.spec.ts`（数据 CD 与音频 CD 的模拟刻录全流程）。真机验证清单见 `docs/specs/module-rip.md`。
+- 何时重新审视：需要非 Windows 支持（`cdrdao`/`wodim`）或 DVD/BD 介质；需要音频 CD 分盘；ffmpeg 静态包在目标平台缺位时启用 WASM 回退；若同机反代成为常态部署形态，需要把 XFF 校验补进服务端门控。

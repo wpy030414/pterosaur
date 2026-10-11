@@ -835,7 +835,10 @@ export function createApp() {
     try {
       return c.json(ok(await ripCapabilities()))
     } catch (e) {
-      return c.json(fail(e instanceof Error ? e.message : '刻录能力探测失败'), 502)
+      return c.json(
+        fail(e instanceof Error ? e.message : '刻录能力探测失败'),
+        502,
+      )
     }
   })
 
@@ -860,7 +863,10 @@ export function createApp() {
         job: jobSnapshot(),
         last: lastResultSnapshot(),
       }
-      await stream.writeSSE({ event: 'message', data: JSON.stringify(snapshot) })
+      await stream.writeSSE({
+        event: 'message',
+        data: JSON.stringify(snapshot),
+      })
       const unsubscribe = subscribeRip((ev) => {
         void stream
           .writeSSE({ event: 'message', data: JSON.stringify(ev) })

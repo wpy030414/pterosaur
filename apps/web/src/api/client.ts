@@ -185,8 +185,7 @@ export const api = {
    * 后端直刻能力（刻录机 / 介质 / ffmpeg / 平台）。
    * 仅同机（回环）访问可用——远端请求后端回 403。
    */
-  ripCapabilities: () =>
-    get<RipCapabilities>(`${API_BASE}/rip/capabilities`),
+  ripCapabilities: () => get<RipCapabilities>(`${API_BASE}/rip/capabilities`),
 
   /** 发起一次实体刻录（异步任务，202 返回 jobId；进度经 SSE `/api/rip/events`）。 */
   ripBurn: (body: RipBurnRequestBody) =>

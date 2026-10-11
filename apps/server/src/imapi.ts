@@ -164,9 +164,7 @@ export async function burnDisc(
       },
     )
     if (psState.error)
-      throw new Error(
-        psErrorMessage(psState.error.code, psState.error.detail),
-      )
+      throw new Error(psErrorMessage(psState.error.code, psState.error.detail))
     if (res.code !== 0)
       throw new Error(
         `刻录进程异常退出（code=${res.code}${res.stderrTail ? `；${res.stderrTail.split('\n').pop()}` : ''}）`,
@@ -250,9 +248,7 @@ function runPs(
         }
       })
       child.on('error', (e) => {
-        done(() =>
-          reject(new Error(`powershell 启动失败：${e.message}`)),
-        )
+        done(() => reject(new Error(`powershell 启动失败：${e.message}`)))
       })
       child.on('close', (code) => {
         done(() => {

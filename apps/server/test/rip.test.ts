@@ -33,8 +33,10 @@ vi.mock('../src/imapi.js', async (importOriginal) => {
     isFakeBurn: () => false,
     probeDisc: vi.fn(() => fake.fakeProbe()),
     burnDisc: vi.fn(
-      (req: Parameters<typeof fake.fakeBurn>[0], onEvent: Parameters<typeof fake.fakeBurn>[1]) =>
-        fake.fakeBurn(req, onEvent),
+      (
+        req: Parameters<typeof fake.fakeBurn>[0],
+        onEvent: Parameters<typeof fake.fakeBurn>[1],
+      ) => fake.fakeBurn(req, onEvent),
     ),
   }
 })
@@ -43,10 +45,14 @@ const app = createApp()
 
 /** 回环 / 远端两种连接环境（getConnInfo 读 env.incoming.socket.remoteAddress）。 */
 const loopbackEnv = {
-  incoming: { socket: { remoteAddress: '127.0.0.1', remotePort: 1, remoteFamily: 'IPv4' } },
+  incoming: {
+    socket: { remoteAddress: '127.0.0.1', remotePort: 1, remoteFamily: 'IPv4' },
+  },
 } as never
 const remoteEnv = {
-  incoming: { socket: { remoteAddress: '10.0.0.5', remotePort: 1, remoteFamily: 'IPv4' } },
+  incoming: {
+    socket: { remoteAddress: '10.0.0.5', remotePort: 1, remoteFamily: 'IPv4' },
+  },
 } as never
 
 const track = (id: string, over: Partial<Track> = {}): Track => ({
@@ -86,26 +92,24 @@ const webBody = () =>
 function stubFetch() {
   vi.stubGlobal(
     'fetch',
-    vi.fn(
-      async (input: string | URL | Request): Promise<unknown> => {
-        const url = String(input)
-        if (url.includes('/cover')) {
-          return {
-            ok: true,
-            status: 200,
-            headers: { get: (): string | null => 'image/png' },
-            arrayBuffer: async (): Promise<ArrayBuffer> =>
-              new Uint8Array([137, 80, 78, 71]).buffer,
-          }
-        }
+    vi.fn(async (input: string | URL | Request): Promise<unknown> => {
+      const url = String(input)
+      if (url.includes('/cover')) {
         return {
           ok: true,
           status: 200,
-          headers: { get: (): string | null => 'audio/flac' },
-          body: webBody(),
+          headers: { get: (): string | null => 'image/png' },
+          arrayBuffer: async (): Promise<ArrayBuffer> =>
+            new Uint8Array([137, 80, 78, 71]).buffer,
         }
-      },
-    ),
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (): string | null => 'audio/flac' },
+        body: webBody(),
+      }
+    }),
   )
 }
 
@@ -119,6 +123,12 @@ const burnRequest = (body: unknown, env: unknown) =>
     },
     env as never,
   )
+
+/** 等待任务到 done 终态（模拟刻录刻意放慢 ~0.5s，waitFor 默认 1s 太紧）。 */
+const waitDone = () =>
+  vi.waitFor(() => expect(lastResultSnapshot()?.status).toBe('done'), {
+    timeout: 8000,
+  })
 
 beforeEach(() => {
   _resetRipForTest()
@@ -147,21 +157,22 @@ describe('validateBurnBody', () => {
     expect(validateBurnBody(validBody({ discType: 'dvd' })).ok).toBe(false)
     expect(validateBurnBody(validBody({ level: 'ultra' })).ok).toBe(false)
     expect(
-      validateBurnBody(
-        validBody({ meta: { kind: 'mix', name: 'x' } }),
-      ).ok,
+      validateBurnBody(validBody({ meta: { kind: 'mix', name: 'x' } })).ok,
     ).toBe(false)
     expect(
       validateBurnBody(validBody({ meta: { kind: 'album', name: '  ' } })).ok,
     ).toBe(false)
     expect(
       validateBurnBody(
-        validBody({ tracks: [track('a'), { ...track('b'), source: 'bilibili' }] }),
+        validBody({
+          tracks: [track('a'), { ...track('b'), source: 'bilibili' }],
+        }),
       ),
     ).toMatchObject({ ok: false, error: expect.stringContaining('跨多个音源') })
     expect(
-      validateBurnBody(validBody({ tracks: [{ ...track('a'), duration: NaN }] }))
-        .ok,
+      validateBurnBody(
+        validBody({ tracks: [{ ...track('a'), duration: NaN }] }),
+      ).ok,
     ).toBe(false)
     const many = Array.from({ length: 501 }, (_, i) => track(`t${i}`))
     expect(validateBurnBody(validBody({ tracks: many })).ok).toBe(false)
@@ -169,9 +180,7 @@ describe('validateBurnBody', () => {
 
   it('音频 CD 超时长拒绝', () => {
     const long = track('a', { duration: 4740 })
-    const v = validateBurnBody(
-      validBody({ discType: 'audio', tracks: [long] }),
-    )
+    const v = validateBurnBody(validBody({ discType: 'audio', tracks: [long] }))
     expect(v).toMatchObject({
       ok: false,
       error: expect.stringContaining('超出音频 CD 上限'),
@@ -210,7 +219,9 @@ describe('回环门控', () => {
       403,
     )
     expect((await app.request('/api/rip/status')).status).toBe(403)
-    expect((await app.request('/api/rip/capabilities', {}, remoteEnv)).status).toBe(403)
+    expect(
+      (await app.request('/api/rip/capabilities', {}, remoteEnv)).status,
+    ).toBe(403)
     expect((await burnRequest(validBody(), remoteEnv)).status).toBe(403)
   })
 
@@ -239,9 +250,7 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     const { data } = (await res.json()) as { data: { jobId: string } }
     expect(data.jobId).toMatch(/^burn-/)
 
-    await vi.waitFor(() => {
-      expect(lastResultSnapshot()?.status).toBe('done')
-    })
+    await waitDone()
     const result = lastResultSnapshot()!
     expect(result.meta?.discType).toBe('data')
     expect(result.meta?.tracks[0].file).toBe('1 - 曲-a.flac')
@@ -254,9 +263,9 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     expect(
       events.some((e) => e.type === 'progress' && e.phase === 'fetch'),
     ).toBe(true)
-    expect(events.some((e) => e.type === 'progress' && e.phase === 'burn')).toBe(
-      true,
-    )
+    expect(
+      events.some((e) => e.type === 'progress' && e.phase === 'burn'),
+    ).toBe(true)
     expect(events.some((e) => e.type === 'done')).toBe(true)
   })
 
@@ -268,9 +277,7 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     })
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(202)
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(409)
-    await vi.waitFor(() => {
-      expect(lastResultSnapshot()?.status).toBe('done')
-    })
+    await waitDone()
   })
 
   it('单轨不可获取即 fail-fast（错误事件 + 终态 error）', async () => {
@@ -280,9 +287,12 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     subscribeRip((ev) => events.push(ev))
 
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(202)
-    await vi.waitFor(() => {
-      expect(lastResultSnapshot()?.status).toBe('error')
-    })
+    await vi.waitFor(
+      () => {
+        expect(lastResultSnapshot()?.status).toBe('error')
+      },
+      { timeout: 8000 },
+    )
     const err = events.find((e) => e.type === 'error')
     expect(err && err.type === 'error' ? err.message : '').toContain('不可获取')
   })
@@ -300,9 +310,7 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
       loopbackEnv,
     )
     expect(res.status).toBe(202)
-    await vi.waitFor(() => {
-      expect(lastResultSnapshot()?.status).toBe('done')
-    })
+    await waitDone()
     const result = lastResultSnapshot()!
     expect(result.meta?.discType).toBe('audio')
     expect(result.meta?.tracks[0].file).toBeUndefined()

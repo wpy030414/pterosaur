@@ -74,7 +74,9 @@ describe('PS 模板守卫', () => {
 
 describe('psErrorMessage', () => {
   it('错误码映射为中文，detail 附注', () => {
-    expect(psErrorMessage('no_media')).toBe('光驱中未放入光盘（请放入空白 CD-R）')
+    expect(psErrorMessage('no_media')).toBe(
+      '光驱中未放入光盘（请放入空白 CD-R）',
+    )
     expect(psErrorMessage('burn_failed', 'HRESULT 0x80004005')).toContain(
       'HRESULT 0x80004005',
     )
@@ -117,7 +119,12 @@ describe('模拟刻录缝（imapiFake）', () => {
   it('fakeBurn 音频模式要求转码轨道非空', async () => {
     await expect(
       fakeBurn(
-        { mode: 'audio', stagingDir: tmpdir(), volumeLabel: 'X', audioTracks: [] },
+        {
+          mode: 'audio',
+          stagingDir: tmpdir(),
+          volumeLabel: 'X',
+          audioTracks: [],
+        },
         () => {},
       ),
     ).rejects.toThrow(/转码轨道/)

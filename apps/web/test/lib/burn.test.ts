@@ -60,7 +60,12 @@ const mkMeta = (name: string): RipMeta => ({
 
 const callBurn = (onProgress = vi.fn()) =>
   burnPlaylist(
-    { tracks: [track('a')], meta: metaInput, discType: 'data', level: 'exhigh' },
+    {
+      tracks: [track('a')],
+      meta: metaInput,
+      discType: 'data',
+      level: 'exhigh',
+    },
     onProgress,
   )
 
@@ -79,7 +84,9 @@ describe('parseRipSseEvent', () => {
   it('解析本协议事件；其余返回 null', () => {
     expect(parseRipSseEvent('{"type":"done"}')).toEqual({ type: 'done' })
     expect(
-      parseRipSseEvent('{"type":"progress","phase":"fetch","current":1,"total":2,"percent":null}'),
+      parseRipSseEvent(
+        '{"type":"progress","phase":"fetch","current":1,"total":2,"percent":null}',
+      ),
     ).toMatchObject({ type: 'progress', phase: 'fetch' })
     expect(parseRipSseEvent('not json')).toBeNull()
     expect(parseRipSseEvent('{"type":"ping"}')).toBeNull()
@@ -99,7 +106,13 @@ describe('burnPlaylist', () => {
     expect(FakeEventSource.instances).toHaveLength(1)
     const es = FakeEventSource.instances[0]
 
-    es.emit({ type: 'progress', phase: 'fetch', current: 1, total: 1, percent: null })
+    es.emit({
+      type: 'progress',
+      phase: 'fetch',
+      current: 1,
+      total: 1,
+      percent: null,
+    })
     const doneMeta = mkMeta('完成')
     es.emit({ type: 'done', meta: doneMeta })
 
@@ -133,9 +146,17 @@ describe('burnPlaylist', () => {
     const p = callBurn()
     const es = FakeEventSource.instances[0]
     // 陈旧终态（上一次刻录的回放）：at=0 早于请求发起时刻——若被误采信会解析为「旧」
-    es.emit({ type: 'state', job: null, last: { status: 'done', meta: mkMeta('旧'), at: 0 } })
+    es.emit({
+      type: 'state',
+      job: null,
+      last: { status: 'done', meta: mkMeta('旧'), at: 0 },
+    })
     const fresh = mkMeta('新')
-    es.emit({ type: 'state', job: null, last: { status: 'done', meta: fresh, at: Date.now() } })
+    es.emit({
+      type: 'state',
+      job: null,
+      last: { status: 'done', meta: fresh, at: Date.now() },
+    })
     await expect(p).resolves.toEqual(fresh)
   })
 

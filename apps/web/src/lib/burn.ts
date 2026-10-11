@@ -28,7 +28,12 @@ export function parseRipSseEvent(data: string): RipEvent | null {
   }
   if (typeof o !== 'object' || o === null) return null
   const type = (o as Record<string, unknown>).type
-  if (type === 'state' || type === 'progress' || type === 'done' || type === 'error')
+  if (
+    type === 'state' ||
+    type === 'progress' ||
+    type === 'done' ||
+    type === 'error'
+  )
     return o as RipEvent
   return null
 }
@@ -91,8 +96,7 @@ export function burnPlaylist(
             })
           // 终态回放：仅采信本次请求发起之后的记录（防上一次刻录的陈旧终态）
           if (ev.last && ev.last.at >= requestStartedAt) {
-            if (ev.last.status === 'done' && ev.last.meta)
-              finish(ev.last.meta)
+            if (ev.last.status === 'done' && ev.last.meta) finish(ev.last.meta)
             else if (ev.last.status === 'error')
               finish(new Error(ev.last.error ?? '刻录失败'))
           }

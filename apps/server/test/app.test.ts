@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import type { Mock } from 'vitest'
-import {
-  createApp,
-  dataCache,
-  DATA_CACHE_TTL_MS,
-} from '../src/app.js'
+import { createApp, dataCache, DATA_CACHE_TTL_MS } from '../src/app.js'
 import { audioContentTypeFromUrl } from '../src/audioFetch.js'
 import {
   BILIBILI_SESSION_COOKIE_NAMES,

@@ -14,7 +14,9 @@ async function main(): Promise<void> {
   console.log('[pterosaur] 直刻环境探测')
   try {
     const probe = await probeDisc()
-    console.log(`  平台：${process.platform}${probe.simulated ? '（模拟刻录已开启）' : ''}`)
+    console.log(
+      `  平台：${process.platform}${probe.simulated ? '（模拟刻录已开启）' : ''}`,
+    )
     if (probe.recorders.length === 0) {
       console.log('  刻录机：未检测到')
     } else {
@@ -31,7 +33,9 @@ async function main(): Promise<void> {
       }`,
     )
     if (probe.capacityBytes)
-      console.log(`  容量：约 ${Math.round(probe.capacityBytes / 1024 / 1024)} MB`)
+      console.log(
+        `  容量：约 ${Math.round(probe.capacityBytes / 1024 / 1024)} MB`,
+      )
   } catch (err) {
     console.error(`  探测失败：${err instanceof Error ? err.message : err}`)
     process.exitCode = 1
@@ -39,10 +43,14 @@ async function main(): Promise<void> {
 
   const bin = await resolveFfmpegPath()
   if (!bin) {
-    console.log('  ffmpeg：不可用（音频 CD 将禁用；可设 PTEROSAUR_FFMPEG_PATH）')
+    console.log(
+      '  ffmpeg：不可用（音频 CD 将禁用；可设 PTEROSAUR_FFMPEG_PATH）',
+    )
   } else {
     const version = await ffmpegVersion(bin)
-    console.log(`  ffmpeg：${bin}${version ? `（${version}）` : '（不可执行）'}`)
+    console.log(
+      `  ffmpeg：${bin}${version ? `（${version}）` : '（不可执行）'}`,
+    )
   }
 }
 
