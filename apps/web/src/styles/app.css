@@ -1,27 +1,24 @@
 /**
- * 应用整体布局（Apple Music 风格三栏 + 底部播放条）。
+ * 应用整体布局（左侧栏全高 + 右侧主内容区；播放岛**浮于**内容之上）。
  *
- * ┌──────────┬─────────────────────────────┐
- * │ Sidebar  │ Topbar                       │
- * │          ├─────────────────────────────┤
- * │          │ Content (scroll)             │
- * │          │                              │
- * ├──────────┴─────────────────────────────┤
- * │ PlayerBar (fixed bottom)               │
- * └─────────────────────────────────────────┘
+ * ┌──────────┬──────────────────────────────────┐
+ * │          │ Content (scroll)                 │
+ * │ Sidebar  │                                  │
+ * │ (全高)   │        ┌──────────────┐          │
+ * │          │        │ PlayerBar 岛 │ ← 浮层    │
+ * └──────────┴────────┴──────────────┴──────────┘
+ *
+ * 播放岛**不占网格行、不占独立高度**：内容区拿到完整高度，滚动时从岛下方穿过。
+ * 岛的绝对定位在 PlayerBar.css 里（相对 `.app-main` 定位），网格这里只管两列。
  */
 
 .app-shell {
   position: relative;
-  /* 建立独立层叠上下文：使自定义背景层的负 z-index 留在壳内（不逃到 body 之后），
-     同时不影响其上的网格内容（侧栏 / 主区 / 播放条）。 */
   isolation: isolate;
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
-  grid-template-rows: 1fr var(--playerbar-height);
-  grid-template-areas:
-    'sidebar main'
-    'playerbar playerbar';
+  grid-template-rows: 1fr;
+  grid-template-areas: 'sidebar main';
   height: 100vh;
   height: 100dvh;
   width: 100vw;
@@ -30,6 +27,7 @@
 
 .app-main {
   grid-area: main;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -44,19 +42,18 @@
   overflow-x: hidden;
   scroll-behavior: smooth;
   /*
-   * 默认**不参与** View Transition；仅在**路由转场**期间由 `[data-route-vt]` 命名（见
-   * global.css 与 lib/viewTransition.ts）。绝不常驻命名、也不在主题 / 沉浸转场期间命名——
-   * 否则它会在转场拆除的同一帧恢复命名，其子树（全部封面）的快照重建与拆除赛跑，
-   * 导致封面落在旧几何上（滚动 / 点击后才复位，见 lib/themeTransition.ts 的说明）。
+   * 内容区**永不参与** View Transition 快照。路由切换已停用快照转场（原因见
+   * lib/viewTransition.ts）；主题 / 沉浸转场期间也不能给它命名，否则它的子树
+   * （全部封面）会随快照重建，导致封面落在旧几何上（滚动 / 点击后才复位，
+   * 见 lib/themeTransition.ts 的说明）。
    */
   view-transition-name: none;
 }
 
-/* 内容区顶部留白，避免被半透明 Topbar 遮挡（Topbar 在 main 内 sticky） */
-
 /* ============================ 通用页面骨架 ============================ */
 .page {
-  padding: 0 32px 40px;
+  /* 底部留白：内容滚到底时不被悬浮播放岛压住 */
+  padding: 0 32px calc(40px + var(--page-bottom-inset));
   max-width: 1600px;
 }
 
@@ -128,12 +125,11 @@
 
 /* ============================ 响应式 ============================ */
 @media (max-width: 900px) {
+  /* 窄屏侧边栏改抽屉（脱离网格流）：只剩主内容区一列 */
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
-    grid-template-areas:
-      'main'
-      'playerbar';
+    grid-template-rows: 1fr;
+    grid-template-areas: 'main';
   }
 
   .page,
@@ -200,7 +196,7 @@
 /*
  * 仅在设置了自定义背景时（由 AppBackground 在 <html> 打 data-has-bg）把三大区域调得更透明，
  * 让背景图真正透出；未设置时保持默认外观。毛玻璃（backdrop-filter）保留。
- * 特异性高于各组件的单类规则，故不必改 Sidebar.css / Topbar.css。
+ * 特异性高于各组件的单类规则，故不必改 Sidebar.css。
  */
 :root[data-has-bg] .app-main {
   background: color-mix(in srgb, var(--bg) 45%, transparent);
@@ -208,8 +204,4 @@
 
 :root[data-has-bg] .sidebar {
   background: color-mix(in srgb, var(--glass-sidebar) 42%, transparent);
-}
-
-:root[data-has-bg] .topbar {
-  background: color-mix(in srgb, var(--bg) 38%, transparent);
 }
