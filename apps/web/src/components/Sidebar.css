@@ -1,14 +1,18 @@
+/*
+ * 侧边栏贯穿全高（grid 里跨两行），自身是 flex 纵向三段：
+ * 品牌（固定）→ 导航滚动区（flex:1）→ 底部操作栏（固定）。
+ * 因此这里**不加**整栏的内边距与滚动：滚动只发生在 .sidebar__scroll 内，
+ * 品牌与底部栏始终可见。
+ */
 .sidebar {
   grid-area: sidebar;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 16px 12px;
   background: var(--glass-sidebar);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
   backdrop-filter: blur(32px) saturate(180%);
   border-right: 1px solid var(--separator);
-  overflow-y: auto;
 }
 
 /* ---------- 品牌 ---------- */
@@ -17,14 +21,76 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 4px 10px 18px;
+  flex-shrink: 0;
+  padding: 18px 22px 14px;
 }
 
 .sidebar__name {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 19px;
+  font-weight: 800;
   letter-spacing: -0.01em;
   cursor: pointer;
+}
+
+/* ---------- 导航滚动区 ---------- */
+.sidebar__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 12px 16px;
+}
+
+/* ---------- 分组（可折叠） ---------- */
+.sidebar__group {
+  margin-top: 14px;
+}
+
+.sidebar__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 4px 2px;
+}
+
+.sidebar__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.sidebar__group-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.sidebar__group-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 折叠箭头：收起时指右，展开时转 90° 指下 */
+.sidebar__chev {
+  flex-shrink: 0;
+  transform: rotate(90deg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.sidebar__group--closed .sidebar__chev {
+  transform: rotate(0deg);
+}
+
+.sidebar__group-action {
+  display: flex;
+  align-items: center;
 }
 
 /* GitHub 入口：点击在新窗口打开仓库 */
@@ -53,10 +119,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.sidebar__playlists {
-  margin-top: 2px;
 }
 
 /* 歌单分组：自建歌单与收藏的歌单之间用浅虚线分隔（不加文字） */
@@ -97,18 +159,6 @@
 }
 
 /* ---------- 分区标题 ---------- */
-.sidebar__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 10px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
 .sidebar__add {
   display: flex;
   align-items: center;
@@ -157,7 +207,6 @@
     bottom: 0;
     z-index: 45;
     width: 280px;
-    padding: 16px 12px;
     background: var(--glass-sidebar);
     backdrop-filter: blur(32px) saturate(180%);
     -webkit-backdrop-filter: blur(32px) saturate(180%);

@@ -1,0 +1,180 @@
+/* 侧边栏底部操作栏：主题 / 设置 / 账户。贴在侧边栏最底部，与滚动区以分隔线隔开。 */
+.sidebar-footer {
+  position: relative; /* 账户菜单的定位上下文（菜单向上弹） */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--separator);
+}
+
+.sidebar-footer__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.sidebar-footer__btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-footer__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sidebar-footer__spacer {
+  flex: 1;
+}
+
+/* ---------- 未登录：登录按钮 ---------- */
+.sidebar-footer__login {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: var(--bg-elevated-2);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.sidebar-footer__login:hover {
+  background: var(--bg-active);
+}
+
+.sidebar-footer__login:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- 已登录：头像 ---------- */
+.sidebar-footer__account {
+  position: relative;
+  display: flex;
+}
+
+.sidebar-footer__avatar {
+  display: flex;
+  padding: 0;
+  border-radius: 50%;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.sidebar-footer__avatar:hover {
+  transform: scale(1.06);
+}
+
+/*
+ * 账户菜单：**向上**弹出（本栏贴着窗口底边，向下弹会被裁掉）。
+ * 动画同为 menu-in，只是起点在下方。
+ */
+.sidebar-footer__menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--separator-strong);
+  animation: sidebar-menu-in var(--dur) var(--ease);
+}
+
+@keyframes sidebar-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sidebar-footer__menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 10px;
+  border-bottom: 1px solid var(--separator);
+  margin-bottom: 6px;
+}
+
+.sidebar-footer__menu-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.sidebar-footer__menu-plan {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.sidebar-footer__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.sidebar-footer__menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 带开关的菜单项：开关推到行尾 */
+.sidebar-footer__menu-item--switch {
+  justify-content: flex-start;
+}
+
+.sidebar-footer__switch {
+  position: relative;
+  margin-left: auto;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--bg-active);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.sidebar-footer__switch--on {
+  background: var(--accent);
+}
+
+.sidebar-footer__switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.sidebar-footer__switch--on .sidebar-footer__switch-knob {
+  transform: translateX(14px);
+}

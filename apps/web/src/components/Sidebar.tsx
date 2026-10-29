@@ -1,10 +1,20 @@
 import { useState } from 'react'
-import { Home, Compass, Radio, Heart, Clock, Disc3, Plus } from 'lucide-react'
+import {
+  Search,
+  LayoutGrid,
+  Radio,
+  Heart,
+  User,
+  Disc3,
+  Plus,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useLibrary } from '../store/library.js'
 import { useCreatePlaylist, useSidebarDrawer } from '../store/ui.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { AppLink } from './AppLink.js'
+import { SidebarGroup } from './SidebarGroup.js'
+import { SidebarFooter } from './SidebarFooter.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
 import './Sidebar.css'
@@ -17,13 +27,15 @@ interface NavEntry {
   end?: boolean
 }
 
-/** 主导航项（单一分组）。 */
+/**
+ * 主导航（三项，平铺在侧边栏顶部）。
+ *
+ * 「搜索」是独立页面而非覆盖层：顶栏移除后，搜索需要一个真正的落点。
+ */
 const NAV: NavEntry[] = [
-  { to: '/', label: '立即收听', icon: Home, end: true },
-  { to: '/browse', label: '浏览', icon: Compass },
-  { to: '/radio', label: '电台', icon: Radio },
-  { to: '/crate', label: '唱片盒', icon: Disc3 },
-  { to: '/recent', label: '最近播放', icon: Clock },
+  { to: '/search', label: '搜索', icon: Search },
+  { to: '/', label: '新发现', icon: LayoutGrid, end: true },
+  { to: '/radio', label: '广播', icon: Radio },
 ]
 
 /** 本项目 GitHub 地址。 */
@@ -46,11 +58,16 @@ function GitHubMark() {
 }
 
 /**
- * 侧边栏。
+ * 侧边栏（贯穿全高）。
  *
- * 功能保持单一、避免多入口：
- * - 「唱片盒」展示收藏的艺人 + 专辑（上下两分区）；
- * - 「歌单」区**固定以「我喜欢的音乐」开头**，其后为我自建歌单与收藏的歌单（两类之间以浅虚线分隔，不加文字）。
+ * 结构：品牌 → 可滚动导航区 → 底部操作栏（主题 / 设置 / 账户）。
+ *
+ * 信息架构：
+ * - 顶部三项平铺：搜索 / 新发现 / 广播；
+ * - 「库」：最近播放、艺术家、专辑（艺术家与专辑原先合在「唱片盒」一页，现拆分）；
+ * - 「歌单」：我喜欢的音乐固定开头，其后为自建歌单与收藏的歌单（两类间浅虚线分隔）。
+ *
+ * 「库」与「歌单」标题可点击折叠，展开态持久化（见 `store/sidebarPrefs`）。
  */
 export function Sidebar() {
   const playlists = useLibrary((s) => s.playlists)
@@ -97,87 +114,113 @@ export function Sidebar() {
           </a>
         </div>
 
-        <nav className="sidebar__nav" aria-label="主导航">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+        <div className="sidebar__scroll">
+          <nav className="sidebar__nav" aria-label="主导航">
+            {NAV.map(({ to, label, icon: Icon, end }) => (
+              <AppLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  `nav-item${isActive ? ' nav-item--active' : ''}`
+                }
+              >
+                <Icon size={19} strokeWidth={1.9} />
+                <span className="nav-item__label">{label}</span>
+              </AppLink>
+            ))}
+          </nav>
+
+          <SidebarGroup groupKey="library" label="库">
             <AppLink
-              key={to}
-              to={to}
-              end={end}
+              to="/library/artists"
               className={({ isActive }) =>
                 `nav-item${isActive ? ' nav-item--active' : ''}`
               }
             >
-              <Icon size={19} strokeWidth={1.9} />
-              <span className="nav-item__label">{label}</span>
+              <User size={19} strokeWidth={1.9} />
+              <span className="nav-item__label">艺术家</span>
             </AppLink>
-          ))}
-        </nav>
+            <AppLink
+              to="/library/albums"
+              className={({ isActive }) =>
+                `nav-item${isActive ? ' nav-item--active' : ''}`
+              }
+            >
+              <Disc3 size={19} strokeWidth={1.9} />
+              <span className="nav-item__label">专辑</span>
+            </AppLink>
+          </SidebarGroup>
 
-        <div className="sidebar__section-head">
-          <span>歌单</span>
-          <button
-            type="button"
-            className="sidebar__add"
-            onClick={handleCreate}
-            aria-label="新建歌单"
-            title="新建歌单"
-          >
-            <Plus size={17} strokeWidth={2.2} />
-          </button>
-        </div>
-
-        <nav className="sidebar__nav sidebar__playlists" aria-label="歌单">
-          {/* 「我喜欢的音乐」固定为歌单区第一项 */}
-          <AppLink
-            to="/favorites"
-            className={({ isActive }) =>
-              `nav-item${isActive ? ' nav-item--active' : ''}`
+          <SidebarGroup
+            groupKey="playlists"
+            label="歌单"
+            action={
+              <button
+                type="button"
+                className="sidebar__add"
+                onClick={handleCreate}
+                aria-label="新建歌单"
+                title="新建歌单"
+              >
+                <Plus size={17} strokeWidth={2.2} />
+              </button>
             }
           >
-            <Heart size={19} strokeWidth={1.9} />
-            <span className="nav-item__label">我喜欢的音乐</span>
-          </AppLink>
-
-          {playlists.map((p) => (
+            {/* 「我喜欢的音乐」固定为歌单区第一项 */}
             <AppLink
-              key={p.id}
-              to={`/playlist/${p.id}`}
+              to="/favorites"
               className={({ isActive }) =>
                 `nav-item${isActive ? ' nav-item--active' : ''}`
               }
             >
-              <Cover
-                src={coverAt(p.tracks[0]?.cover, COVER_SMALL)}
-                alt={p.name}
-                radius="sm"
-                size={19}
-              />
-              <span className="nav-item__label">{p.name}</span>
+              <Heart size={19} strokeWidth={1.9} />
+              <span className="nav-item__label">我喜欢的音乐</span>
             </AppLink>
-          ))}
 
-          {playlists.length > 0 && savedPlaylists.length > 0 && (
-            <div className="sidebar__playlist-divider" aria-hidden />
-          )}
+            {playlists.map((p) => (
+              <AppLink
+                key={p.id}
+                to={`/playlist/${p.id}`}
+                className={({ isActive }) =>
+                  `nav-item${isActive ? ' nav-item--active' : ''}`
+                }
+              >
+                <Cover
+                  src={coverAt(p.tracks[0]?.cover, COVER_SMALL)}
+                  alt={p.name}
+                  radius="sm"
+                  size={19}
+                />
+                <span className="nav-item__label">{p.name}</span>
+              </AppLink>
+            ))}
 
-          {savedPlaylists.map((p) => (
-            <AppLink
-              key={p.id}
-              to={`/playlist/${p.source}/${p.id}`}
-              className={({ isActive }) =>
-                `nav-item${isActive ? ' nav-item--active' : ''}`
-              }
-            >
-              <Cover
-                src={coverAt(p.cover, COVER_SMALL)}
-                alt={p.name}
-                radius="sm"
-                size={19}
-              />
-              <span className="nav-item__label">{p.name}</span>
-            </AppLink>
-          ))}
-        </nav>
+            {playlists.length > 0 && savedPlaylists.length > 0 && (
+              <div className="sidebar__playlist-divider" aria-hidden />
+            )}
+
+            {savedPlaylists.map((p) => (
+              <AppLink
+                key={p.id}
+                to={`/playlist/${p.source}/${p.id}`}
+                className={({ isActive }) =>
+                  `nav-item${isActive ? ' nav-item--active' : ''}`
+                }
+              >
+                <Cover
+                  src={coverAt(p.cover, COVER_SMALL)}
+                  alt={p.name}
+                  radius="sm"
+                  size={19}
+                />
+                <span className="nav-item__label">{p.name}</span>
+              </AppLink>
+            ))}
+          </SidebarGroup>
+        </div>
+
+        <SidebarFooter />
       </aside>
     </>
   )
