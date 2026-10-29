@@ -218,6 +218,7 @@ async function notifyNeedLogin(source: MusicSource): Promise<void> {
 async function fetchAudioUpstream(
   url: string,
   signal?: AbortSignal,
+  headers?: Record<string, string>,
 ): Promise<Response | null> {
   if (signal?.aborted) return null
   const controller = new AbortController()
@@ -231,6 +232,7 @@ async function fetchAudioUpstream(
     return await fetch(url, {
       credentials: 'same-origin',
       signal: controller.signal,
+      ...(headers ? { headers } : {}),
     })
   } catch {
     return null
@@ -255,7 +257,14 @@ function cacheableAudioMime(upstream: Response): string | null {
   return ct
 }
 
-/** `/stream/*`：音频代理（Range 分段、整文件缓存）。 */
+/**
+ * `/stream/*`：音频代理（Range 分段、整文件缓存）。
+ *
+ * **缓存命中不直接应答，一律网络优先**（见 ADR-050）。原因：Chromium 媒体管线对
+ * Service Worker 合成的响应只消费约 1 MiB 就判定流结束，此后续取全部 `ERR_ABORTED`，
+ * 表现为「刷新后点继续播放 → 立刻报网络错误」。因此媒体请求必须走浏览器原生网络路径
+ * 才能拿到完整的可 seek 流；缓存退居「网络不可用时的兜底」，并在每次网络成功时继续预热。
+ */
 async function handleStream(
   event: FetchEventLike,
   request: Request,
@@ -265,30 +274,43 @@ async function handleStream(
   level: string,
   key: string,
 ): Promise<Response> {
-  const cached = await serveCached(key, request.headers.get('range'))
-  if (cached) return cached
+  const range = request.headers.get('range')
 
-  // 未命中：取整文件（不转发 Range），失败则交由浏览器报错（响应头阶段带超时）
-  const upstream = await fetchAudioUpstream(url.href)
-  if (!upstream) return Response.error()
+  // 网络优先：透传浏览器原始请求（含 Range），由后端直接回源上游 CDN。
+  // SW 发的 fetch 不经自身 fetch 处理器，故不会递归。
+  const upstream = await fetchAudioUpstream(
+    url.href,
+    undefined,
+    range ? { Range: range } : undefined,
+  )
 
-  // VIP 未登录 / 版权受限：后端以 403 表达——通知页面给出登录引导，响应原样放行（不缓存）
-  if (upstream.status === 403) {
-    void notifyNeedLogin(source)
+  if (upstream) {
+    // VIP 未登录 / 版权受限：后端以 403 表达——通知页面给出登录引导，响应原样放行（不缓存）
+    if (upstream.status === 403) {
+      void notifyNeedLogin(source)
+      return upstream
+    }
+    // 仅缓存完整音频响应（200，或部分 CDN 对无条件请求返回的全量 206）；切片 206 与 502 等直接放行
+    const mime = cacheableAudioMime(upstream)
+    if (mime) {
+      event.waitUntil(
+        storeResponse(
+          { key, kind: 'audio', source, trackId: id, level, mime },
+          upstream.clone(),
+        ),
+      )
+    }
     return upstream
   }
 
-  // 仅缓存完整音频响应（200，或部分 CDN 对无条件请求返回的全量 206）；切片 206 与 502 等直接放行
-  const mime = cacheableAudioMime(upstream)
-  if (mime) {
-    event.waitUntil(
-      storeResponse(
-        { key, kind: 'audio', source, trackId: id, level, mime },
-        upstream.clone(),
-      ),
-    )
-  }
-  return upstream
+  // 网络失败：回退到缓存（离线 / 弱网场景）。命中则按 Range 切片应答。
+  // 注意此路径下浏览器可能无法完整 seek（SW 响应体的媒体管线限制），属已知取舍——
+  // 有网时永远走上面那条路径，故正常播放不受影响。
+  const cached = await serveCached(key, range)
+  if (cached) return cached
+
+  // 两者皆无：交由浏览器报错
+  return Response.error()
 }
 
 /** 单飞：仅允许一条预载在途；新预载 abort 旧的，避免快速切歌时残留整段下载。 */
