@@ -28,7 +28,6 @@
   border-radius: var(--radius-xl);
   background: var(--bg-elevated-2);
   border: 1px solid var(--separator);
-  box-shadow: var(--shadow-lg);
   animation: settings-in var(--dur-slow) var(--ease);
   outline: none;
 }
@@ -121,7 +120,7 @@
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .settings-dialog__btn {

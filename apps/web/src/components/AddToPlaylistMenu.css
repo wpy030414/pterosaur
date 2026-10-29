@@ -15,8 +15,7 @@
   padding: 6px;
   border-radius: var(--radius-md);
   background: var(--bg-elevated-2);
-  border: 1px solid var(--separator);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--separator-strong);
   animation: atp-in var(--dur-fast) var(--ease);
 }
 

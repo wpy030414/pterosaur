@@ -10,6 +10,7 @@ import { confirmDialog, ripDialog } from '../store/ui.js'
 import type { Playlist, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
+  keyOf,
   isMusicSource,
   isCassetteSource,
   type MusicSource,
@@ -212,6 +213,7 @@ export function PlaylistPage() {
               <Cover
                 src={coverAt(playlist.cover, COVER_LARGE)}
                 alt={playlist.name}
+                seed={keyOf(playlist)}
                 radius="sm"
                 className="card__cover"
               />
@@ -221,6 +223,7 @@ export function PlaylistPage() {
           <Cover
             src={coverAt(playlist.cover, COVER_LARGE)}
             alt={playlist.name}
+            seed={keyOf(playlist)}
             radius="lg"
             className="detail__cover"
           />

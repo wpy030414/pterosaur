@@ -380,6 +380,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
             <Cover
               src={coverAt(current.cover, COVER_LARGE)}
               alt={current.title}
+              seed={keyOf(current)}
               radius="lg"
               className={`nowplaying__cover${isPlaying ? ' nowplaying__cover--playing' : ''}`}
             />
@@ -476,7 +477,6 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
               <IconButton
                 label={showBuffering ? '缓冲中' : isPlaying ? '暂停' : '播放'}
                 size="lg"
-                primary
                 onClick={toggle}
                 className="nowplaying__play"
               >

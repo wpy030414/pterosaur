@@ -54,6 +54,7 @@ export function ArtistCard({ artist, onClick }: ArtistCardProps) {
         <Cover
           src={coverAt(artist.avatar, COVER_SMALL)}
           alt={artist.name}
+          seed={keyOf(artist)}
           rounded
           className="card__cover"
         />
@@ -116,6 +117,7 @@ export function AlbumCard({ album, onClick }: AlbumCardProps) {
         <Cover
           src={coverAt(album.cover, COVER_SMALL)}
           alt={album.name}
+          seed={keyOf(album)}
           radius="md"
           className="card__cover"
         />

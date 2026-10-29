@@ -25,7 +25,6 @@
   border-radius: var(--radius-xl);
   background: var(--bg-elevated-2);
   border: 1px solid var(--separator);
-  box-shadow: var(--shadow-lg);
   animation: modal-in var(--dur-slow) var(--ease);
 }
 
@@ -89,7 +88,6 @@
   background: var(--bg-elevated-2);
   color: var(--text);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 /* ---------- QR ---------- */

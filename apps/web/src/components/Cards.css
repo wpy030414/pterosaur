@@ -40,7 +40,6 @@
 .card__cover {
   width: 100%;
   height: 100%;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
 }
 
 /* 艺人卡片：圆形头像 */
@@ -70,7 +69,6 @@
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   opacity: 0;
   transform: translateY(8px);
   transition:
@@ -99,7 +97,6 @@
 .card__play:disabled {
   background: var(--bg-elevated-2);
   color: var(--text-tertiary);
-  box-shadow: none;
   cursor: not-allowed;
   transform: translateY(0);
 }
@@ -117,7 +114,6 @@
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   opacity: 0;
   transform: translateY(8px);
   transition:
@@ -244,7 +240,6 @@
   border-radius: var(--radius-md);
   background: var(--cassette-surface);
   border: 1px solid var(--separator);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 /* 4:3 视频窗：chip 与播放按钮以它为定位参照（position: relative） */
@@ -254,13 +249,11 @@
   aspect-ratio: 4 / 3;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
 }
 
-/* 窗内封面：圆角随窗、不重复投影 */
+/* 窗内封面：圆角随窗 */
 .cassette-shell .card__cover {
   border-radius: var(--radius-sm);
-  box-shadow: none;
 }
 
 /* 卷轴带：内凹深色带（两态都用「压暗」表达凹陷），两端各一枚卷轴 */

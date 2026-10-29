@@ -58,17 +58,3 @@
 .icon-btn--active:hover {
   background: var(--accent-soft);
 }
-
-/* 主播放按钮：强调色实心圆 */
-.icon-btn--primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.icon-btn--primary:hover {
-  background: var(--accent-hover);
-}
-
-.icon-btn--primary:active {
-  background: var(--accent-press);
-}

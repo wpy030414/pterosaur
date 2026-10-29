@@ -3,7 +3,6 @@ import type { Playlist } from '@pterosaur/shared/types'
 import { usePlayCollection } from '../hooks/usePlayCollection.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
-import { CountChip } from './CountChip.js'
 import { CassetteShell } from './CassetteShell.js'
 import './Cards.css'
 
@@ -15,7 +14,7 @@ interface CassetteCardProps {
 }
 
 /**
- * 磁带卡片：**4:3 视频封面 + 磁带边框** + 标题 + UP 主。
+ * 磁带卡片：**4:3 视频封面 + 磁带边框** + 标题（预览卡不显示 UP 主副标题）。
  *
  * - 点击卡片本体：进入磁带详情页（`/playlist/bilibili/:bvid`）挑分P；
  * - 悬浮浮现的播放按钮：立即播放整盘磁带（全部分P，不进入详情页）；
@@ -49,7 +48,6 @@ export function CassetteCard({ cassette, onClick }: CassetteCardProps) {
             radius="sm"
             className="card__cover"
           />
-          <CountChip count={cassette.trackCount} />
           <button
             type="button"
             className="card__play"
@@ -66,9 +64,6 @@ export function CassetteCard({ cassette, onClick }: CassetteCardProps) {
       </div>
       <div className="card__body">
         <div className="card__title ellipsis">{cassette.name}</div>
-        <div className="card__subtitle ellipsis">
-          {cassette.creator ? `by ${cassette.creator}` : ''}
-        </div>
       </div>
     </div>
   )

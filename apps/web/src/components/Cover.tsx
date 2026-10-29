@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Disc3 } from 'lucide-react'
 import { isCoverReady, markCoverReady } from '../lib/imageCache.js'
+import { coverArtFor } from '../lib/coverArt.js'
 import './Cover.css'
 
 interface CoverProps {
@@ -12,6 +12,11 @@ interface CoverProps {
   rounded?: boolean
   className?: string
   size?: number | string
+  /**
+   * 兜底图案的种子（一般传 `keyOf(entity)`，即 `source:id`）。
+   * 缺省时退回 `src`（封面 URL）——同一实体的封面 URL 是稳定的，故同样确定。
+   */
+  seed?: string
   draggable?: boolean
 }
 
@@ -26,6 +31,7 @@ export function Cover({
   className,
   size,
   draggable,
+  seed,
 }: CoverProps) {
   // 已预取 / 已展示过的封面：首帧即视为就绪、直接显色，供 View Transition 同步快照拍到成图
   const [loaded, setLoaded] = useState(() => isCoverReady(src))
@@ -49,17 +55,25 @@ export function Cover({
     style.height = style.width
   }
 
+  // 无图可显示时，把派生出的渐变**直接铺在最外层**（它本来就是 100% 尺寸），
+  // 内层只负责水印——不依赖子元素撑满，避免任何尺寸塌陷导致底色不可见。
+  const showFallback = !src || failed
+  const fallbackArt = showFallback ? coverArtFor(seed ?? src ?? alt) : undefined
+
   return (
     <div
       className={[
         'cover',
         `cover--${rounded ? 'circle' : radius}`,
         loaded && !failed ? 'cover--loaded' : '',
+        showFallback ? 'cover--fallback' : '',
         className ?? '',
       ]
         .filter(Boolean)
         .join(' ')}
-      style={style}
+      style={
+        fallbackArt ? { ...style, background: fallbackArt.background } : style
+      }
     >
       {src && !failed ? (
         <img
@@ -77,9 +91,9 @@ export function Cover({
           onError={() => setFailed(true)}
         />
       ) : (
-        <div className="cover__fallback" role="img" aria-label={alt}>
-          <Disc3 size={radius === 'sm' ? 16 : 28} strokeWidth={1.5} />
-        </div>
+        <span className="cover__brand" aria-hidden>
+          Pt
+        </span>
       )}
     </div>
   )

@@ -1,0 +1,195 @@
+/*
+ * 横向滚动分区（发现流 / 搜索结果的基本单元）。
+ *
+ * 视口是 .rail__viewport（relative，锚定两侧翻页按钮），内层 .rail__scroller
+ * 才是滚动容器：滚动条隐藏，靠触控板 / 触摸 / 翻页按钮操作。
+ */
+.rail {
+  margin-top: 36px;
+}
+
+.rail__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.rail__titles {
+  min-width: 0;
+}
+
+.rail__title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  /* 与 Apple Music 一致：标题后跟一个可点箭头，暗示「进入全部」 */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rail__subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.rail__action {
+  flex-shrink: 0;
+}
+
+/* ---------- 视口与滚动容器 ---------- */
+.rail__viewport {
+  position: relative;
+}
+
+.rail__scroller {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  /* 隐藏滚动条：翻页靠按钮与手势 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /*
+   * 给卡片悬浮投影 / 缩放留出空间；左右各 10px 专门兜住封面外投影（16px 模糊），
+   * 否则首尾卡片的阴影会被 overflow-x 裁平。负 margin 抵消 padding 的布局占位，
+   * 使可视边缘仍与页面左右内边距对齐。
+   */
+  margin-inline: -10px;
+  padding: 4px 10px 6px;
+}
+
+.rail__scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * 卡片在横向区内固定宽度：网格里是 auto-fill，这里必须显式给宽，
+ * 否则 flex 会把它们压扁。
+ */
+.rail__scroller > * {
+  flex: 0 0 208px;
+  min-width: 0;
+  width: 208px;
+  scroll-snap-align: start;
+}
+
+/*
+ * 曲目行的列宽（px）：封面 44 + 间距 12 + 两行文字 + 右侧播放键/操作区。
+ * 260px 能完整显示「陈予恩」这类短艺人名，再窄就会被截成「陈予…」而失去信息价值。
+ *
+ * 曲目 Item 的宽度**不随布局伸缩**：始终等于本变量。布局只决定「一屏塞几列」，
+ * 不决定「每列多宽」—— 1 列与 2 列时条目看起来一致，不会被拉长或压扁。
+ */
+:root {
+  --song-cell: 260px;
+}
+
+/*
+ * 曲目型分区（如「新歌精选」）用**多列纵向网格**而不是一长条单行：
+ * 曲目行很矮，单行横排会白白浪费大段高度、又要划很久才能看完。
+ * 这里让子元素按行优先流进网格，横向容器整体仍可横滚（列数超出视口时）。
+ */
+.rail__scroller--grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(4, auto);
+  grid-auto-columns: var(--song-cell);
+  align-content: start;
+  column-gap: 24px;
+  row-gap: 2px;
+}
+
+.rail__scroller--grid > * {
+  flex: none;
+  width: auto;
+}
+
+/* ---------- 翻页按钮 ---------- */
+.rail__arrow {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--glass-overlay);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--separator-strong);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rail__arrow--prev {
+  left: -12px;
+}
+
+.rail__arrow--next {
+  right: -12px;
+}
+
+/* 悬停整块分区时浮出；已到尽头的一侧常隐 */
+.rail__viewport:hover .rail__arrow:not(.rail__arrow--hidden),
+.rail__arrow:focus-visible {
+  opacity: 1;
+}
+
+.rail__arrow--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rail__arrow:hover {
+  background: var(--glass-player);
+}
+
+.rail__arrow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 触屏设备没有 hover：翻页按钮常隐，靠原生横划 */
+@media (hover: none) {
+  .rail__arrow {
+    display: none;
+  }
+}
+
+/*
+ * 网格模式（歌曲分区）在窄屏**不改列宽**：曲目 Item 必须保持 `--song-cell`。
+ * 若按视口比例算列宽，一屏只放 1 列时条目被拉得超长、放 2 列时又被压扁，
+ * 同一首歌得到两种观感；这里只收紧列间距，多出的列靠横向滚动查看。
+ */
+@media (max-width: 900px) {
+  .rail__scroller--grid {
+    column-gap: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  /*
+   * 只收窄**卡片型**子项（歌单 / 专辑 / 艺人…）。必须排除网格子项：
+   * 曲目格子要靠 `.rail__scroller--grid > *` 的 `width: auto` 撑满网格列，
+   * 若这里也写死宽度，曲目行会被压成 148px、在列里留下大段空白（移动端「没撑满」的根因）。
+   */
+  .rail__scroller:not(.rail__scroller--grid) > * {
+    flex-basis: 148px;
+    width: 148px;
+  }
+
+  .rail__title {
+    font-size: 19px;
+  }
+}

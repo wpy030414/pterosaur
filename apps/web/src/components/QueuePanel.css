@@ -22,18 +22,15 @@
   background: var(--glass-sidebar);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
   backdrop-filter: blur(32px) saturate(180%);
-  /* 关闭态用全透明阴影：面板虽在屏外，实心投影仍会漏进窗口右缘 */
-  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  /* 不投射阴影：靠左缘描边与内容区分离（前端禁用 box-shadow） */
+  border-left: 1px solid var(--separator-strong);
   transform: translateX(100%);
-  transition:
-    transform var(--dur-slow) var(--ease),
-    box-shadow var(--dur-slow) var(--ease);
+  transition: transform var(--dur-slow) var(--ease);
   pointer-events: none;
 }
 
 .queue-panel--open {
   transform: translateX(0);
-  box-shadow: var(--shadow-lg);
   pointer-events: auto;
 }
 

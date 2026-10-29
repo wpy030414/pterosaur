@@ -10,8 +10,7 @@
   padding: 12px 14px 12px 16px;
   border-radius: var(--radius-md);
   background: var(--bg-elevated-2);
-  border: 1px solid var(--separator);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--separator-strong);
   transform: translateX(-50%);
   animation: toast-in var(--dur) var(--ease);
 }
