@@ -13,11 +13,11 @@
 
 ## 如何安装和运行？
 
-- 前置要求：Node.js ≥ 23.4（云同步用内置 `node:sqlite`，22.5–23.3 需 `--experimental-sqlite`；建议 ≥ 24 LTS），pnpm ≥ 12。
-- 安装步骤：
+- 前置要求：Node.js ≥ 24（见 `.nvmrc`；云同步用内置 `node:sqlite`），包管理器由 [Vite+](https://viteplus.dev)（`vp`）按 lockfile 自动代理。
+- 安装步骤（先装 vp：`curl -fsSL https://vite.plus | bash`，之后 `vp install` 会按 lockfile 代理 pnpm）：
 
 ```bash
-pnpm install
+vp install
 ```
 
 - 开发运行（同时起 Hono 后端与 Vite 前端，Vite 自动把 `/api`、`/stream` 代理到后端）：
@@ -29,7 +29,7 @@ pnpm dev          # 前端 http://localhost:5173，后端 http://localhost:8788
 - 生产运行（构建前端后，由同一个 Hono 进程同源提供 SPA 与 API）：
 
 ```bash
-pnpm build
+pnpm build        # vp pack 构建 server，vp build 构建 web（含 PWA/SW）
 pnpm start        # 默认 http://localhost:8788，可用 PORT 覆盖
 ```
 
@@ -44,7 +44,8 @@ pnpm log-in       # 打开 http://127.0.0.1:8789 扫码，凭证写入仓库根 
 - 测试：
 
 ```bash
-pnpm test         # Vitest 单元 / 组件测试
+pnpm test         # 单元 / 组件测试（vp test → Vitest）
+pnpm check        # 格式 + 静态检查 + 类型（vp check → oxfmt / oxlint）
 pnpm test:e2e     # Playwright 端到端（面向生产形态，会先自动 build）
 ```
 
