@@ -1,8 +1,8 @@
 {
   "name": "pterosaur",
   "private": true,
-  "type": "module",
   "description": "Pterosaur — 网页音乐播放器",
+  "type": "module",
   "scripts": {
     "dev": "concurrently -k --raw \"pnpm --filter @pterosaur/server dev\" \"wait-on tcp:8788 && pnpm --filter @pterosaur/web dev\"",
     "build": "pnpm --filter @pterosaur/server build && pnpm --filter @pterosaur/web build",
@@ -24,8 +24,8 @@
     "cross-env": "^10.1.0",
     "prettier": "^3.7.4",
     "typescript": "^5.9.3",
-    "wait-on": "^9.1.0",
-    "vite-plus": "^1.4.0"
+    "vite-plus": "^1.4.0",
+    "wait-on": "^9.1.0"
   },
   "engines": {
     "node": ">=24"

@@ -294,7 +294,8 @@ export interface RipCapabilities {
 
 /** 用户在翻录对话框中的选择结果。 */
 export type RipChoice =
-  { distribution: 'digital' } | { distribution: 'physical'; discType: DiscType }
+  | { distribution: 'digital' }
+  | { distribution: 'physical'; discType: DiscType }
 
 /** 进行中任务的快照（SSE 首帧 / `GET /api/rip/status`）。 */
 export interface RipJobSnapshot {

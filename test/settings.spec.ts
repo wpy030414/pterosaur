@@ -99,7 +99,8 @@ async function storeCounts(
           let favorites = 0
           g.onsuccess = () => {
             const v = g.result as
-              { state?: { favorites?: unknown[] } } | undefined
+              | { state?: { favorites?: unknown[] } }
+              | undefined
             favorites = v?.state?.favorites?.length ?? 0
           }
           tx.oncomplete = () => {

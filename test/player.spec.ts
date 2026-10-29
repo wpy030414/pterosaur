@@ -116,7 +116,8 @@ async function waitForLibraryPersisted(
                 g.onsuccess = () => {
                   d.close()
                   const v = g.result as
-                    { state?: Record<string, unknown[]> } | undefined
+                    | { state?: Record<string, unknown[]> }
+                    | undefined
                   resolve(v?.state?.[field]?.length ?? 0)
                 }
                 g.onerror = () => {
