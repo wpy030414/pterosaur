@@ -76,7 +76,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
   /** 跳转到专辑 / 艺人页：先收起沉浸页，否则整屏浮层会盖住目标页面。 */
   const openEntity = (to: string) => {
     setExpanded(false)
-    navigate(to)
+    void navigate(to)
   }
 
   const favorites = useLibrary((s) => s.favorites)
@@ -102,7 +102,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
   useEffect(() => {
     if (!coverUrl) return
     let cancelled = false
-    whenCoverReady(coverUrl).then((ok) => {
+    void whenCoverReady(coverUrl).then((ok) => {
       if (cancelled || !ok) return // 加载失败维持旧背景：稳定优先于空白
       setBg((prev) => {
         // 规范化后比较：旧持久化数据（轮换前的 host）与新鲜 API 数据是同一封面时不重复淡入

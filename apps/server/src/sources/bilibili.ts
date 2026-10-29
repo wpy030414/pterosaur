@@ -645,7 +645,8 @@ async function mapLimit<T, R>(
   limit: number,
   fn: (item: T) => Promise<R>,
 ): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  // 预分配定长数组（后续按下标乱序写入，不用 push 保序）
+  const results = Array.from<R>({ length: items.length })
   let next = 0
   const workers = Array.from(
     { length: Math.min(Math.max(limit, 1), items.length) },

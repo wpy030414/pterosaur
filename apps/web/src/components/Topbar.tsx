@@ -80,7 +80,7 @@ export function Topbar({ searchRef }: TopbarProps) {
     e.preventDefault()
     const q = keyword.trim()
     if (!q) return
-    navigate(`/search?q=${encodeURIComponent(q)}`)
+    void navigate(`/search?q=${encodeURIComponent(q)}`)
   }
 
   // 解析当前系统偏好下的「实际」明暗，用于决定切换目标与图标

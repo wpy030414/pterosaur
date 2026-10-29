@@ -210,10 +210,14 @@ export function isLoopbackHost(host: string): boolean {
  */
 export function safeRipName(title: string): string {
   const cleaned = title
+    // 控制字符必须剥离（防终端注入 + Windows 非法文件名），此处刻意匹配
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
+  // 按**码点**切分而非 UTF-16 码元：避免从中间劈开代理对（emoji 变乱码）
+  // eslint-disable-next-line no-misused-spread
   const limited = [...cleaned]
     .slice(0, 80)
     .join('')

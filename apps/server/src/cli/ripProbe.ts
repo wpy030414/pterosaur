@@ -45,7 +45,9 @@ async function main(): Promise<void> {
       )
     }
   } catch (err) {
-    console.error(`  探测失败：${err instanceof Error ? err.message : err}`)
+    console.error(
+      `  探测失败：${err instanceof Error ? err.message : String(err)}`,
+    )
     process.exitCode = 1
   }
 

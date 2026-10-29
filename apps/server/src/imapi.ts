@@ -296,7 +296,11 @@ function parseProbePayload(
     if (!('recorders' in o || 'mediaPresent' in o)) continue
     const recorders = Array.isArray(o.recorders)
       ? (o.recorders as Record<string, unknown>[]).map((r) => ({
-          id: String(r.id ?? ''),
+          // COM 返回值是晚绑定的 VARIANT：只接受标量，其余一律退化为空串
+          id:
+            typeof r.id === 'string' || typeof r.id === 'number'
+              ? String(r.id)
+              : '',
           product: typeof r.product === 'string' ? r.product : undefined,
         }))
       : []

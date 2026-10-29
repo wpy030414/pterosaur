@@ -24,7 +24,7 @@ export function AppLink({ to, onClick, ...rest }: NavLinkProps) {
         )
           return
         e.preventDefault()
-        navigate(to, { replace: rest.replace })
+        void navigate(to, { replace: rest.replace })
       }}
       {...rest}
     />

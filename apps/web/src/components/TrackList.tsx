@@ -57,7 +57,7 @@ export function TrackList({
   // 链接点击不应触发行播放：阻止冒泡 + 阻止键盘事件冒泡到行
   const openEntity = (e: React.SyntheticEvent, to: string) => {
     e.stopPropagation()
-    navigate(to)
+    void navigate(to)
   }
   const stopKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()

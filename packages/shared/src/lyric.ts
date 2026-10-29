@@ -51,7 +51,7 @@ function parseLines(lrc: string): LyricLine[] {
  */
 export function parseLrc(lrc: string, tlyric?: string): Lyric {
   const lines = parseLines(lrc)
-  const timed = lines.length > 0 && lines.some((l) => l.text.length > 0)
+  const timed = lines.some((l) => l.text.length > 0)
 
   if (tlyric && lines.length) {
     const trans = parseLines(tlyric)

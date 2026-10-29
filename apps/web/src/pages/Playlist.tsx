@@ -152,7 +152,7 @@ export function PlaylistPage() {
     })
     if (ok) {
       deletePlaylist(id)
-      navigate('/')
+      void navigate('/')
     }
   }
 

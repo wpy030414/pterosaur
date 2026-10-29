@@ -452,7 +452,10 @@ export async function audioQuality(
 
 /** 由网易云回报的 `type` / `encodeType`（缺失时回退直链后缀）归一为编解码显示名。 */
 function codecName(raw: unknown, url: string): string | undefined {
-  const s = String(raw ?? '')
+  // 上游字段可能是任意 JSON 值：只接受标量，其余视为缺失
+  const s = (
+    typeof raw === 'string' || typeof raw === 'number' ? String(raw) : ''
+  )
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
   if (s) return s.toUpperCase()
