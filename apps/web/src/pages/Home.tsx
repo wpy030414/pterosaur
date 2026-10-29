@@ -1,107 +1,70 @@
 import { useEffect, useState } from 'react'
-import { Play, Clock, Heart } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { usePlayer } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
-import type { Playlist, Track } from '@pterosaur/shared/types'
-import { DEFAULT_SOURCE } from '@pterosaur/shared/types'
+import type { Album, Playlist, Track } from '@pterosaur/shared/types'
+import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
 import { PlaylistCard } from '../components/PlaylistCard.js'
-import { TrackList } from '../components/TrackList.js'
-import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
-import { Cover } from '../components/Cover.js'
+import { AlbumCard } from '../components/EntityCards.js'
+import { Rail } from '../components/Rail.js'
+import { SongRow } from '../components/SongRow.js'
 import { Loading, ErrorState } from '../components/States.js'
 import './pages.css'
 
-interface ShortcutProps {
-  /** 图标主题色变体 */
-  variant: 'fav' | 'recent'
-  title: string
-  count: number
-  icon: React.ReactNode
-  /** 点击本体：进入对应页面 */
-  onOpen: () => void
-  /** 点击悬浮播放按钮：直接播放该集合 */
-  onPlay: () => void
-}
-
 /**
- * 快捷入口磁贴：点击本体进入页面；悬浮浮现的播放按钮直接播放（不跳转）。
- * 集合为空时播放按钮仍在（保持 hover 反馈一致），但置为禁用态。
- */
-function Shortcut({
-  variant,
-  title,
-  count,
-  icon,
-  onOpen,
-  onPlay,
-}: ShortcutProps) {
-  return (
-    <div
-      className="shortcut"
-      role="button"
-      tabIndex={0}
-      aria-label={`${title}，${count} 首`}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        // 仅在磁贴本体获得焦点时响应，避免误触内部播放按钮
-        if (e.target !== e.currentTarget) return
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpen()
-        }
-      }}
-    >
-      <span className={`shortcut__icon shortcut__icon--${variant}`}>
-        {icon}
-      </span>
-      <span className="shortcut__text">
-        <strong>{title}</strong>
-        <small>{count} 首</small>
-      </span>
-      <button
-        type="button"
-        className="shortcut__play"
-        aria-label={`播放${title}`}
-        disabled={count === 0}
-        onClick={(e) => {
-          e.stopPropagation()
-          onPlay()
-        }}
-      >
-        <Play size={18} fill="currentColor" strokeWidth={0} />
-      </button>
-    </div>
-  )
-}
-
-/**
- * 立即收听（首页）。
+ * 「继续收听」收录上限：4 行 × 6 列 = 24 首。
  *
- * - 顶部问候 + 快捷入口（最近播放 / 我喜欢的音乐）；
- * - 「为你推荐歌单」横向卡片；
- * - 「继续收听」最近播放列表。
+ * 最近播放不再有独立页面——这个分区就是它的全部出口，故给足 24 首；
+ * 再多会超出「扫一眼就能挑一首」的合理体量。
+ */
+const RECENT_LIMIT = 24
+
+/**
+ * 新发现（首页）。
+ *
+ * 版面参考 Apple Music 网页版的 `/new`：**纵向堆叠若干横向滚动分区**——
+ * 推荐歌单 → 新歌精选 → 本周新发行 → 歌单已更新。这样在窄屏上单类内容不必
+ * 铺成巨大的网格，纵向只保留章节标题，扫读性最好。
+ *
+ * 顶部只有问候语：收藏与最近播放不再做捷径磁贴（它们分别由侧边栏「我喜欢的音乐」与
+ * 页面底部的「继续收听」承担），避免同一入口出现两处。
  */
 export function Home() {
   const navigate = useViewNavigate()
   const recent = useLibrary((s) => s.recent)
-  const favorites = useLibrary((s) => s.favorites)
   const playTracks = usePlayer((s) => s.playTracks)
   const status = useAuth((s) => s.status)
   // 推荐跟随活动账号（未登录用缺省源）。
   const source = activeMusicSource(status) ?? DEFAULT_SOURCE
 
+  // 四类发现内容并行取数；任一失败只影响自己那一块
   const recommend = useAsync<Playlist[]>(
-    () => api.recommend(source, 12),
+    () => api.recommend(source, 20),
     [source],
     [],
   )
-  const [featured, setFeatured] = useState<Track[]>([])
+  const newSongs = useAsync<Track[]>(
+    () => api.newSongs(source, 24),
+    [source],
+    [],
+  )
+  const newAlbums = useAsync<Album[]>(
+    () => api.newAlbums(source, 12),
+    [source],
+    [],
+  )
+  // 「歌单已更新」= 精品歌单（排行榜 / 编辑精选），与上面「为你推荐」区分
+  const updated = useAsync<Playlist[]>(
+    () => api.playlists(source, 20),
+    [source],
+    [],
+  )
 
-  // 从第一个推荐歌单里取若干曲目作为「精选单曲」
+  // 精选单曲：取第一个推荐歌单的曲目，作为「新歌精选」缺位时的兜底
+  const [featured, setFeatured] = useState<Track[]>([])
   useEffect(() => {
     const first = recommend.data?.[0]
     if (!first) return
@@ -121,123 +84,91 @@ export function Home() {
   const greeting =
     hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好'
 
+  /** 「新歌精选」的曲目：优先上游推荐新歌，空则退回精选单曲。 */
+  const songs = newSongs.data?.length ? newSongs.data : featured
+
   return (
     <div className="home">
       <header className="home__hero">
-        <div>
-          <h1 className="home__greeting">
-            {greeting}
-            {status[source]?.logged && status[source].nickname
-              ? `，${status[source].nickname}`
-              : ''}
-          </h1>
-        </div>
+        <h1 className="home__greeting">
+          {greeting}
+          {status[source]?.logged && status[source].nickname
+            ? `，${status[source].nickname}`
+            : ''}
+        </h1>
       </header>
 
-      {/* 快捷入口：点击进入对应页面；悬浮的播放按钮直接播放，不跳转 */}
-      <section className="home__shortcuts">
-        <Shortcut
-          variant="fav"
-          title="我喜欢的音乐"
-          count={favorites.length}
-          icon={<Heart size={20} fill="currentColor" strokeWidth={0} />}
-          onOpen={() => navigate('/favorites')}
-          onPlay={() => playTracks(favorites, 0)}
-        />
-        <Shortcut
-          variant="recent"
-          title="最近播放"
-          count={recent.length}
-          icon={<Clock size={20} strokeWidth={2} />}
-          onOpen={() => navigate('/recent')}
-          onPlay={() => playTracks(recent, 0)}
-        />
-      </section>
-
-      {/* 为你推荐歌单 */}
-      <section className="section">
-        <div className="section-head">
-          <div>
-            <h2 className="section-title">为你推荐</h2>
-            <p className="section-subtitle">根据热门与个性化推荐为你挑选</p>
-          </div>
-          <button
-            type="button"
-            className="section-link"
-            onClick={() => navigate('/browse')}
-          >
-            查看全部
-          </button>
-        </div>
+      {/* ---------- 推荐歌单 ---------- */}
+      <Rail title="推荐歌单" subtitle="根据热门与个性化推荐为你挑选">
         {recommend.loading ? (
-          <Loading text="加载推荐…" />
+          <div className="rail__placeholder">
+            <Loading text="加载推荐…" />
+          </div>
         ) : recommend.error ? (
-          <ErrorState message={recommend.error} onRetry={recommend.reload} />
+          <div className="rail__placeholder">
+            <ErrorState message={recommend.error} onRetry={recommend.reload} />
+          </div>
         ) : (
-          <div className="card-grid">
-            {recommend.data?.map((p) => (
-              <PlaylistCard
-                key={p.id}
-                playlist={p}
-                onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
-              />
-            ))}
-          </div>
+          recommend.data?.map((p) => (
+            <PlaylistCard
+              key={keyOf(p)}
+              playlist={p}
+              onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
+            />
+          ))
         )}
-      </section>
+      </Rail>
 
-      {/* 精选单曲 */}
-      {featured.length > 0 && (
-        <section className="section">
-          <div className="section-head">
-            <h2 className="section-title">精选单曲</h2>
-          </div>
-          <div className="home__featured">
-            {featured.map((t, i) => (
-              <button
-                key={t.id}
-                type="button"
-                className="featured-item"
-                onClick={() => playTracks(featured, i)}
-              >
-                <Cover
-                  src={coverAt(t.cover, COVER_SMALL)}
-                  alt={t.title}
-                  radius="sm"
-                  size={48}
-                />
-                <span className="featured-item__text">
-                  <span className="featured-item__title ellipsis">
-                    {t.title}
-                  </span>
-                  <span className="featured-item__artist ellipsis">
-                    {t.artist}
-                  </span>
-                </span>
-                <span className="featured-item__play">
-                  <Play size={16} fill="currentColor" strokeWidth={0} />
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
+      {/* ---------- 新歌精选（横向多列紧凑行） ---------- */}
+      {songs.length > 0 && (
+        <Rail title="新歌精选" subtitle="刚刚发布的新作" itemWidth={324} grid>
+          {songs.map((t) => (
+            <SongRow
+              key={keyOf(t)}
+              track={t}
+              onPlay={() => playTracks(songs, songs.indexOf(t))}
+            />
+          ))}
+        </Rail>
       )}
 
-      {/* 继续收听 */}
+      {/* ---------- 本周新发行（专辑） ---------- */}
+      {newAlbums.data?.length ? (
+        <Rail title="本周新发行" subtitle="最近发布的专辑">
+          {newAlbums.data.map((a) => (
+            <AlbumCard
+              key={keyOf(a)}
+              album={a}
+              onClick={() => navigate(`/album/${a.source}/${a.id}`)}
+            />
+          ))}
+        </Rail>
+      ) : null}
+
+      {/* ---------- 歌单已更新 ---------- */}
+      {updated.data?.length ? (
+        <Rail title="歌单已更新" subtitle="编辑精选，持续更新">
+          {updated.data.map((p) => (
+            <PlaylistCard
+              key={keyOf(p)}
+              playlist={p}
+              onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
+            />
+          ))}
+        </Rail>
+      ) : null}
+
+      {/* ---------- 继续收听 ---------- */}
       {recent.length > 0 && (
-        <section className="section">
-          <div className="section-head">
-            <h2 className="section-title">继续收听</h2>
-            <button
-              type="button"
-              className="section-link"
-              onClick={() => navigate('/recent')}
-            >
-              查看全部
-            </button>
-          </div>
-          <TrackList tracks={recent.slice(0, 8)} showHeader={false} />
-        </section>
+        <Rail title="继续收听" subtitle="最近播放过的曲目" itemWidth={324} grid>
+          {recent.slice(0, RECENT_LIMIT).map((t) => (
+            <SongRow
+              key={keyOf(t)}
+              track={t}
+              onPlay={() => playTracks(recent, recent.indexOf(t))}
+            />
+          ))}
+        </Rail>
       )}
     </div>
   )
