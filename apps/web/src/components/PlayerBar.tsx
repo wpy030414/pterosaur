@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import {
   Play,
   Pause,
@@ -56,12 +56,22 @@ export function PlayerBar() {
   const toggleQueue = useQueuePanel((s) => s.toggleQueue)
 
   // 拖拽进度：本地即时反馈，松手才真正 seek（避免频繁请求音频）
-  const handleScrub = useCallback(() => {
-    /* 拖拽中的值由 Slider 内部维护，这里无需处理 */
-  }, [])
+  // scrub 记录拖拽中的实时值，让左端读数跟着指尖走；同时记住所属曲目，换曲即失效
+  const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null)
+  const currentKey = current ? keyOf(current) : null
+  const scrubValue =
+    scrub && currentKey !== null && scrub.key === currentKey ? scrub.value : null
+
+  const handleScrub = useCallback(
+    (v: number) => {
+      if (currentKey !== null) setScrub({ key: currentKey, value: v })
+    },
+    [currentKey],
+  )
 
   const handleSeek = useCallback((v: number) => {
     seekTo(v)
+    setScrub(null)
   }, [])
 
   const VolumeIcon =
@@ -74,76 +84,30 @@ export function PlayerBar() {
 
   return (
     <footer className="playerbar">
-      {/* ---------- 左：曲目信息 ---------- */}
-      <div className="playerbar__left">
-        {current ? (
-          <>
-            <button
-              type="button"
-              className={`playerbar__cover-btn${expanded ? ' playerbar__cover-btn--vt-hidden' : ''}`}
-              onClick={() => startNowPlayingTransition(true)}
-              aria-label="展开播放页"
-            >
-              <Cover
-                src={coverAt(current.cover, COVER_SMALL)}
-                alt={current.title}
-                radius="md"
-                size={56}
-              />
-            </button>
-            <div className="playerbar__meta">
-              <div className="playerbar__title ellipsis">{current.title}</div>
-              <div className="playerbar__artist ellipsis">{current.artist}</div>
-            </div>
-            <IconButton
-              className="playerbar__fav-desktop"
-              label={isFav ? '取消喜欢' : '喜欢'}
-              size="sm"
-              active={isFav}
-              onClick={() => toggleFavorite(current)}
-            >
-              <Heart
-                size={17}
-                strokeWidth={2}
-                fill={isFav ? 'currentColor' : 'none'}
-              />
-            </IconButton>
-          </>
-        ) : (
-          <div className="playerbar__empty">
-            <div className="playerbar__empty-cover">
-              <Disc3 size={28} strokeWidth={1.5} />
-            </div>
-            <div className="playerbar__meta">
-              <div className="playerbar__title">空空如也</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ---------- 中：控制 + 进度 ---------- */}
-      <div className="playerbar__center">
-        <div className="playerbar__controls">
+      {/* 悬浮玻璃岛：宽度由内容决定，不占满主内容区 */}
+      <div className="playerbar__dock">
+        {/* ---------- 左：控制区 ---------- */}
+        <div className="playerbar__controls-left">
           {/* 播放模式：随机 / 循环合并为单一按钮，点击循环切换；靠专属图标区分状态 */}
           <IconButton
             label={`播放模式：${modeMeta.label}`}
             size="sm"
             onClick={cyclePlayMode}
           >
-            <ModeIcon size={17} strokeWidth={2} />
+            <ModeIcon size={16} strokeWidth={2} />
           </IconButton>
           <IconButton
             label="上一首"
-            size="md"
+            size="sm"
             onClick={prev}
             disabled={!current}
           >
-            <SkipBack size={20} strokeWidth={2} fill="currentColor" />
+            <SkipBack size={17} strokeWidth={2} fill="currentColor" />
           </IconButton>
           <IconButton
             label={showBuffering ? '缓冲中' : isPlaying ? '暂停' : '播放'}
-            size="lg"
-            primary
+            size="md"
+            className="playerbar__play"
             onClick={toggle}
             disabled={!current}
             data-testid="play-toggle"
@@ -163,82 +127,150 @@ export function PlayerBar() {
           </IconButton>
           <IconButton
             label="下一首"
-            size="md"
+            size="sm"
             onClick={next}
             disabled={!current}
           >
-            <SkipForward size={20} strokeWidth={2} fill="currentColor" />
+            <SkipForward size={17} strokeWidth={2} fill="currentColor" />
           </IconButton>
-          {/* 原循环按钮位置改为播放队列 */}
+          <IconButton
+            label={isFav ? '取消喜欢' : '喜欢'}
+            size="sm"
+            active={isFav}
+            onClick={() => current && toggleFavorite(current)}
+            disabled={!current}
+          >
+            <Heart
+              size={16}
+              strokeWidth={2}
+              fill={isFav ? 'currentColor' : 'none'}
+            />
+          </IconButton>
+        </div>
+
+        {/* ---------- 中：内容区（封面 / 歌名-歌手 / 菜单 + 无读数进度条） ---------- */}
+        <div className="playerbar__center">
+          {current ? (
+            <div className="playerbar__row">
+              <button
+                type="button"
+                className={`playerbar__cover-btn${expanded ? ' playerbar__cover-btn--vt-hidden' : ''}`}
+                onClick={() => startNowPlayingTransition(true)}
+                aria-label="展开播放页"
+              >
+                <Cover
+                  src={coverAt(current.cover, COVER_SMALL)}
+                  alt={current.title}
+                  seed={keyOf(current)}
+                  radius="sm"
+                  size={36}
+                />
+              </button>
+              <div className="playerbar__meta">
+                <div className="playerbar__title ellipsis">{current.title}</div>
+                <div className="playerbar__artist ellipsis">
+                  {current.artist}
+                </div>
+              </div>
+              <div className="playerbar__actions">
+                <AddToPlaylistMenu track={current} direction="up">
+                  {({ onClick, open }) => (
+                    <IconButton
+                      label="加入歌单、下载"
+                      size="sm"
+                      active={open}
+                      onClick={onClick}
+                    >
+                      <MoreHorizontal size={16} strokeWidth={2} />
+                    </IconButton>
+                  )}
+                </AddToPlaylistMenu>
+              </div>
+            </div>
+          ) : (
+            <div className="playerbar__empty">
+              <div className="playerbar__empty-cover">
+                <Disc3 size={20} strokeWidth={1.5} />
+              </div>
+              <div className="playerbar__meta">
+                <div className="playerbar__title">空空如也</div>
+              </div>
+            </div>
+          )}
+          {/*
+            进度条：静默时只有一条 1.5px 细线；hover / 拖拽时变红加粗（长度不变），
+            两端浮出读数、读数压在进度线**上方**，同时上排信息毛玻璃化（见 PlayerBar.css）。
+            读数常驻 DOM、默认透明，以免出现/消失时推移进度线。
+          */}
+          <div className="playerbar__progress">
+            <span className="playerbar__time playerbar__time--elapsed">
+              {formatTime(scrubValue ?? position)}
+            </span>
+            <Slider
+              value={position}
+              max={duration || 0}
+              onChange={handleScrub}
+              onCommit={handleSeek}
+              disabled={!current || !duration}
+              ariaLabel="播放进度"
+              size="sm"
+            />
+            <span className="playerbar__time playerbar__time--total">
+              {formatTime(duration)}
+            </span>
+          </div>
+        </div>
+
+        {/* ---------- 右：副控制区（播放列表 / 音量） ---------- */}
+        <div className="playerbar__right">
           <IconButton
             label={queueOpen ? '关闭播放队列' : '播放队列'}
             size="sm"
             active={queueOpen}
             onClick={toggleQueue}
           >
-            <ListMusic size={17} strokeWidth={2} />
+            <ListMusic size={16} strokeWidth={2} />
           </IconButton>
-        </div>
-
-        <div className="playerbar__progress">
-          <span className="playerbar__time">{formatTime(position)}</span>
-          <Slider
-            value={position}
-            max={duration || 0}
-            onChange={handleScrub}
-            onCommit={handleSeek}
-            disabled={!current || !duration}
-            ariaLabel="播放进度"
+          <IconButton
+            label={muted ? '取消静音' : '静音'}
             size="sm"
-          />
-          <span className="playerbar__time">{formatTime(duration)}</span>
-        </div>
-      </div>
-
-      {/* ---------- 右：音量 + 菜单（原「展开播放页」位置改放添加到歌单菜单） ---------- */}
-      <div className="playerbar__right">
-        <IconButton
-          label={muted ? '取消静音' : '静音'}
-          size="sm"
-          onClick={toggleMute}
-          disabled={!current}
-        >
-          <VolumeIcon size={17} strokeWidth={2} />
-        </IconButton>
-        <div className="playerbar__volume">
-          <Slider
-            value={muted ? 0 : volume}
-            max={1}
-            onChange={(v) => setVolume(v)}
-            ariaLabel="音量"
-            size="sm"
-          />
-        </div>
-        {/* 移动端播放键（桌面端由 center 提供） */}
-        <IconButton
-          className="playerbar__play-mobile"
-          label={showBuffering ? '缓冲中' : isPlaying ? '暂停' : '播放'}
-          size="sm"
-          primary
-          onClick={toggle}
-          disabled={!current}
-          data-testid="play-toggle-mobile"
-        >
-          {showBuffering ? (
-            <Loader2
-              size={17}
-              strokeWidth={2.2}
-              className="spinner"
-              data-testid="play-buffering-mobile"
+            onClick={toggleMute}
+            disabled={!current}
+          >
+            <VolumeIcon size={16} strokeWidth={2} />
+          </IconButton>
+          <div className="playerbar__volume">
+            <Slider
+              value={muted ? 0 : volume}
+              max={1}
+              onChange={(v) => setVolume(v)}
+              ariaLabel="音量"
+              size="sm"
             />
-          ) : isPlaying ? (
-            <Pause size={17} strokeWidth={2.2} fill="currentColor" />
-          ) : (
-            <Play size={17} strokeWidth={2.2} fill="currentColor" />
-          )}
-        </IconButton>
-        {current && (
-          <>
+          </div>
+          {/* 移动端播放键（桌面端由左控制区提供） */}
+          <IconButton
+            label={showBuffering ? '缓冲中' : isPlaying ? '暂停' : '播放'}
+            size="sm"
+            className="playerbar__play playerbar__play-mobile"
+            onClick={toggle}
+            disabled={!current}
+            data-testid="play-toggle-mobile"
+          >
+            {showBuffering ? (
+              <Loader2
+                size={20}
+                strokeWidth={2.2}
+                className="spinner"
+                data-testid="play-buffering-mobile"
+              />
+            ) : isPlaying ? (
+              <Pause size={20} strokeWidth={2.2} fill="currentColor" />
+            ) : (
+              <Play size={20} strokeWidth={2.2} fill="currentColor" />
+            )}
+          </IconButton>
+          {current && (
             <IconButton
               className="playerbar__fav-mobile"
               label={isFav ? '取消喜欢' : '喜欢'}
@@ -252,20 +284,8 @@ export function PlayerBar() {
                 fill={isFav ? 'currentColor' : 'none'}
               />
             </IconButton>
-            <AddToPlaylistMenu track={current} direction="up">
-              {({ onClick, open }) => (
-                <IconButton
-                  label="添加到歌单"
-                  size="sm"
-                  active={open}
-                  onClick={onClick}
-                >
-                  <MoreHorizontal size={17} strokeWidth={2} />
-                </IconButton>
-              )}
-            </AddToPlaylistMenu>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </footer>
   )

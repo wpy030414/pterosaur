@@ -1,23 +1,88 @@
+/*
+ * 播放区：**悬浮玻璃岛**。
+ *
+ * `.playerbar` 是**浮层**：用 `position: fixed` 贴在主内容区（右列）底部，
+ * 不占网格行、不占独立高度——内容区拿到完整高度，滚动时从岛下方穿过。
+ *
+ * 因为它是 `<PlayerBar />` 在 `.app-shell` 下的直接子元素（不在 `.app-main` 里），
+ * `absolute` 会相对整个 shell 定位（含侧边栏）；改用 `fixed` + 左侧让出
+ * `--sidebar-width`，等于「只落在主内容区」。
+ *
+ * 它自身透明且不拦事件，真正可见、可交互的是 `.playerbar__dock` 那枚毛玻璃胶囊。
+ *
+ * 三区布局：
+ *   左 —— 控制区（播放模式 / 上一首 / 播放暂停 / 下一首 / 喜爱）
+ *   中 —— 内容区（封面 / 歌名-歌手 / 菜单 + 进度条）
+ *   右 —— 副控制区（播放列表 / 音量）
+ */
+
 .playerbar {
-  grid-area: playerbar;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(320px, 2fr) minmax(
-      180px,
-      1fr
-    );
+  position: fixed;
+  left: var(--sidebar-width);
+  right: 0;
+  bottom: 0;
+  display: flex;
   align-items: center;
-  gap: 16px;
-  height: var(--playerbar-height);
-  padding: 0 20px;
-  background: var(--glass-player);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  backdrop-filter: blur(32px) saturate(180%);
-  border-top: 1px solid var(--separator);
+  justify-content: center;
+  min-width: 0;
+  padding: 0 16px 14px;
   z-index: 50;
+  pointer-events: none;
 }
 
-/* ============================ 左：曲目信息 ============================ */
-.playerbar__left {
+.playerbar__dock {
+  pointer-events: auto; /* .playerbar 本身透明且不拦事件，交互全交给胶囊 */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  /*
+   * 宽度**固定**：岛不随内容（歌名长短 / 是否有曲目）伸缩。
+   * 取 860px 与可用宽度两者的较小值——窄桌面下退让，但不被内容撑开。
+   */
+  width: min(860px, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
+  height: calc(var(--playerbar-height) - 14px);
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--glass-player);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid var(--separator-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ============================ 左：控制区 ============================ */
+.playerbar__controls-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/*
+ * 播放键：呼出圈与相邻按钮同尺寸（沿用 size 档位的 30px 容器），
+ * 仅图标放大、略溢出容器，靠图形而非底色建立主次。
+ */
+.playerbar__play {
+  overflow: visible;
+}
+
+/* ============================ 中：内容区 ============================ */
+.playerbar__center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  /* 岛宽度已固定，内容区居中，进度条才能稳稳对在封面下方 */
+  margin-inline: auto;
+  position: relative;
+}
+
+.playerbar__row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -26,6 +91,7 @@
 
 .playerbar__cover-btn {
   display: flex;
+  flex-shrink: 0;
   padding: 0;
   border-radius: var(--radius-md);
   transition: transform var(--dur-fast) var(--ease);
@@ -64,6 +130,13 @@
   margin-top: 2px;
 }
 
+.playerbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 .playerbar__empty {
   display: flex;
   align-items: center;
@@ -74,57 +147,135 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated-2);
   color: var(--text-tertiary);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-/* ============================ 中：控制 + 进度 ============================ */
-.playerbar__center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.playerbar__controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
+/*
+ * 进度条：静默时是 **1.5px** 的细线（无读数）；hover / 拖拽时变红、加粗到 5px，
+ * 但**长度不变**——读数浮在线的两端**上方**，不靠收缩轨道给读数让位。
+ *
+ * 纵向位置：位于「封面下边界 → 岛下边界」之间，即在内容区底部（内容区与封面行同轴，见下）。
+ * **绝对定位**贴在内容区底部，既不占上排的纵向空间，也不参与上排的垂直居中。
+ * 容器自身留出 16px 高度的命中区，让这么细的线也好点中。
+ */
 .playerbar__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* 16px 命中区垂直居中于「封面下边界 → 岛下边界」的中点（约岛底上方 9.5px） */
+  bottom: -15px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 560px;
+  height: 16px;
+  padding: 0;
+  transition: none;
 }
 
+/* 静默细线：1.5px，几乎不抢视线 */
+.playerbar__progress .slider__rail {
+  height: 1.5px;
+  background: color-mix(in srgb, var(--text-tertiary) 38%, transparent);
+}
+
+.playerbar__progress .slider__fill {
+  background: color-mix(in srgb, var(--text-secondary) 62%, transparent);
+}
+
+/* hover / 拖拽：变红并加粗到 2.5px；长度不变（不加 padding、不改宽度） */
+.playerbar__progress:hover .slider__rail,
+.playerbar__progress .slider--hover .slider__rail,
+.playerbar__progress .slider--dragging .slider__rail {
+  height: 5px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.playerbar__progress:hover .slider__fill,
+.playerbar__progress .slider--hover .slider__fill,
+.playerbar__progress .slider--dragging .slider__fill {
+  background: var(--accent);
+}
+
+/* 进度条不显示圆把手（细线形态更贴近系统播放器） */
+.playerbar__progress .slider__thumb {
+  display: none;
+}
+
+/*
+ * 读数：静默隐藏，hover / 拖拽时淡入。两侧各一枚，**压在进度线上方**，
+ * 贴住轨道两端——出现与消失都不会推移进度线本体。
+ */
 .playerbar__time {
-  font-size: 11px;
-  color: var(--text-tertiary);
+  position: absolute;
+  bottom: calc(50% + 5px);
+  z-index: 1;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-secondary);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  min-width: 34px;
-  text-align: center;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.playerbar__time--elapsed {
+  left: 0;
+}
+
+.playerbar__time--total {
+  right: 0;
+}
+
+.playerbar__progress:hover .playerbar__time,
+.playerbar__progress:has(.slider--dragging) .playerbar__time {
+  opacity: 1;
+  color: var(--text);
+  transform: translateY(0);
+}
+
+/*
+ * hover 态：上排信息（封面 + 歌名/歌手 + 菜单）毛玻璃化——
+ * 轻模糊 + 降不透明度，把注意力让给进度条与读数。
+ */
+.playerbar__row {
+  transition:
+    filter var(--dur) var(--ease),
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.playerbar__dock:has(.playerbar__progress:hover) .playerbar__row,
+.playerbar__dock:has(.playerbar__progress:hover) .playerbar__empty,
+.playerbar__dock:has(.playerbar__progress .slider--dragging) .playerbar__row,
+.playerbar__dock:has(.playerbar__progress .slider--dragging) .playerbar__empty {
+  filter: blur(4px);
+  opacity: 0.5;
+  transform: scale(0.985);
+  pointer-events: none;
 }
 
 .playerbar__progress .slider {
   flex: 1;
 }
 
-/* ============================ 右：音量 + 队列 ============================ */
+/* ============================ 右：副控制区 ============================ */
 .playerbar__right {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 .playerbar__volume {
@@ -139,46 +290,66 @@
   }
 }
 
-/* 非播放态右侧默认隐藏（有曲目时才显示） */
-.playerbar__play-mobile {
-  display: none;
+/* 侧边栏收成抽屉后，浮层不再需要让出左列 */
+@media (max-width: 900px) {
+  .playerbar {
+    left: 0;
+  }
+
+  /*
+   * 抽屉展开时，播放岛必须沉到抽屉（z 45）与遮罩（z 44）**之下**：
+   * 否则按 DOM 顺序作画，岛会盖住半透明遮罩，形成一块「漏出来的亮带」。
+   * 用 `:has()` 旁路订阅抽屉状态——Sidebar 与 PlayerBar 都是 `.app-shell` 的直接子元素，
+   * CSS 无需新增状态或 JS 联动。`.app-shell` 有 `isolation: isolate`，子元素负 z 不会逃逸。
+   */
+  .app-shell:has(.sidebar--drawer-open) .playerbar {
+    z-index: 43;
+  }
 }
 
+.playerbar__play-mobile,
 .playerbar__fav-mobile {
   display: none;
 }
 
-/* ---------- 窄屏 / 移动端（≤860px）：单行精简 ---------- */
+/* ---------- 窄屏 / 移动端（≤860px）：收成单行 ---------- */
 @media (max-width: 860px) {
   .playerbar {
-    grid-template-columns: 1fr auto;
-    grid-template-areas: 'left right';
-    grid-template-rows: auto;
-    height: auto;
-    padding: 8px 12px;
-    gap: 8px;
-    align-items: center;
+    /*
+     * 底部留白：岛要**贴住**用户的身高 UI。
+     * - safe-area-inset-bottom 在带 Home Indicator 的机型上约等于 34px；
+     * - 但 iPhone 17 这类**大圆角屏**，指示条之下的圆角弧线还会继续「吃掉」可视区，
+     *   若岛按 inset 顶格就绪，胶囊两端会顶到弧线边缘、显得发飘。
+     * 故在 inset 之余再压 6px，让岛整体下探一点，两端落进弧线的安全区。
+     */
+    padding: 0 20px 20px;
   }
 
-  .playerbar__left {
-    grid-area: left;
-    min-width: 0;
+  .playerbar__dock {
+    gap: 10px;
+    /*
+     * 高度**不缩水**：沿用桌面的 `--playerbar-height` 岛高，
+     * 移动端只收紧左右内边距——掌心操作的命中区与桌面一致。
+     */
+    padding: 0 20px;
+    border-radius: 999px;
+  }
+
+  /* 隐藏桌面端控制区与进度条，压缩为：封面 + 信息 + 播放键 */
+  .playerbar__controls-left {
+    display: none;
+  }
+
+  .playerbar__progress {
+    display: none;
+  }
+
+  .playerbar__center {
+    flex: 1 1 auto;
   }
 
   .playerbar__right {
-    grid-area: right;
-    flex-shrink: 0;
     gap: 2px;
-  }
-
-  /* 隐藏中间全部（控制 + 进度） */
-  .playerbar__center {
-    display: none;
-  }
-
-  /* 隐藏桌面端左侧喜爱、右侧静音/音量 */
-  .playerbar__fav-desktop {
-    display: none;
   }
 
   .playerbar__right .icon-btn[aria-label='静音'],
@@ -190,7 +361,6 @@
     display: none;
   }
 
-  /* 移动端按钮显形 */
   .playerbar__play-mobile {
     display: inline-flex !important;
     margin-right: 4px;
