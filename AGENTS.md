@@ -9,7 +9,7 @@ Pterosaur —— 仿 Apple Music 的网页音乐播放器（React 19 + Vite 前�
 ## 边界与范围
 
 - 范围内：
-  - 前端播放体验（首页/浏览/电台/搜索/歌单/资料库/播放队列/全屏歌词）。
+  - 前端播放体验（新发现（发现流）/广播/搜索/歌单/资料库（艺人、专辑）/播放队列/全屏歌词）。
   - 后端 API 代理与音频串流（含 Range 分段）、网易云扫码登录与会话透传；以及**独立磁带渠道**——B 站搜索，每条结果视为**类歌单的「磁带」**（可整盘播放、可进详情页选分P、可收藏到资料库，见 ADR-044），只解析其音频播放；视频字幕作歌词，主语言非中文时叠加中文轨为翻译（需登录才拿得到字幕列表，见 ADR-035）。
   - **翻录**（歌单/专辑/我喜欢的音乐）：分发方式二选一——数字打包（ZIP 含音频 + 封面 + `meta.json`）或**同机直刻 CD**（后端驱动本机光驱；数据 CD / 音频 CD；仅回环访问开放，见 ADR-047/048）。
 - 非目标（明确排除）：
@@ -29,7 +29,7 @@ Pterosaur —— 仿 Apple Music 的网页音乐播放器（React 19 + Vite 前�
   - **封面 URL 必须规范化**：网易云封面/头像一律经 `@pterosaur/shared/image` 的 `canonicalNeteaseImage`——网易云会随机轮换 `p1`–`pN.music.126.net` 镜像主机，原始 URL 不稳定，否则以 URL 为键的缓存会被拆成多条（见 ADR-020）。**其它源**同理在本源适配器内规范化（B 站 `i0`–`iN.hdslb.com` → 固定主机，见 `sources/bilibili.ts`）；无法规范化或主机稳定的 CDN 原样返回。
   - **直刻仅同机**：翻录的实体分发（`/api/rip/*` 与刻录任务）只对**回环访问**开放——前端按 `location.hostname` 判定（主门控），后端按连接对端地址判定（fail-closed，见 `requireLoopback`）；新增直刻能力必须沿用该双门控（见 ADR-048）。刻录任务的暂存文件名一律经 shared `safeRipName` 清洗（防路径穿越），封面 URL 走白名单（防 SSRF）。
   - **NeteaseCloudMusicApi 参数是扁平的**：如 `api.cloudsearch({ keywords, limit })`，不是嵌套 `{ query: {...} }`；其返回的 `cookie` 是「Set-Cookie 字符串数组」，透传逻辑见 `apps/server/src/sources/netease.ts`。
-  - 状态管理：播放状态在 `apps/web/src/store/player.ts`，收藏/最近播放/本地歌单在 `library.ts`，登录态（**单活动账号**）在 `auth.ts`，云同步开关与锚点（跟随活动账号）在 `sync.ts`，音质/背景偏好（仅存轻量元数据）在 `settings.ts`，临时 UI（队列面板开合、新建歌单 / 翻录方式弹窗 `ripDialog`）在 `ui.ts`，翻录进度（阶段 `phase` + 进度 + 百分比，仅存运行时）在 `rip.ts`。持久化：**`library` 走 IndexedDB**（`lib/libraryStorage.ts`，异步 + 写合并 + 旧 localStorage 一次性迁移，见 ADR-011），`player` / `sync` / `settings` / `theme` 走 localStorage；`ui` / `rip` 不持久化。改 `library` 时务必同步其 `partialize`——IDB 的 structured clone 不能克隆 action 函数。`player` 的 `shuffle` 是对队列的一次性洗牌，之后 `next`/`prev` 顺序游走（见 ADR-036）。
+  - 状态管理：播放状态在 `apps/web/src/store/player.ts`，收藏/最近播放/本地歌单在 `library.ts`，登录态（**单活动账号**）在 `auth.ts`，云同步开关与锚点（跟随活动账号）在 `sync.ts`，音质/背景偏好（仅存轻量元数据）在 `settings.ts`，临时 UI（队列面板开合、新建歌单 / 翻录方式弹窗 `ripDialog`）在 `ui.ts`，翻录进度（阶段 `phase` + 进度 + 百分比，仅存运行时）在 `rip.ts`。持久化：**`library` 走 IndexedDB**（`lib/libraryStorage.ts`，异步 + 写合并 + 旧 localStorage 一次性迁移，见 ADR-011），`player` / `sync` / `settings` / `theme` 走 localStorage；`ui` / `rip` 不持久化。侧边栏分组的展开态单独在 `sidebarPrefs.ts`（persist 到 localStorage）——**别**把 `ui` 里的临时状态一起持久化。改 `library` 时务必同步其 `partialize`——IDB 的 structured clone 不能克隆 action 函数。`player` 的 `shuffle` 是对队列的一次性洗牌，之后 `next`/`prev` 顺序游走（见 ADR-036）。
   - PWA / 缓存：`vite-plugin-pwa`（配置在 `apps/web/vite.config.ts`，`injectManifest`）把现有手写 SW（`apps/web/src/sw.ts`）作为**唯一** Service Worker 构建为 `sw.js`（IIFE）；`build` 就是单条 `vp build`，**已无第二步 SW 构建**。SW 承担三类互不相交的职责：`/stream/*` 音频与封面图片（`destination === 'image'`，CORS 拉取）写入**同一个** IndexedDB 池（共用 16GB LRU；逻辑在 `lib/mediaCache.ts`，低层封装 `lib/idb.ts`），生产下另经 Workbox 缓存应用外壳、**7 天过期**（`lib/shellCache.ts`）。IDB 库为 v4（`media`/`mediaMeta`/`background` + 独立的 `library` store）。PWA 生命周期操作（注销 / 清 Cache Storage / 硬刷新）在 `lib/pwa.ts`，均由顶栏设置弹窗调用。**登录 / 退出登录会清空全部缓存**（媒体池 + Cache Storage + 内存缓存，见 `lib/clearCaches.ts` 与 ADR-034），但**不动** `background` store（本地设置）。SW 另接受页面 `PREFETCH_AUDIO` 消息**主动**预热音频（预载队列相邻曲目；403 静默、不通知登录，见 ADR-037）。
   - 播放进度 seek 用 `apps/web/src/hooks/audioElement.ts` 的 `seekTo()` 命令式处理，**不要**直接写 store.position（会与音频回写打架）。
   - 样式：设计令牌集中在 `apps/web/src/styles/tokens.css`，组件样式与组件同名 `.css` 并排存放。新增颜色/间距优先用 CSS 变量。
@@ -46,8 +46,8 @@ Pterosaur —— 仿 Apple Music 的网页音乐播放器（React 19 + Vite 前�
 - `apps/web/src/hooks/` — `useAudioEngine`（音频引擎）、`useKeyboardShortcuts`、`useTheme`、`useAsync`、`useNowPlayingPrefetch`（当前曲封面 / 歌词预载）、`usePlaylistPrefetch`（队列前后各 2 首预载）、`useLibrarySync`（云同步引擎挂载）、`useSourceTheme`（按源主题色）、`useAccentFromBackground`（自定义背景取色）、`useMediaQuery`（响应式门控）、`audioElement`（单例 audio 与 seek）、`useViewNavigate` / `useContentScrollRestoration` / `usePresence`。
 - `apps/web/src/lib/` — 非组件工具：`idb`（低层 IndexedDB）、`coalesceWrites`（写合并）、`libraryStorage`（library 的 IDB 持久化）、`mediaCache`（音频 + 封面的媒体缓存与 LRU）、`prefetch`（队列预载调度器）、`prefetchProtocol`（SW 预载消息协议）、`shellCache`（应用外壳 7 天过期缓存）、`pwa`（注销 / 清缓存 / 硬刷新）、`sync`（云同步引擎）、`background`（自定义背景存取）、`accent`（背景取色）、`clearCaches`（凭证切换清缓存）、`reset`（整库重置）、`playbackWatchdog`（弱网播放韧性）、`nowPlayingTransition` / `viewTransition` / `themeTransition`（转场）、`scrollMemory`（滚动位置记忆）、`rip`（翻录分流：数字打包 / 实体直刻）、`burn`（实体刻录前端链路：SSE 订阅与兜底轮询）、`formatBytes`、`download`/`downloadPlaylist`。
 - `apps/web/src/sw.ts` — 应用 Service Worker（音频 + 封面 IDB 缓存 + 生产下外壳 Workbox 缓存 + 接受 `PREFETCH_AUDIO` 消息主动预热音频；由 vite-plugin-pwa 构建为 `sw.js`）。
-- `apps/web/src/components/` — UI 组件（Sidebar / Topbar / PlayerBar / NowPlaying / QueuePanel / TrackList / LoginModal 等）及其样式。
-- `apps/web/src/pages/` — 路由页面（Home / Browse / Radio / Search / Playlist / Library / Favorites / Recent）。
+- `apps/web/src/components/` — UI 组件（Sidebar / SidebarFooter / SidebarGroup / Rail / SongRow / MobileMenuButton / PlayerBar / NowPlaying / QueuePanel / TrackList / LoginModal 等）及其样式。
+- `apps/web/src/pages/` — 路由页面（Home（发现流）/ Radio / Search / Playlist / library/Artists / library/Albums / Favorites / Recent）。
 - `apps/web/src/styles/` — 全局样式与设计令牌。
 - `test/` — Playwright 端到端测试（根目录，需先 `pnpm build`）。
 - `docs/` — PRD / ARCHITECTURE / DECISIONS / specs。
