@@ -131,118 +131,22 @@ ol {
 
 /* ============================ 内容区转场（View Transitions） ============================ */
 /*
- * 内容区（`.app-content`）**仅在路由转场期间**参与快照：转场时 lib/viewTransition.ts 给
- * <html> 打 `data-route-vt`，本规则据它命名；其余时刻默认 `none`（见 app.css）。
- * 根元素平时也置 `none`，否则侧栏 / 顶栏 / 播放条会随根快照一起交叉溶解。
+ * **路由切换不使用 View Transition 快照**——播放岛是普通层叠里的悬浮元素，快照会画在
+ * top layer 把它盖住；而把岛纳入快照又会栅格化它、令毛玻璃失效。故 `lib/viewTransition.ts`
+ * 不再调用 `startViewTransition`，`.app-content` 始终不被命名。
  *
- * 例外——主题转场（见 lib/themeTransition.ts）需要**整页**参与：转场期间给 <html> 打
- * `data-theme-vt`，本规则不再命中，根恢复默认捕获。
- *
- * 之所以不再让 `.app-content` 常驻命名、靠 `[data-theme-vt]/[data-np-vt]` 临时摘名：
- * 那会在转场结束（`finished`）的同一帧恢复命名，使滚动容器的子树快照与伪树拆除赛跑，
- * 让内容区封面落在旧几何（滚动 / 点击后才复位）。
+ * 下面保留的根元素规则服务于**主题转场**（见 lib/themeTransition.ts）：它需要整页参与，
+ * 转场期间给 <html> 打 `data-theme-vt`，本规则不再命中，根恢复默认捕获；
+ * 其余时刻根置 `none`，否则侧栏 / 播放条会随根快照一起交叉溶解。
  */
 :root:not([data-theme-vt]) {
   view-transition-name: none;
 }
 
-:root[data-route-vt] .app-content {
-  view-transition-name: app-content;
-}
-
-/*
- * 快照容器持续到「淡出 + 淡入」两段都结束，避免旧快照被提前销毁导致闪断。
- */
-::view-transition-group(app-content) {
-  animation-duration: calc(var(--dur-page-out) + var(--dur-page-in));
-}
-
-::view-transition-old(app-content) {
-  /* 旧内容：ease-in 加速淡出，结束时 opacity 归零 */
-  animation-name: vt-content-out;
-  animation-duration: var(--dur-page-out);
-  animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
-  animation-fill-mode: both;
-}
-
-::view-transition-new(app-content) {
-  /*
-   * 新内容：延迟「旧内容淡出时长」后才开始，且在延迟期间靠 backwards 填充保持
-   * from 状态（opacity: 0）——确保旧内容完全消失后才开始渲染，杜绝两页重叠。
-   */
-  animation-name: vt-content-in;
-  animation-duration: var(--dur-page-in);
-  animation-timing-function: var(--ease-page);
-  animation-delay: var(--dur-page-out);
-  animation-fill-mode: both;
-}
-
-/*
- * 沉浸播放页转场（见 lib/nowPlayingTransition.ts）：`.app-content` 默认即为 `none`
- * （见 app.css），故此处无需再摘名——它从不会在沉浸转场期间被命名为捕获目标。
- */
-
 /* 共享封面（小封面 ↔ 大封面）：几何 morph 用 iOS 缓动，时长与 live 动画保持一致 */
 ::view-transition-group(np-cover) {
   animation-duration: var(--dur-slow);
   animation-timing-function: var(--ease-ios);
-}
-
-@keyframes vt-content-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-}
-
-@keyframes vt-content-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/*
- * 后退（浏览器 / 顶栏前进后退按钮）：内容动画**逆速度播放**——旧内容向下淡出、
- * 新内容自上方滑入（即上面两条关键帧的镜像）。方向由 lib/viewTransition.ts 写入
- * <html data-route-dir>。仅覆盖 animation-name，时长 / 缓动 / 延迟沿用基础规则。
- */
-:root[data-route-dir='back'] ::view-transition-old(app-content) {
-  animation-name: vt-content-out-rev;
-}
-
-:root[data-route-dir='back'] ::view-transition-new(app-content) {
-  animation-name: vt-content-in-rev;
-}
-
-@keyframes vt-content-out-rev {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-
-@keyframes vt-content-in-rev {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 /* ---------- 主题转场：新主题自按钮圆形揭示（clip-path circle） ---------- */
