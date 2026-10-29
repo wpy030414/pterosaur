@@ -7,6 +7,7 @@ import {
   type AudioQuality,
   type LoginStatus,
   type Playlist,
+  type PlaylistCategoryGroup,
   type Track,
   type Lyric,
 } from '@pterosaur/shared/types'
@@ -342,6 +343,52 @@ export async function topPlaylists(
   return list.map(normalizePlaylist)
 }
 
+/**
+ * 「新歌精选」：上游推荐的新歌。
+ *
+ * 上游把每条包在 `{ id, name, picUrl, song }` 里，真正的曲目数据在 `song`；
+ * 少数条目 `song` 缺失，直接跳过（没有 `id` 就无法播放）。
+ */
+export async function newSongs(limit = 20, cookie?: string): Promise<Track[]> {
+  const res = await api.personalized_newsong({ limit, cookie })
+  const list: { song?: RawSong }[] = res?.body?.result ?? []
+  return list
+    .map((it) => it.song)
+    .filter((s): s is RawSong => !!s && s.id != null)
+    .map(normalizeTrack)
+}
+
+/**
+ * 歌单分类标签（搜索页的流派快捷入口）。
+ *
+ * 上游 `playlist_catlist` 回 `categories`（id → 分组名）+ `sub`（全部标签，每条带
+ * `category` 指向其分组 id）。这里按 `categories` 的声明顺序分组，只保留真正能在
+ * 本应用里取到歌单的标签（`topPlaylists(cat)` 接受的就是标签名）。
+ */
+export async function playlistCategories(): Promise<PlaylistCategoryGroup[]> {
+  const res = await api.playlist_catlist({})
+  const body = res?.body as
+    | {
+        categories?: Record<string, string>
+        sub?: { name?: string; category?: number }[]
+      }
+    | undefined
+  const categories = body?.categories ?? {}
+  const subs = body?.sub ?? []
+  return Object.entries(categories).map(([id, name]) => ({
+    name,
+    tags: subs
+      .filter((t) => String(t.category) === id && !!t.name)
+      .map((t) => t.name as string),
+  }))
+}
+/** 「本周新发行」：最近发布的专辑（`album_newest`，上游固定回 12 条）。 */
+export async function newAlbums(limit = 12): Promise<Album[]> {
+  const res = await api.album_newest({})
+  const list: RawAlbum[] = res?.body?.albums ?? []
+  return list.slice(0, limit).map(normalizeAlbum)
+}
+
 /** 歌单详情曲目。 */
 export async function playlistTracks(
   id: string,
@@ -580,6 +627,9 @@ export const neteaseAdapter: SourceAdapter = {
   recommendPlaylists,
   toplists,
   topPlaylists,
+  newSongs,
+  newAlbums,
+  playlistCategories,
   artistDetail,
   albumDetail,
   playlistTracks,

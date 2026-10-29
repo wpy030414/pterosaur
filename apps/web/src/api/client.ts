@@ -1,5 +1,6 @@
 import type {
   Album,
+  PlaylistCategoryGroup,
   ApiResult,
   Artist,
   AudioLevel,
@@ -129,6 +130,19 @@ export const api = {
 
   playlists: (source: MusicSource, limit = 12, cat = '全部') =>
     get<Playlist[]>(`${API_BASE}/discover/playlists`, { limit, cat, source }),
+
+  /** 「新歌精选」：发现流的一个纵向分区。 */
+  newSongs: (source: MusicSource, limit = 20) =>
+    get<Track[]>(`${API_BASE}/discover/new-songs`, { limit, source }),
+
+  /** 歌单分类标签（搜索页的流派快捷入口）。 */
+  categories: (source: MusicSource) =>
+    get<PlaylistCategoryGroup[]>(`${API_BASE}/discover/categories`, {
+      source,
+    }),
+  /** 「本周新发行」：最近发布的专辑。 */
+  newAlbums: (source: MusicSource, limit = 12) =>
+    get<Album[]>(`${API_BASE}/discover/new-albums`, { limit, source }),
 
   /** 歌单详情；对磁带渠道（B 站）而言返回该**磁带**与它的分P 曲目（见 ADR-044）。 */
   playlist: (source: MusicSource, id: string) =>

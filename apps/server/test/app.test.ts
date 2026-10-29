@@ -316,10 +316,16 @@ describe('搜索分页（page / type）', () => {
     )
   })
 
-  it('/api/search/all 把 page 透传给单曲搜索（限 50）', async () => {
+  it('/api/search/all 把 page 与 limit 透传给单曲搜索', async () => {
     searchSongsMock.mockResolvedValue([])
-    await app.request('/api/search/all?keywords=x&page=2')
-    expect(searchSongsMock).toHaveBeenLastCalledWith('x', 50, undefined, 2)
+    await app.request('/api/search/all?keywords=x&page=2&limit=32')
+    expect(searchSongsMock).toHaveBeenLastCalledWith('x', 32, undefined, 2)
+  })
+
+  it('/api/search/all 未传 limit 时单曲搜索取缺省 20', async () => {
+    searchSongsMock.mockResolvedValue([])
+    await app.request('/api/search/all?keywords=x')
+    expect(searchSongsMock).toHaveBeenLastCalledWith('x', 20, undefined, 1)
   })
 
   it('/api/search/all?type=songs 只跑歌曲一类（其余不请求上游）', async () => {
