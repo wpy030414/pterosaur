@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+vi.mock('../../src/hooks/usePlayCollection.js', () => ({
+  usePlayCollection: () => ({ playPlaylist: vi.fn(), playAlbum: vi.fn() }),
+}))
 import { PlaylistCard } from '../../src/components/PlaylistCard.js'
+import { CassetteCard } from '../../src/components/CassetteCard.js'
 import { AlbumCard } from '../../src/components/EntityCards.js'
 import type { Album, Playlist } from '@pterosaur/shared/types'
 
@@ -50,24 +54,52 @@ describe('卡片播放按钮的可用性', () => {
   })
 })
 
-describe('封面右上角的数量 chip（> 1 才显示）', () => {
-  it('多首（> 1）显示 chip', () => {
+describe('封面右上角不再显示曲目数量（改用光波封面）', () => {
+  it('多首歌单也不渲染数量文案', () => {
     render(<PlaylistCard playlist={playlist(7)} onClick={() => {}} />)
-    expect(screen.getByText('7 首')).toBeInTheDocument()
+    expect(screen.queryByText('7 首')).toBeNull()
   })
 
-  it('1 首不显示（需求：为 1 则不显示）', () => {
-    render(<PlaylistCard playlist={playlist(1)} onClick={() => {}} />)
-    expect(screen.queryByText('1 首')).toBeNull()
-  })
-
-  it('0 首 / 数量未知不显示', () => {
-    const { unmount } = render(
-      <PlaylistCard playlist={playlist(0)} onClick={() => {}} />,
-    )
-    expect(screen.queryByText('0 首')).toBeNull()
-    unmount()
+  it('unknown 数量不渲染任何「首」字样', () => {
     render(<PlaylistCard playlist={playlist(undefined)} onClick={() => {}} />)
     expect(screen.queryByText(/首/)).toBeNull()
+  })
+})
+
+describe('预览卡不显示副标题（播放量 / 简介 / 创建者）', () => {
+  it('歌单卡：即便带描述与创建者，也只渲染标题', () => {
+    const { container } = render(
+      <PlaylistCard
+        playlist={{
+          ...playlist(5),
+          description: '一段歌单简介',
+          creator: '某用户',
+          playCount: 123456,
+        }}
+        onClick={() => {}}
+      />,
+    )
+    expect(container.querySelector('.card__subtitle')).toBeNull()
+    expect(screen.queryByText(/次播放/)).toBeNull()
+    expect(screen.queryByText('一段歌单简介')).toBeNull()
+    expect(screen.queryByText('by 某用户')).toBeNull()
+  })
+
+  it('磁带卡：不渲染 UP 主', () => {
+    const { container } = render(
+      <CassetteCard
+        cassette={{
+          source: 'bilibili',
+          id: 'BV1',
+          name: '磁带',
+          cover: '',
+          creator: 'UP 主',
+          trackCount: 3,
+        }}
+        onClick={() => {}}
+      />,
+    )
+    expect(container.querySelector('.card__subtitle')).toBeNull()
+    expect(screen.queryByText('by UP 主')).toBeNull()
   })
 })

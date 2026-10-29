@@ -163,130 +163,89 @@ test.describe('应用外壳', () => {
 
   test('侧栏导航可在主要页面间跳转', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: '浏览' }).click()
-    await expect(page).toHaveURL(/\/browse/)
-    await expect(
-      page.locator('.browse__title', { hasText: '浏览' }),
-    ).toBeVisible()
 
-    await page.getByRole('link', { name: '电台' }).click()
+    await page.getByRole('link', { name: '搜索' }).click()
+    await expect(page).toHaveURL(/\/search/)
+    await expect(page.locator('.search-page__input')).toBeVisible()
+
+    await page.getByRole('link', { name: '广播' }).click()
     await expect(page).toHaveURL(/\/radio/)
 
     await page.getByRole('link', { name: '我喜欢的音乐' }).click()
     await expect(page).toHaveURL(/\/favorites/)
 
-    // 「唱片盒」入口
-    await page.getByRole('link', { name: '唱片盒' }).click()
-    await expect(page).toHaveURL(/\/crate/)
-    await expect(page.locator('.crate__title')).toBeVisible()
+    // 「库」分组下的两个子页（原「唱片盒」已拆分）
+    await page.getByRole('link', { name: '艺术家' }).click()
+    await expect(page).toHaveURL(/\/library\/artists/)
+    await expect(page.locator('.library-page__title')).toHaveText('艺术家')
 
-    await page.getByRole('link', { name: '立即收听' }).click()
+    await page.getByRole('link', { name: '专辑' }).click()
+    await expect(page).toHaveURL(/\/library\/albums/)
+    await expect(page.locator('.library-page__title')).toHaveText('专辑')
+
+    // 最近播放已无独立页面（改由新发现页的「继续收听」承载），故无对应侧栏入口
+    await expect(page.getByRole('link', { name: '最近播放' })).toHaveCount(0)
+
+    await page.getByRole('link', { name: '新发现' }).click()
     await expect(page).toHaveURL(/\/$/)
   })
 
-  test('立即收听：点击快捷入口本体进入对应页面（而非播放）', async ({
+  test('新发现：顶部不再有收藏 / 最近播放的快捷磁贴', async ({ page }) => {
+    await page.goto('/')
+    // 这两处入口分别由侧边栏「我喜欢的音乐」与页面底部的「继续收听」承担
+    await expect(page.locator('.home__shortcuts')).toHaveCount(0)
+    await expect(page.locator('.shortcut')).toHaveCount(0)
+  })
+
+  test('新发现：继续收听最多收录 24 首，且无「查看全部」跳转', async ({
     page,
   }) => {
     await page.goto('/')
-    // 种入一条收藏与一条最近播放，确认「有内容」时点击本体也走导航而非播放
-    const t = {
+    // 种入 30 条最近播放（超过上限），确认只渲染 24 条
+    const tracks = Array.from({ length: 30 }, (_, i) => ({
       source: 'netease',
-      id: 'seed-1',
-      title: '种子曲目',
+      id: `seed-${i + 1}`,
+      title: `种子曲目 ${i + 1}`,
       artist: '艺人',
       album: '专辑',
       cover: '',
       duration: 200,
       fee: 'free',
-    }
+    }))
     await seedLibrary(page, {
-      favorites: [t],
-      recent: [t],
+      favorites: [],
+      recent: tracks,
       playlists: [],
       savedPlaylists: [],
       savedAlbums: [],
     })
     await page.reload()
-    await expect(page.locator('.home__shortcuts')).toBeVisible({
-      timeout: 15000,
-    })
 
-    await page.locator('.shortcut', { hasText: '我喜欢的音乐' }).click()
-    await expect(page).toHaveURL(/\/favorites/)
-
-    await page.goto('/')
-    await expect(page.locator('.home__shortcuts')).toBeVisible({
-      timeout: 15000,
-    })
-    await page.locator('.shortcut', { hasText: '最近播放' }).click()
-    await expect(page).toHaveURL(/\/recent/)
-
-    // 全程未触发播放（audio 仍处于暂停）
-    const paused = await page.evaluate(
-      () => (document.querySelector('audio') as HTMLAudioElement).paused,
-    )
-    expect(paused).toBe(true)
+    const rail = page.locator('.rail', { hasText: '继续收听' })
+    await expect(rail).toBeVisible({ timeout: 15000 })
+    await expect(rail.locator('.song-row')).toHaveCount(24)
+    // 不允许跳转到「更多」
+    await expect(rail.getByRole('button', { name: '查看全部' })).toHaveCount(0)
   })
 
-  test('立即收听：快捷入口的播放按钮直接播放，不跳转', async ({ page }) => {
+  test('新发现：推荐歌单分区没有「查看全部」跳转', async ({ page }) => {
     await page.goto('/')
-    const t = {
-      source: 'netease',
-      id: 'seed-1',
-      title: '种子曲目',
-      artist: '艺人',
-      album: '专辑',
-      cover: '',
-      duration: 200,
-      fee: 'free',
-    }
-    await seedLibrary(page, {
-      favorites: [t],
-      recent: [t],
-      playlists: [],
-      savedPlaylists: [],
-      savedAlbums: [],
-    })
-    await page.reload()
-    await expect(page.locator('.home__shortcuts')).toBeVisible({
-      timeout: 15000,
-    })
-
-    await page
-      .getByRole('button', { name: '播放我喜欢的音乐', exact: true })
-      .click()
-
-    // 未跳转，且底栏出现曲名（已进入播放态）
-    await expect(page).toHaveURL(/\/$/)
-    await expect(page.locator('.playerbar__title')).not.toBeEmpty({
-      timeout: 8000,
-    })
+    const rail = page.locator('.rail', { hasText: '推荐歌单' })
+    await expect(rail).toBeVisible({ timeout: 20000 })
+    await expect(rail.getByRole('button', { name: '查看全部' })).toHaveCount(0)
   })
 
-  test('立即收听：集合为空时 hover 仍出现播放按钮（禁用态）', async ({
-    page,
-  }) => {
-    await page.goto('/')
-    await clearLibrary(page)
-    await page.reload()
-    await expect(page.locator('.home__shortcuts')).toBeVisible({
-      timeout: 15000,
-    })
+  test('搜索页未搜索时给出流派快捷入口', async ({ page }) => {
+    await page.goto('/search')
+    const chips = page.locator('.genre-chip')
+    await expect(chips.first()).toBeVisible({ timeout: 20000 })
+    expect(await chips.count()).toBeGreaterThan(5)
 
-    const play = page.getByRole('button', {
-      name: '播放我喜欢的音乐',
-      exact: true,
-    })
-    // 空集合：按钮存在但禁用
-    await expect(play).toBeDisabled()
-
-    // hover 后浮现（opacity 由 0 变为 1）
-    await page.locator('.shortcut', { hasText: '我喜欢的音乐' }).hover()
-    await expect
-      .poll(async () =>
-        Number(await play.evaluate((el) => getComputedStyle(el).opacity)),
-      )
-      .toBeGreaterThan(0.5)
+    // 点选一个流派 → 进入该流派的歌单网格
+    const label = (await chips.first().textContent())?.trim() ?? ''
+    await chips.first().click()
+    await expect(page).toHaveURL(/\/genre\//)
+    await expect(page.locator('.browse__title')).toHaveText(label)
   })
 
   test('侧边栏标题点击切换 commit 哈希，GitHub 图标指向仓库', async ({
@@ -352,6 +311,9 @@ test.describe('应用外壳', () => {
 test.describe('搜索与播放', () => {
   test('搜索关键词并展示结果行', async ({ page }) => {
     await page.goto('/')
+    // 搜索框只在搜索页上（ADR-049）：先从侧边栏进搜索页
+    await page.getByRole('link', { name: '搜索' }).click()
+    await expect(page).toHaveURL(/\/search/)
     await page.getByTestId('search-input').fill(FREE_SONG_KEYWORD)
     await page.getByTestId('search-input').press('Enter')
     await expect(page).toHaveURL(/\/search\?q=/)
@@ -376,8 +338,7 @@ test.describe('搜索与播放', () => {
       .first()
       .textContent()
 
-    // 切到磁带 tab，点进一盘磁带再返回——触发搜索页重挂 + 会话级缓存恢复
-    await page.getByRole('tab', { name: '磁带' }).click()
+    // 点进磁带分区里的一盘磁带再返回——触发搜索页重挂（五条分区随之重建）
     await expect(page.locator('.card--cassette').first()).toBeVisible({
       timeout: 20000,
     })
@@ -388,14 +349,13 @@ test.describe('搜索与播放', () => {
       timeout: 15000,
     })
 
-    // 换词：应刷新为新词结果（并回到「歌曲」tab），而非残留旧词 / 旧磁带
+    // 换词：五条分区都应刷新为新词结果，而非残留旧词内容（ADR-050 起无 tab）
     await page.getByTestId('search-input').fill('周杰伦 晴天')
     await page.getByTestId('search-input').press('Enter')
-    await expect(page).not.toHaveURL(/tab=cassette/)
+    await expect(page).toHaveURL(/\/search\?/)
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 20000,
     })
-    await expect(page.locator('.card--cassette')).toHaveCount(0)
     const firstAfter = await page
       .locator('.col-title__name')
       .first()
@@ -719,10 +679,9 @@ test.describe('资料库与收藏', () => {
     })
   })
 
-  test('收藏专辑后出现在唱片盒', async ({ page }) => {
-    // 从搜索的专辑 tab 进入一张专辑
+  test('收藏专辑后出现在库 · 专辑页', async ({ page }) => {
+    // 直接从搜索结果的专辑分区进入一张专辑
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
-    await page.getByRole('tab', { name: /专辑/ }).click()
     await expect(page.locator('.card--album').first()).toBeVisible({
       timeout: 8000,
     })
@@ -742,15 +701,15 @@ test.describe('资料库与收藏', () => {
     await expect(page.getByRole('button', { name: '取消收藏' })).toBeVisible()
     await waitForLibraryPersisted(page, 'savedAlbums')
 
-    // 唱片盒中出现该专辑
-    await page.goto('/crate')
-    await expect(page.locator('.crate__title')).toHaveText('唱片盒')
-    await expect(page.locator('.crate .card--album').first()).toContainText(
-      name,
-    )
+    // 库 · 专辑页中出现该专辑
+    await page.goto('/library/albums')
+    await expect(page.locator('.library-page__title')).toHaveText('专辑')
+    await expect(
+      page.locator('.library-page .card--album').first(),
+    ).toContainText(name)
   })
 
-  test('唱片盒：艺人 / 专辑上下两区；取消收藏后卡片不立即消失', async ({
+  test('库 · 艺术家 / 专辑分属两页；取消收藏后卡片不立即消失', async ({
     page,
   }) => {
     // 本地种入，零联网（规避网易云限流抖动）
@@ -773,53 +732,52 @@ test.describe('资料库与收藏', () => {
         },
       ],
     })
-    await page.goto('/crate')
+    await page.goto('/library/artists')
 
-    // 上下两个分区
+    // 艺术家页只放艺人卡
+    await expect(page.locator('.library-page__title')).toHaveText('艺术家')
     await expect(
-      page.locator('.crate .section-title', { hasText: '艺人' }),
-    ).toBeVisible()
-    await expect(
-      page.locator('.crate .section-title', { hasText: '专辑' }),
-    ).toBeVisible()
-    await expect(page.locator('.crate .card--artist').first()).toContainText(
-      '测试艺人',
-    )
-    await expect(page.locator('.crate .card--album').first()).toContainText(
-      '测试专辑',
-    )
+      page.locator('.library-page .card--artist').first(),
+    ).toContainText('测试艺人')
 
     // 悬浮艺人卡片 → 取消收藏：红心转为未收藏态，但卡片**不立即消失**（防误触）
-    const artistCard = page.locator('.crate .card--artist').first()
+    const artistCard = page.locator('.library-page .card--artist').first()
     await artistCard.hover()
     await artistCard.getByRole('button', { name: '取消收藏' }).click()
-    await expect(page.locator('.crate .card--artist')).toHaveCount(1)
+    await expect(page.locator('.library-page .card--artist')).toHaveCount(1)
     await expect(
       artistCard.getByRole('button', { name: '收藏到资料库' }),
     ).toBeVisible()
 
-    // 离开再进入（页内跳转，不刷新）→ 才消失；专辑分区不受影响
-    await page.getByRole('link', { name: '我喜欢的音乐' }).click()
-    await expect(page).toHaveURL(/\/favorites/)
-    await page.getByRole('link', { name: '唱片盒' }).click()
-    await expect(page).toHaveURL(/\/crate/)
-    await expect(page.locator('.crate .card--artist')).toHaveCount(0)
-    await expect(page.locator('.crate .card--album').first()).toContainText(
-      '测试专辑',
-    )
+    // 专辑页不受影响（两页各自独立取 store 快照）
+    await page.getByRole('link', { name: '专辑' }).click()
+    await expect(page).toHaveURL(/\/library\/albums/)
+    await expect(
+      page.locator('.library-page .card--album').first(),
+    ).toContainText('测试专辑')
+
+    // 离开再进入艺术家页（页内跳转，不刷新）→ 才消失
+    await page.getByRole('link', { name: '艺术家' }).click()
+    await expect(page).toHaveURL(/\/library\/artists/)
+    await expect(page.locator('.library-page .card--artist')).toHaveCount(0)
   })
 
-  test('唱片盒空态：未收藏任何艺人 / 专辑时提示去收藏', async ({ page }) => {
+  test('库空态：未收藏任何艺术家 / 专辑时提示去收藏', async ({ page }) => {
     await page.goto('/')
     await clearLibrary(page)
-    await page.goto('/crate')
-    await expect(page.getByText('唱片盒还空着')).toBeVisible({ timeout: 8000 })
+    await page.goto('/library/artists')
+    await expect(page.getByText('还没有收藏的艺术家')).toBeVisible({
+      timeout: 8000,
+    })
+    await page.goto('/library/albums')
+    await expect(page.getByText('还没有收藏的专辑')).toBeVisible({
+      timeout: 8000,
+    })
   })
 
-  test('收藏艺人后出现在唱片盒', async ({ page }) => {
-    // 借专辑页的艺人链接进入艺人页（复用较稳定的搜索路径）
+  test('收藏艺人后出现在库 · 艺术家页', async ({ page }) => {
+    // 直接从搜索结果的专辑分区进入专辑页，再走其中的艺人链接
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
-    await page.getByRole('tab', { name: /专辑/ }).click()
     await expect(page.locator('.card--album').first()).toBeVisible({
       timeout: 8000,
     })
@@ -836,20 +794,22 @@ test.describe('资料库与收藏', () => {
     await expect(page.getByRole('button', { name: '取消收藏' })).toBeVisible()
     await waitForLibraryPersisted(page, 'savedArtists')
 
-    // 唱片盒的艺人分区出现该艺人
-    await page.goto('/crate')
+    // 库 · 艺术家页出现该艺人
+    await page.goto('/library/artists')
+    await expect(page.locator('.library-page__title')).toHaveText('艺术家', {
+      timeout: 8000,
+    })
     await expect(
-      page.locator('.crate .section-title', { hasText: '艺人' }),
-    ).toBeVisible({ timeout: 8000 })
-    await expect(page.locator('.crate .card--artist').first()).toBeVisible({
+      page.locator('.library-page .card--artist').first(),
+    ).toBeVisible({
       timeout: 8000,
     })
   })
 })
 
 test.describe('歌单详情', () => {
-  test('从浏览页进入歌单详情并展示曲目', async ({ page }) => {
-    await page.goto('/browse')
+  test('从新发现页进入歌单详情并展示曲目', async ({ page }) => {
+    await page.goto('/')
     await expect(page.locator('.card').first()).toBeVisible({ timeout: 15000 })
     await page.locator('.card').first().click()
     await expect(page).toHaveURL(/\/playlist\/[^/]+\/\d+/, { timeout: 8000 })
@@ -864,15 +824,15 @@ test.describe('歌单详情', () => {
 
 test.describe('卡片播放按钮', () => {
   test('点击卡片播放按钮立即播放，且不进入详情页', async ({ page }) => {
-    await page.goto('/browse')
+    await page.goto('/')
     await expect(page.locator('.card').first()).toBeVisible({ timeout: 15000 })
 
     const card = page.locator('.card').first()
     await card.hover()
     await card.locator('.card__play').click()
 
-    // 仍停留在浏览页（未跳转到歌单详情）
-    await expect(page).toHaveURL(/\/browse/)
+    // 仍停留在新发现页（未跳转到歌单详情）
+    await expect(page).toHaveURL(/\/$/)
     // 底栏出现曲名 → 已进入播放态
     await expect(page.locator('.playerbar__title')).not.toBeEmpty({
       timeout: 10000,
@@ -881,39 +841,30 @@ test.describe('卡片播放按钮', () => {
 })
 
 test.describe('搜索分栏与艺人 / 专辑跳转', () => {
-  test('搜索结果分为歌曲 / 磁带 / 艺人 / 专辑 / 歌单五个 tab', async ({
-    page,
-  }) => {
+  test('搜索结果五个分区滑轨同页可见，无 tab（ADR-050）', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
 
-    const tabs = page.getByRole('tab')
-    await expect(tabs).toHaveCount(5)
-    await expect(page.getByRole('tab', { name: /歌曲/ })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    // 旧的 tab 已彻底移除
+    await expect(page.getByRole('tab')).toHaveCount(0)
 
-    // 默认歌曲 tab：显示曲目行
-    await expect(page.locator('.track-row').first()).toBeVisible({
+    // 歌曲分区：紧凑曲目行
+    await expect(page.locator('.song-row').first()).toBeVisible({
       timeout: 15000,
     })
 
-    // 切到艺人 tab
-    await page.getByRole('tab', { name: /艺人/ }).click()
+    // 艺人分区：卡片在 Rail 内可见
     await expect(page.locator('.card--artist').first()).toBeVisible({
       timeout: 8000,
     })
 
-    // 切到专辑 tab
-    await page.getByRole('tab', { name: /专辑/ }).click()
-    await expect(page.locator('.card--album').first()).toBeVisible({
+    // 歌单分区
+    await expect(page.locator('.card--playlist').first()).toBeVisible({
       timeout: 8000,
     })
   })
 
   test('从搜索的艺人卡片进入艺人页', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
-    await page.getByRole('tab', { name: /艺人/ }).click()
     await expect(page.locator('.card--artist').first()).toBeVisible({
       timeout: 8000,
     })
@@ -927,8 +878,8 @@ test.describe('搜索分栏与艺人 / 专辑跳转', () => {
   })
 
   test('歌单曲目行点击专辑名跳转专辑页', async ({ page }) => {
-    // 从浏览页进入任意歌单
-    await page.goto('/browse')
+    // 从新发现页进入任意歌单
+    await page.goto('/')
     await expect(page.locator('.card').first()).toBeVisible({ timeout: 15000 })
     await page.locator('.card').first().click()
     await expect(page).toHaveURL(/\/playlist\/[^/]+\/\d+/, { timeout: 8000 })
@@ -975,7 +926,8 @@ test.describe('队列面板毛玻璃', () => {
 test.describe('移动端', () => {
   test('输入框字号 ≥ 16px（避免聚焦时页面被放大）', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto('/')
+    // 搜索框现在只在搜索页上（ADR-049）
+    await page.goto('/search')
     const size = await page
       .getByTestId('search-input')
       .evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
@@ -985,19 +937,21 @@ test.describe('移动端', () => {
   test('抽屉打开时由侧边栏切换内容，转场不得盖住抽屉', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
-    await page.locator('.topbar__burger').click()
+    await page.locator('.mobile-menu-btn').click()
     await expect(page.locator('.sidebar--drawer-open')).toBeVisible()
 
     // 由抽屉切换主内容区
-    await page.locator('.sidebar--drawer-open a', { hasText: '浏览' }).click()
-    await expect(page).toHaveURL(/\/browse/)
+    await page.locator('.sidebar--drawer-open a', { hasText: '广播' }).click()
+    await expect(page).toHaveURL(/\/radio/)
 
     // 若 View Transition 生效，转场快照（top layer）会盖住抽屉——此处应为抽屉本身
+    // （侧边栏现在是三段式 flex，elementFromPoint 可能打在半透明遮罩上——
+    // 只要是 sidebar-* 相关元素即可，不拘是不是根 element）
     const topClass = await page.evaluate(() => {
       const el = document.elementFromPoint(140, 400)
       return el ? el.className || el.tagName : null
     })
-    expect(String(topClass)).toContain('sidebar--drawer-open')
+    expect(String(topClass)).toMatch(/sidebar/)
   })
 })
 

@@ -10,12 +10,15 @@ async function waitForRouteTransitionEnd(page: Page): Promise<void> {
 }
 
 /**
- * E2E：顶栏前进 / 后退按钮也走内容区转场。
+ * E2E：浏览器前进 / 后退也走内容区转场。
  *
  * 此前只有「跳转新地址」（push）有转场，popstate 前进 / 后退没有；现由自定义路由器
  * （`components/AppRouter.tsx`）把所有历史变更统一包进 View Transition，并按方向在 `<html>`
  * 上打 `data-route-dir`（`lib/viewTransition.ts` 写入）。这里观察该标记以断言后退走了转场。
  * Chromium 支持 View Transitions，故该路径会被走到。
+ *
+ * 备注：自 ADR-049 起顶栏已移除，前进 / 后退完全依赖浏览器原生机制；本文件用 `page.goBack()`
+ * 触发该路径。
  */
 
 /** 安装观察器，记录每次转场的方向标记（`data-route-dir` 属瞬态，需在变更时即记录）。 */
@@ -33,288 +36,179 @@ async function recordRouteDirs(page: Page): Promise<void> {
   })
 }
 
+/**
+ * 进搜索页并提交一个关键词。
+ *
+ * 顶栏移除后搜索框只在搜索页上（ADR-049），所以所有搜索用例都必须先导航到 /search。
+ */
+async function searchFor(page: Page, q: string): Promise<void> {
+  await page.getByRole('link', { name: '搜索' }).click()
+  // 用 toHaveURL 轮询：SPA 内换历史条目不触发文档加载，waitForURL 等不到
+  await expect(page).toHaveURL(/\/search/)
+  await page.getByTestId('search-input').fill(q)
+  await page.getByTestId('search-input').press('Enter')
+  await expect(page).toHaveURL(/\/search\?q=/)
+}
+
 const readDirs = (page: Page): Promise<string[]> =>
   page.evaluate(() => (window as unknown as { __dirs?: string[] }).__dirs ?? [])
 
-test('顶栏后退导航走内容区转场（逆放）', async ({ page }) => {
+test('浏览器后退走内容区转场（逆放）', async ({ page }) => {
   await page.goto('/')
   await recordRouteDirs(page)
 
-  // 触发一次 SPA 前进导航（搜索）
-  await page.getByTestId('search-input').fill('pterosaur')
-  await page.getByTestId('search-input').press('Enter')
-  await page.waitForURL(/\/search/)
+  // 触发一次 SPA 前进导航：首页 → 广播（push 一条新历史）
+  await page.getByRole('link', { name: '广播' }).click()
+  await expect(page).toHaveURL(/\/radio/)
 
-  // 顶栏后退 → 应走一次「后退」方向的转场
-  await page.getByRole('button', { name: '后退' }).click()
-  await page.waitForURL((u) => !u.pathname.startsWith('/search'))
+  // 顶栏前进/后退按钮已随顶栏移除（ADR-049），改用**浏览器原生后退**：
+  // 路由器把它们同样包进转场，故方向标记应仍为 back。
+  await page.goBack()
+  // 用 toHaveURL 轮询而非 waitForURL：popstate 是 SPA 内换历史条目，不触发文档加载，
+  // waitForURL 默认等的是 load 型导航（会一直等到超时）。
+  await expect(page).toHaveURL((u) => u.pathname === '/')
 
   await expect.poll(() => readDirs(page)).toContain('back')
 })
 
-test('搜索页下钻返回后仍处于原分类 tab（tab 进 URL）', async ({ page }) => {
-  await page.goto('/')
-  await page.getByTestId('search-input').fill('周杰伦')
-  await page.getByTestId('search-input').press('Enter')
-  await page.waitForURL(/\/search/)
-
-  // 切到「艺人」tab：tab 进 URL（replace，不压新历史条目）
-  await page.getByRole('tab', { name: '艺人' }).click()
-  await expect(page).toHaveURL(/\/search\?.*tab=artists/)
-
-  // 下钻艺人页（push 新条目）→ 返回（POP）：仍处于「艺人」tab 且 URL 保留 tab 参数
-  await expect(page.locator('.card--artist').first()).toBeVisible({
-    timeout: 15_000,
-  })
-  await page.locator('.card--artist').first().click()
-  await expect(page).toHaveURL(/\/artist\//)
-  await page.goBack()
-  await expect(page).toHaveURL(/\/search\?.*tab=artists/)
-  await expect(page.getByRole('tab', { name: '艺人' })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  )
-})
-
-test('搜索页：切 tab 后下钻返回恢复该 tab 的滚动位置', async ({ page }) => {
-  await page.goto('/')
-  await page.getByTestId('search-input').fill('周杰伦')
-  await page.getByTestId('search-input').press('Enter')
-  await page.waitForURL(/\/search/)
-  await page.getByRole('tab', { name: '艺人' }).click()
-  await expect(page).toHaveURL(/tab=artists/)
-  await expect(page.locator('.card--artist').first()).toBeVisible({
-    timeout: 15_000,
-  })
-
-  const content = page.locator('.app-content')
-  await waitForRouteTransitionEnd(page)
-  await page.mouse.move(640, 400)
-  await page.mouse.wheel(0, 600)
-  await page.waitForTimeout(200)
-  const before = await content.evaluate((el) => el.scrollTop)
-  expect(before).toBeGreaterThan(100)
-
-  await page.locator('.card--artist').first().click()
-  await expect(page).toHaveURL(/\/artist\//)
-  await page.goBack()
-  await expect(page).toHaveURL(/\/search\?.*tab=artists/)
-  await expect
-    .poll(() => content.evaluate((el) => el.scrollTop), { timeout: 3000 })
-    .toBeGreaterThan(before - 60)
-})
-
-/** 各 tab 的卡片选择器（歌曲行点击是播放；磁带 tab 为下钻，另有专属用例，故不入本表）。 */
-const TAB_CARDS: Record<string, string> = {
-  artists: '.card--artist',
-  albums: '.card--album',
-  playlists: '.card--playlist',
-}
-
-for (const [tabName, cardSelector] of Object.entries(TAB_CARDS)) {
-  test(`搜索页：${tabName} tab 下钻返回恢复滚动`, async ({ page }) => {
-    await page.goto('/')
-    await page.getByTestId('search-input').fill('周杰伦')
-    await page.getByTestId('search-input').press('Enter')
-    await page.waitForURL(/\/search/)
-    await page
-      .getByRole('tab', {
-        name:
-          tabName === 'artists'
-            ? '艺人'
-            : tabName === 'albums'
-              ? '专辑'
-              : '歌单',
-      })
-      .click()
-    await expect(page).toHaveURL(new RegExp(`tab=${tabName}`))
-    await expect(page.locator(cardSelector).first()).toBeVisible({
-      timeout: 15_000,
-    })
-
-    const content = page.locator('.app-content')
-    await waitForRouteTransitionEnd(page)
-    // 滚两段：越过第一页底部，触发懒加载续页（返回时须恢复等量内容，否则滚动被钳回第一页）
-    await page.mouse.move(640, 400)
-    await page.mouse.wheel(0, 600)
-    await page.waitForTimeout(400)
-    await page.mouse.wheel(0, 600)
-    await page.waitForTimeout(300)
-    const before = await content.evaluate((el) => el.scrollTop)
-    expect(before).toBeGreaterThan(600)
-
-    await page.locator(cardSelector).first().click()
-    await expect(page).toHaveURL(new RegExp(`/${tabName.replace(/s$/, '')}/`))
-    await page.waitForTimeout(300)
-    await page.goBack()
-    await expect(page).toHaveURL(new RegExp(`tab=${tabName}`))
-    await expect
-      .poll(() => content.evaluate((el) => el.scrollTop), { timeout: 3000 })
-      .toBeGreaterThan(before - 60)
-  })
-}
-
-test('搜索页：tab 间来回切换各自保留滚动位置', async ({ page }) => {
-  await page.goto('/')
-  await page.getByTestId('search-input').fill('周杰伦')
-  await page.getByTestId('search-input').press('Enter')
-  await page.waitForURL(/\/search/)
-
-  const content = page.locator('.app-content')
-  // 专辑 tab 滚一段
-  await page.getByRole('tab', { name: '专辑' }).click()
-  await expect(page).toHaveURL(/tab=albums/)
-  await expect(page.locator('.card--album').first()).toBeVisible({
-    timeout: 15_000,
-  })
-  await waitForRouteTransitionEnd(page)
-  await page.mouse.move(640, 400)
-  await page.mouse.wheel(0, 500)
-  await page.waitForTimeout(200)
-  const albumScrolled = await content.evaluate((el) => el.scrollTop)
-  expect(albumScrolled).toBeGreaterThan(100)
-
-  // 切去歌曲再切回专辑：应回到专辑 tab 的原滚动位置
-  await page.getByRole('tab', { name: '歌曲' }).click()
-  await waitForRouteTransitionEnd(page)
-  await page.getByRole('tab', { name: '专辑' }).click()
-  await expect
-    .poll(() => content.evaluate((el) => el.scrollTop), { timeout: 3000 })
-    .toBeGreaterThan(albumScrolled - 60)
-})
+/** 五条分区滑轨的标题（顺序即页面上的纵向顺序）。 */
+const RAIL_TITLES = ['歌曲', '艺人', '专辑', '歌单', '磁带'] as const
 
 /**
- * **在飞**的转场快照层数（`::view-transition-*` 的 `running` 动画）。
+ * E2E：搜索结果的多分区版式（ADR-050）。
  *
- * 只看 `running`：被 `skipTransition()` 掐掉的转场其动画会转为 finished，伪树拆除可能晚一两帧，
- * 但**在飞**（`running`）就说明它还在往屏上画旧内容。
+ * 搜索页不再有 tab——五类结果各占一条横向滑轨同页展示，滑轨尾部的「更多」进入
+ * 独立类别页（`/search/{类别}?q=`），独立页里再纵向哨兵续页。
  */
-/**
- * 取动画效果的伪元素选择器。
- *
- * `pseudoElement` 不在 TS 的 `AnimationEffect` 声明里（仅 Chromium 实现），
- * 但 View Transition 的判定必须靠它，故此处显式收窄后再读。
- */
-const pseudoElementOf = (effect: AnimationEffect | null | undefined) =>
-  (effect as (AnimationEffect & { pseudoElement?: string }) | null | undefined)
-    ?.pseudoElement
 
-const runningViewTransitionLayers = (page: Page): Promise<number> =>
-  page.evaluate(
-    () =>
-      (document.getAnimations?.() ?? []).filter(
-        (a) =>
-          a.playState === 'running' &&
-          pseudoElementOf(a.effect)?.startsWith('::view-transition'),
-      ).length,
-  )
+/** 某条分区滑轨（Rail 的 `h2` 是分区标题）。 */
+const railOf = (page: Page, title: string) =>
+  page.locator('section.rail', {
+    has: page.getByRole('heading', { name: title, exact: true }),
+  })
 
-test('磁带下钻返回的转场未结束时切 tab：不残留旧快照层、不污染其他 tab（回归）', async ({
+test('搜索结果：五个分区滑轨同页可见，且没有 tab', async ({ page }) => {
+  await page.goto('/')
+  await searchFor(page, '周杰伦')
+
+  for (const title of RAIL_TITLES) {
+    await expect(railOf(page, title)).toHaveCount(1)
+  }
+  // 纵向顺序：磁带排在歌单之后
+  const order = (
+    await page.locator('section.rail .rail__title').allTextContents()
+  ).map((t) => t.trim())
+  expect(order).toEqual([...RAIL_TITLES])
+  // 分区内容的形态：歌曲是紧凑曲目行，磁带是 4:3 磁带卡，其余是普通卡片
+  await expect(railOf(page, '歌曲').locator('.song-row').first()).toBeVisible({
+    timeout: 20_000,
+  })
+  await expect(
+    railOf(page, '磁带').locator('.card--cassette').first(),
+  ).toBeVisible({ timeout: 20_000 })
+  await expect(
+    railOf(page, '艺人').locator('.card--artist').first(),
+  ).toBeVisible({ timeout: 20_000 })
+
+  // 旧的 tab 胶囊已彻底移除
+  await expect(page.getByRole('tab')).toHaveCount(0)
+  await expect(page.locator('.search__tabs')).toHaveCount(0)
+})
+
+test('搜索结果：滑轨尾部「更多」进入独立类别页，独立页可滚动续页', async ({
   page,
 }) => {
   await page.goto('/')
-  await page.getByTestId('search-input').fill('周杰伦')
-  await page.getByTestId('search-input').press('Enter')
-  await page.waitForURL(/\/search/)
+  await searchFor(page, '周杰伦')
 
-  // 到「磁带」tab 并等结果
-  await page.getByRole('tab', { name: '磁带' }).click()
-  await expect(page).toHaveURL(/tab=cassette/)
-  await expect(page.locator('.card--cassette').first()).toBeVisible({
+  const songsRail = railOf(page, '歌曲')
+  // 预览只给 24 首（4 行 × 6 列），更多藏在「更多」后面
+  const previewRows = songsRail.locator('.song-row')
+  await expect(previewRows).toHaveCount(24, { timeout: 20_000 })
+  const moreLink = songsRail.getByTestId('rail-more')
+  await expect(moreLink).toBeVisible({ timeout: 20_000 })
+  await moreLink.click()
+
+  await expect(page).toHaveURL(/\/search\/songs\?q=/)
+  await expect(page.locator('.track-row').first()).toBeVisible({
     timeout: 20_000,
   })
 
-  // 下钻一盘磁带 → 立刻返回：让「返回」那条路由转场处于**在飞**状态
-  await page.locator('.card--cassette').first().click()
-  await expect(page).toHaveURL(/\/playlist\/bilibili\//)
-  await page.goBack()
-
-  // 先确认「返回」转场真的开始了（有在飞的快照层），再动手——避免与 popstate 处理抢跑
-  const inFlight = await page
-    .waitForFunction(
-      () =>
-        (document.getAnimations?.() ?? []).some(
-          (a) =>
-            a.playState === 'running' &&
-            pseudoElementOf(a.effect)?.startsWith('::view-transition'),
-        ),
-      undefined,
-      { timeout: 2000 },
-    )
-    .then(() => true)
-    .catch(() => false)
-
-  // 转场在飞时切到「艺人」。DOM 点击免去 actionability 等待，确保落在转场窗口内
-  // （旧实现不掐掉在飞转场 → 上一屏「磁带网格」的快照层留在最上层盖住新 tab）
-  const clicked = await page.evaluate(() => {
-    const el = [
-      ...document.querySelectorAll<HTMLElement>('.search__tabs [role="tab"]'),
-    ].find((b) => b.textContent?.includes('艺人'))
-    if (!el) return false
-    el.click()
-    return true
-  })
-  expect(clicked).toBe(true)
-
-  if (inFlight) {
-    // 踩空两帧让 skipTransition 生效，再断言：在飞的旧快照层必须已被掐掉（不得仍在往屏上画）。
-    // 转场时长 ≈580ms，此刻远未自然结束，故本断言能判出「是否真的掐掉了」。
-    await page.evaluate(
-      () =>
-        new Promise<void>((r) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => r())),
-        ),
-    )
-    expect(await runningViewTransitionLayers(page)).toBe(0)
-  }
-
-  await expect(page).toHaveURL(/tab=artists/)
-  await expect(page.locator('.card--artist').first()).toBeVisible({
-    timeout: 15_000,
-  })
-  // 艺人 tab 里不该出现磁带卡
-  await expect(page.locator('.card--cassette')).toHaveCount(0)
+  // 续页：滚到底部后哨兵触发追加，条目数应增长
+  const rows = page.locator('.track-row')
+  const before = await rows.count()
+  const content = page.locator('.app-content')
+  await waitForRouteTransitionEnd(page)
+  await page.mouse.move(640, 400)
+  await page.mouse.wheel(0, 4000)
+  await page.waitForTimeout(600)
+  await page.mouse.wheel(0, 4000)
+  await page.waitForTimeout(1200)
+  await expect
+    .poll(async () => rows.count(), { timeout: 15_000 })
+    .toBeGreaterThan(before)
+  expect(await content.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
 })
 
-test('磁带 tab 翻页后切到其他 tab：不得有磁带卡混进来（回归）', async ({
+test('搜索结果：换词后五个分区刷新为新词，不残留旧结果（回归）', async ({
   page,
 }) => {
-  // 上游分页会**跨页返回同一实体**（实测 B 站第 1、2 页都含同一 bvid），累积列表于是出现重复项；
-  // 重复 React `key` 会让协调错乱、旧卡片残留在 DOM 里，换 tab 时跟着混进新 tab 的网格。
+  await page.goto('/')
+  await searchFor(page, '周杰伦')
+  const firstBefore = await railOf(page, '歌曲')
+    .locator('.song-row')
+    .first()
+    .textContent()
+
+  await page.getByTestId('search-input').fill('林俊杰 江南')
+  await page.getByTestId('search-input').press('Enter')
+  await expect(page).toHaveURL(/q=/)
+  await expect(railOf(page, '歌曲').locator('.song-row').first()).toBeVisible({
+    timeout: 20_000,
+  })
+  const firstAfter = await railOf(page, '歌曲')
+    .locator('.song-row')
+    .first()
+    .textContent()
+  expect(firstAfter).not.toBe(firstBefore)
+  // 旧版 tab 参数不再出现
+  await expect(page).not.toHaveURL(/tab=/)
+})
+
+test('搜索结果：旧深链上的 ?tab= 被忽略，五分区照常展示', async ({ page }) => {
+  await page.goto('/search?q=' + encodeURIComponent('周杰伦') + '&tab=cassette')
+  for (const title of RAIL_TITLES) {
+    await expect(railOf(page, title)).toHaveCount(1)
+  }
+  await expect(page.getByRole('tab')).toHaveCount(0)
+})
+
+test('独立类别页续页不产生重复 key 警告（去重回归）', async ({ page }) => {
+  // 上游分页会**跨页返回同一实体**（实测 B 站第 1、2 页都含同一 bvid）；
+  // 独立页把多页累积成一个列表，重复项会让 React 报重复 key、旧卡片残留在 DOM 里。
   const dupKeyWarnings: string[] = []
   page.on('console', (m) => {
     if (/same key|non-unique keys/i.test(m.text()))
       dupKeyWarnings.push(m.text().slice(0, 120))
   })
 
-  await page.goto('/')
-  await page.getByTestId('search-input').fill('周杰伦')
-  await page.getByTestId('search-input').press('Enter')
-  await page.waitForURL(/\/search/)
-
-  await page.getByRole('tab', { name: '磁带' }).click()
-  await expect(page).toHaveURL(/tab=cassette/)
+  await page.goto('/search/cassette?q=' + encodeURIComponent('周杰伦'))
   await expect(page.locator('.card--cassette').first()).toBeVisible({
-    timeout: 20_000,
+    timeout: 25_000,
   })
 
-  // 滚两段触发续页
   await waitForRouteTransitionEnd(page)
   await page.mouse.move(640, 400)
-  await page.mouse.wheel(0, 700)
-  await page.waitForTimeout(500)
-  await page.mouse.wheel(0, 700)
+  await page.mouse.wheel(0, 900)
   await page.waitForTimeout(800)
+  await page.mouse.wheel(0, 900)
+  await page.waitForTimeout(1500)
 
-  // 切到其它分类 tab：结果区里不得残留任何磁带卡
-  for (const name of ['艺人', '专辑', '歌单']) {
-    await page.getByRole('tab', { name }).click()
-    await page.waitForTimeout(500)
-    await expect(page.locator('.search__results .card--cassette')).toHaveCount(
-      0,
-    )
-  }
-
-  // 累积列表里不该出现重复身份键
   expect(dupKeyWarnings).toEqual([])
+
+  // 同一身份键在列表里不得重复出现（磁带 = Playlist，取卡片 a11y 名称去重计数）
+  const names = await page
+    .locator('.card--cassette')
+    .evaluateAll((els) => els.map((e) => e.textContent?.trim() ?? ''))
+  expect(new Set(names).size).toBe(names.length)
 })

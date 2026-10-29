@@ -3,14 +3,14 @@ import { test, expect, type Page } from '@playwright/test'
 /**
  * E2E：内容区滚动位置按历史条目恢复。
  *
- * 用「唱片盒」（只读本地收藏的专辑，无需联网）种入一批专辑造出可滚动列表，
+ * 用「库 · 专辑」页（只读本地收藏的专辑，无需联网）种入一批专辑造出可滚动列表，
  * 验证「下钻 → 返回」会恢复原滚动位置。
  */
 
 const IDB_DB = 'pterosaur'
 const LIBRARY_KEY = 'pterosaur-library'
 
-/** 向 library store 种入若干收藏专辑（唱片盒据此渲染可滚动列表）。 */
+/** 向 library store 种入若干收藏专辑（库 · 专辑页据此渲染可滚动列表）。 */
 async function seedSavedAlbums(page: Page, count: number): Promise<void> {
   await page.evaluate(
     ({ db, key, count }) =>
@@ -52,7 +52,7 @@ test.describe('内容区滚动位置', () => {
   test('下钻后返回恢复滚动位置', async ({ page }) => {
     await page.goto('/')
     await seedSavedAlbums(page, 80)
-    await page.goto('/crate')
+    await page.goto('/library/albums')
 
     const content = page.locator('.app-content')
     await expect(page.locator('.card--album').first()).toBeVisible({
@@ -84,7 +84,7 @@ test.describe('内容区滚动位置', () => {
 
     // 返回（POP）→ 恢复原滚动位置
     await page.goBack()
-    await expect(page).toHaveURL(/\/crate/)
+    await expect(page).toHaveURL(/\/library\/albums/)
     await expect
       .poll(() => content.evaluate((el) => el.scrollTop), { timeout: 3000 })
       .toBeGreaterThan(before - 60)

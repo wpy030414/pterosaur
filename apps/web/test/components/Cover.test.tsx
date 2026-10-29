@@ -45,10 +45,12 @@ describe('Cover 预载防闪', () => {
     expect(container.querySelector('.cover')).toHaveClass('cover--loaded')
   })
 
-  it('complete 但加载失败（naturalWidth=0）回退占位', () => {
+  it('complete 但加载失败（naturalWidth=0）回退光波封面', () => {
     stubImage(true, 0)
     const { container } = render(<Cover src="/x.jpg" alt="x" />)
-    expect(container.querySelector('.cover__fallback')).toBeInTheDocument()
+    // 兜底改为「由 id 派生的渐变 + Pt 水印」，不再是独立的 cover__fallback 子元素
+    expect(container.querySelector('.cover')).toHaveClass('cover--fallback')
+    expect(container.querySelector('.cover__brand')).toHaveTextContent('Pt')
     expect(container.querySelector('img')).toBeNull()
   })
 
