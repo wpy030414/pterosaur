@@ -1,11 +1,11 @@
 /*
- * 自定义应用背景层。铺在顶栏 / 侧边栏 / 主内容区之下，**不含底部播放条**：
- * 底边留出 `--playerbar-height`，正好让 PlayerBar 落在此层之外。
+ * 自定义应用背景层。铺在侧边栏与主内容区之下，**一直铺到底**：播放岛是毛玻璃材质，
+ * 背景从岛下方透出才会真正呈现出玻璃质感（若在岛高度处截断，岛的下半截会是死板的底色）。
  * 用负 z-index 藏在内容之后——`.app-shell` 的 `isolation: isolate` 保证它不会逃到 body 之后。
  */
 .app-bg {
   position: absolute;
-  inset: 0 0 var(--playerbar-height) 0;
+  inset: 0;
   z-index: -1;
   overflow: hidden;
   pointer-events: none;

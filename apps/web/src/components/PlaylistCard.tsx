@@ -1,31 +1,25 @@
 import { Play } from 'lucide-react'
-import type { Playlist } from '@pterosaur/shared/types'
+import { keyOf, type Playlist } from '@pterosaur/shared/types'
 import { usePlayCollection } from '../hooks/usePlayCollection.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
-import { CountChip } from './CountChip.js'
 import './Cards.css'
 
 interface PlaylistCardProps {
   playlist: Playlist
   /** 点击卡片本体：进入歌单详情页 */
   onClick: () => void
-  /** 右上角副标签（如播放量） */
-  subtitle?: string
 }
 
 /**
- * 歌单 / 排行榜卡片（方形封面 + 标题 + 描述）。
+ * 歌单 / 排行榜卡片（方形封面 + 标题）。
  *
  * - 点击卡片本体：进入详情页；
- * - 悬浮浮现的播放按钮：立即播放该歌单（不进入详情页）；
- * - 封面右上角：曲目数量 chip（> 1 才显示）。
+ * - 悬浮浮现的播放按钮：立即播放该歌单（不进入详情页）。
+ *
+ * 预览卡**不显示任何副标题**（播放量 / 简介 / 创建者）：这些信息只在详情页给出。
  */
-export function PlaylistCard({
-  playlist,
-  onClick,
-  subtitle,
-}: PlaylistCardProps) {
+export function PlaylistCard({ playlist, onClick }: PlaylistCardProps) {
   const { playPlaylist } = usePlayCollection()
   return (
     <div
@@ -46,10 +40,10 @@ export function PlaylistCard({
         <Cover
           src={coverAt(playlist.cover, COVER_SMALL)}
           alt={playlist.name}
+          seed={keyOf(playlist)}
           radius="md"
           className="card__cover"
         />
-        <CountChip count={playlist.trackCount} />
         <button
           type="button"
           className="card__play"
@@ -65,11 +59,6 @@ export function PlaylistCard({
       </div>
       <div className="card__body">
         <div className="card__title ellipsis">{playlist.name}</div>
-        <div className="card__subtitle ellipsis">
-          {subtitle ??
-            playlist.description ??
-            (playlist.creator ? `by ${playlist.creator}` : '')}
-        </div>
       </div>
     </div>
   )

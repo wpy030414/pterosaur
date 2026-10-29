@@ -8,6 +8,7 @@ import { useLibrary } from '../store/library.js'
 import type { Album, Artist, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
+  keyOf,
   isMusicSource,
   type MusicSource,
 } from '@pterosaur/shared/types'
@@ -89,6 +90,7 @@ export function ArtistPage() {
         <Cover
           src={coverAt(artist.avatar, COVER_LARGE)}
           alt={artist.name}
+          seed={keyOf(artist)}
           rounded
           className="detail__cover"
         />

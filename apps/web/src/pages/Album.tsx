@@ -9,6 +9,7 @@ import { ripDialog } from '../store/ui.js'
 import type { Album, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
+  keyOf,
   isMusicSource,
   type MusicSource,
 } from '@pterosaur/shared/types'
@@ -124,6 +125,7 @@ export function AlbumPage() {
         <Cover
           src={coverAt(album.cover, COVER_LARGE)}
           alt={album.name}
+          seed={keyOf(album)}
           radius="lg"
           className="detail__cover"
         />

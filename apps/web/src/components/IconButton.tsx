@@ -8,18 +8,15 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg'
   /** 是否为「激活」态（如随机/循环开启） */
   active?: boolean
-  /** 是否为强调色圆形主按钮（播放键） */
-  primary?: boolean
 }
 
 /**
- * 统一的图标按钮：带 aria-label、聚焦环、激活/主按钮样式。
+ * 统一的图标按钮：带 aria-label、聚焦环、激活态样式。
  */
 export function IconButton({
   label,
   size = 'md',
   active,
-  primary,
   className,
   children,
   ...rest
@@ -33,7 +30,6 @@ export function IconButton({
         'icon-btn',
         `icon-btn--${size}`,
         active ? 'icon-btn--active' : '',
-        primary ? 'icon-btn--primary' : '',
         className ?? '',
       ]
         .filter(Boolean)

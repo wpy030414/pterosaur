@@ -18,7 +18,7 @@
 
 .slider:focus-visible .slider__thumb {
   opacity: 1;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: 3px solid var(--accent-soft);
 }
 
 /* ---------- 轨道 ---------- */
@@ -78,7 +78,8 @@
   height: 12px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  /* 白色把手压在轨道上，靠一圈暗描边保证可见 */
+  border: 1px solid rgba(0, 0, 0, 0.3);
   transform: translate(-50%, -50%) scale(0.8);
   opacity: 0;
   transition:
@@ -95,9 +96,4 @@
 
 .slider--dragging .slider__thumb {
   transform: translate(-50%, -50%) scale(1.15);
-}
-
-/* 浅色主题下把手需要描边才可见 */
-:root[data-theme='light'] .slider__thumb {
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
 }

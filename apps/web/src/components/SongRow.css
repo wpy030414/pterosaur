@@ -1,0 +1,84 @@
+/* 「新歌精选」紧凑曲目行：封面 + 曲名 / 艺人 + 悬浮播放键。 */
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 网格项默认 min-width: auto，内容一长就把列撑宽 / 溢出；必须显式归零 */
+  min-width: 0;
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.song-row:hover {
+  background: var(--bg-hover);
+}
+
+.song-row__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.song-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* 曲名 / 艺人单行截断：不截断则长标题把整行撑出网格列 */
+.song-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.song-row__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 悬浮播放键：常隐，行内 hover / 键盘聚焦时浮现 */
+.song-row__play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--text);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.song-row:hover .song-row__play,
+.song-row__main:focus-visible .song-row__play {
+  opacity: 1;
+}
+
+.song-row__trailing {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/*
+ * 触屏设备没有 hover：播放键若只在 hover 时浮现就永远看不见。
+ * 改为常显，并把字号 / 封面略放大，便于点按。
+ */
+@media (hover: none) {
+  .song-row__play {
+    opacity: 0.6;
+  }
+}

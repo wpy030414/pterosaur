@@ -30,7 +30,6 @@
   border-radius: var(--radius-xl);
   background: var(--bg-elevated-2);
   border: 1px solid var(--separator);
-  box-shadow: var(--shadow-lg);
   animation: rip-dialog-in var(--dur-slow) var(--ease);
 }
 

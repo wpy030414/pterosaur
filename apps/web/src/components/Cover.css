@@ -3,8 +3,6 @@
   flex-shrink: 0;
   overflow: hidden;
   background: var(--bg-elevated-2);
-  /* 加载前的占位渐变，避免布局抖动 */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .cover img {
@@ -39,12 +37,29 @@
   border-radius: 50%;
 }
 
-.cover__fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  color: var(--text-tertiary);
-  background: linear-gradient(135deg, var(--bg-elevated-2), var(--bg-elevated));
+/*
+ * 右上角的「Pt」署名：固定 12px，不随封面尺寸缩放。
+ *
+ * 强制纯白（不随底色自适应）——它是一枚品牌标，不是正文。
+ * 「字本身宽一点」用 `scaleX` 拉伸字形，而不是 `letter-spacing`：
+ * 后者拉开的是字与字的间距，笔画本身不变粗，观感是「散」而不是「宽」。
+ */
+.cover__brand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  white-space: nowrap;
+  transform: scaleX(1.35);
+  /* 从右上角向外拉伸，避免 transform 把字推出封面边界 */
+  transform-origin: right center;
+}
+
+/*
+/* 极小的封面（列表行 16–19px）放不下水印 */
+.cover--sm .cover__brand {
+  display: none;
 }
