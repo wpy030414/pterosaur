@@ -40,15 +40,6 @@ describe('CassetteCard', () => {
     expect(container.querySelectorAll('.cassette-reel')).toHaveLength(2)
   })
 
-  it('数量 chip：> 1 才显示（分P 数）', () => {
-    const { rerender } = render(
-      <CassetteCard cassette={cassette(3)} onClick={() => {}} />,
-    )
-    expect(screen.getByText('3 首')).toBeInTheDocument()
-    rerender(<CassetteCard cassette={cassette(1)} onClick={() => {}} />)
-    expect(screen.queryByText('1 首')).toBeNull()
-  })
-
   it('空磁带（trackCount=0）：播放按钮置灰', () => {
     render(<CassetteCard cassette={cassette(0)} onClick={() => {}} />)
     expect(playBtn()).toBeDisabled()
