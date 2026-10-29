@@ -2,6 +2,17 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <!--
+      苹方 Web 字体：自 CDN 按需加载（仓库内不放字体文件，字形为 Apple 版权）。
+      该 CSS 用 unicode-range 分了 92 片，浏览器只下载页面实际用到的字符所在的片。
+      用 <link> 而不是 CSS @import：@import 要等主样式表解析完才开始请求，
+      会把字体延迟到首屏之后；<link> 可与主样式表并行。版本锁定，见 ADR-049。
+    -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/subsetted-fonts@1.0.5/PingFangSC-Regular/PingFangSC-Regular.css"
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <meta
