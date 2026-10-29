@@ -1,55 +1,36 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { SearchX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { Search as SearchIcon, SearchX, X } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
+import { useSearchHistory } from '../store/searchHistory.js'
 import type {
   MusicSource,
-  Playlist,
+  PlaylistCategoryGroup,
   SearchResults,
 } from '@pterosaur/shared/types'
 import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
 import { dedupeByKey } from '../lib/dedupe.js'
-import { TrackList } from '../components/TrackList.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { CassetteCard } from '../components/CassetteCard.js'
 import { ArtistCard, AlbumCard } from '../components/EntityCards.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
+import { AppLink } from '../components/AppLink.js'
+import { Rail } from '../components/Rail.js'
+import { RailMore } from '../components/RailMore.js'
+import { SongRow } from '../components/SongRow.js'
+import { usePlayer } from '../store/player.js'
+import {
+  CASSETTE_SOURCE,
+  SEARCH_PAGE_SIZE,
+  categoryPath,
+  type SearchCategory,
+} from '../lib/searchCategory.js'
 
-type SearchTab = 'songs' | 'cassette' | 'artists' | 'albums' | 'playlists'
-/** 音乐结果四类（不含磁带渠道）。 */
-type MusicTab = Exclude<SearchTab, 'cassette'>
-
-const TABS: { key: SearchTab; label: string }[] = [
-  { key: 'songs', label: '歌曲' },
-  { key: 'cassette', label: '磁带' },
-  { key: 'artists', label: '艺人' },
-  { key: 'albums', label: '专辑' },
-  { key: 'playlists', label: '歌单' },
-]
-
-/** 磁带渠道（B 站）源 id：独立于音乐源，磁带 tab 恒查询它。 */
-const CASSETTE_SOURCE: MusicSource = 'bilibili'
-
-/**
- * 各 tab 的**每页条数**——须与后端一致：后端 `/api/search/all` 对歌曲固定取 50、
- * 其余三类取请求里的 `limit`；B 站每页恒 20。用于判断「是否还有下一批」。
- */
-const PAGE_SIZE: Record<SearchTab, number> = {
-  songs: 50,
-  cassette: 20,
-  artists: 20,
-  albums: 20,
-  playlists: 20,
-}
+/** @deprecated 由 lib/searchCategory 统一管理；仓库内其他引用请改为从原文件 import。 */
+export { CASSETTE_SOURCE, SEARCH_PAGE_SIZE }
 
 const EMPTY_RESULTS: SearchResults = {
   songs: [],
@@ -59,77 +40,26 @@ const EMPTY_RESULTS: SearchResults = {
 }
 
 /**
- * 按 `keyOf` 去重的累积列表项。
+ * 按 `keyOf` 去重。
  *
- * 上游分页会**跨页返回同一实体**（实测 B 站第 1、2 页都含同一 bvid）。累积列表若带重复项，
- * React 就会遇到重复 `key` 并「duplicated and/or omitted children」——旧卡片残留在 DOM 里，
- * 换 tab 时跟着混进新 tab 的网格（见 `lib/dedupe` / ADR-046）。
+ * 上游分页会**跨页返回同一实体**（实测 B 站第 1、2 页都含同一 bvid）。主搜索页每个分区只取
+ * 一页，但单页内也可能自带重复；独立类别页续页时更是跨页累积——重复项会让 React 遇到重复
+ * `key`（「duplicated and/or omitted children」），旧卡片残留在 DOM 里（见 lib/dedupe / ADR-046）。
  */
 const uniq = <T extends { id: string; source?: MusicSource }>(list: T[]): T[] =>
   dedupeByKey(list, keyOf)
 
-/** 单类结果的分页游标。 */
-interface PageState {
-  page: number
-  /** 是否可能还有下一批（上一批返回满了整页）。 */
-  more: boolean
-  loading: boolean
-}
-
-const freshPagers = (): Record<SearchTab, PageState> => ({
-  songs: { page: 1, more: false, loading: false },
-  cassette: { page: 1, more: false, loading: false },
-  artists: { page: 1, more: false, loading: false },
-  albums: { page: 1, more: false, loading: false },
-  playlists: { page: 1, more: false, loading: false },
-})
-
-/** 搜索页的累积状态（滚动续页的结果与分页游标）。 */
-interface SearchPageState {
-  music: SearchResults
-  /** 磁带搜索结果（磁带即 `source:'bilibili'` 的 Playlist，见 ADR-044）。 */
-  cassettes: Playlist[]
-  pagers: Record<SearchTab, PageState>
-}
-
 /**
- * 搜索页累积状态的**会话级缓存**（`源|关键词` → 累积结果与分页游标）。
- *
- * 滚动续页累积的列表是组件 state，下钻返回重挂即丢——返回时只剩第一页，内容高度
- * 不足，滚动恢复会被浏览器**钳制**到第一页的底部（第一页不满屏时即顶部）。挂载时
- * 从这里**同步**恢复等量内容，滚动恢复才有落脚点。LRU 触碰 + 上限淘汰，防无限增长。
- */
-const searchPageCache = new Map<string, SearchPageState>()
-const SEARCH_CACHE_MAX = 10
-
-function loadSearchCache(key: string): SearchPageState | undefined {
-  const hit = searchPageCache.get(key)
-  if (hit) {
-    searchPageCache.delete(key)
-    searchPageCache.set(key, hit) // LRU 触碰
-  }
-  return hit
-}
-
-function saveSearchCache(key: string, state: SearchPageState): void {
-  searchPageCache.delete(key)
-  searchPageCache.set(key, state)
-  while (searchPageCache.size > SEARCH_CACHE_MAX) {
-    const oldest = searchPageCache.keys().next().value
-    if (oldest === undefined) break
-    searchPageCache.delete(oldest)
-  }
-}
-
-/**
- * 搜索结果页。
+ * 搜索页。
  *
  * 关键词来自 `?q=`，音乐源来自 `?source=`（缺省跟随活动账号）。
- * 分类 tab 在四类音乐结果之外，另有一个恒查询 B 站的 **磁带** tab（只搜视频作为「磁带」、
- * 只放其音频；磁带即一个类歌单的合集，见 ADR-044）。
  *
- * **懒加载**：滚动到底部（哨兵进入视口）时为**当前 tab** 续取下一页并追加，直到整页不满（无更多）。
- * 续取只跑该一类（`?type=`），避免每次都多打三个上游请求。
+ * **版式（ADR-050）**：搜索结果不再用 tab 分类，而是像首页「新发现」那样**五条分区滑轨**
+ * 同页堆叠（歌曲 / 磁带 / 艺人 / 专辑 / 歌单，磁带恒查询 B 站，见 ADR-044）。每个分区只取
+ * 一页，滑轨尾部给「更多」——想看全部就去独立类别页（`/search/{类别}?q=`，见 pages/SearchCategory）。
+ * 旧深链上的 `?tab=` 参数被忽略，五条分区照常展示。
+ *
+ * 页面自带大搜索框（ADR-049）：顶栏移除后，搜索从「随时可用的输入框」变成「一个真正的页面」。
  */
 export function SearchPage() {
   const [params] = useSearchParams()
@@ -137,106 +67,197 @@ export function SearchPage() {
   const status = useAuth((s) => s.status)
   // 只有网易云一个音乐源，故直接跟随活动账号（未登录回落缺省源），不再单列源 tab。
   const source: MusicSource = activeMusicSource(status) ?? DEFAULT_SOURCE
-  // 查询签名（源 + 关键词）变化 → **重挂**内容组件，使「累积结果的会话级恢复」（searchPageCache）
-  // 按新查询重新评估。`didRestore` 是**每挂载一次性**判定、而同挂载内查询恒定；若不重挂，则一旦
-  // 本次挂载走过恢复（如下钻返回），此后换词就会**永远跳过首屏灌入**，残留上一个查询的结果。
-  return <SearchResults key={`${source}|${q}`} q={q} source={source} />
+  // 查询签名（源 + 关键词）变化 → **重挂**内容组件：五条滑轨的取数状态（含磁带那条独立的
+  // 请求）与首屏缓存全部随新查询重建，不会残留上一个关键词的结果。
+  //
+  // 搜索框在**重挂之外**：它与 key 无关，否则每次换词都会连同输入焦点一起被重建。
+  return (
+    <div className="search-page">
+      <SearchBar initialQuery={q} />
+      <SearchResults key={`${source}|${q}`} q={q} source={source} />
+    </div>
+  )
+}
+
+/**
+ * 搜索页自带的大搜索框。
+ *
+ * 回车提交到 `/search?q=`（push 一条新历史，故浏览器后退可回到上一个查询）。
+ * `initialQuery` 只在「URL 上真正换了词」时同步回输入框——用 URL 值作依赖，
+ * 避免用户敲字过程中被父组件的重渲染冲掉。
+ */
+function SearchBar({ initialQuery }: { initialQuery: string }) {
+  const navigate = useViewNavigate()
+  const location = useLocation()
+  const [keyword, setKeyword] = useState(initialQuery)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  // URL 上的 q 变化（深链 / 后退 / 前进）→ 同步输入框
+  useEffect(() => {
+    setKeyword(initialQuery)
+  }, [initialQuery])
+
+  // 进入搜索页即聚焦：这是搜索的主入口，用户来这里就是要打字
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  return (
+    <form
+      className="search-page__bar"
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault()
+        const q = keyword.trim()
+        if (!q) return
+        /*
+         * 已在搜索页时**替换**历史条目而非新增：
+         * - 首页点「搜索」进来是 `/search`（无 q），提交后若 push，返回键会落在那个空搜索页，
+         *   看起来像「点了两次返回才离开搜索」；
+         * - 连续改词同理，逐条 push 会让后退键在历史里逐个回放旧关键词。
+         * 从别的页面首次进入搜索仍走 push（见侧边栏链接），故「返回」依然能回到来源页。
+         */
+        // 记入最近搜索（重复词只置顶），供下次进入搜索页时直达
+        useSearchHistory.getState().push(q)
+        const replace = location.pathname === '/search'
+        void navigate(`/search?q=${encodeURIComponent(q)}`, { replace })
+      }}
+    >
+      <SearchIcon
+        size={20}
+        strokeWidth={2.2}
+        className="search-page__icon"
+        aria-hidden
+      />
+      <input
+        ref={inputRef}
+        type="search"
+        className="search-page__input"
+        value={keyword}
+        onChange={(e) => setKeyword(e.target.value)}
+        placeholder="搜索歌曲、艺术家、专辑…"
+        aria-label="搜索"
+        data-testid="search-input"
+        autoComplete="off"
+        spellCheck={false}
+      />
+    </form>
+  )
 }
 
 /** 搜索结果内容（按「源|关键词」重挂，语义见 {@link SearchPage}）。 */
+/**
+ * 搜索落地页（未输入关键词时）。
+ *
+ * 版式对齐 Apple Music 搜索页：**最近搜索**在上、**各流派**在下，不放空提示占位——
+ * 空白提示既不提供信息又挤占首屏；用户来这里要么接着上次的关键词、要么从流派逛。
+ * 两块都用同一排可换行的**胶囊**，视觉上连成一体。
+ * 点流派 → 进入该流派的歌单列表页；点历史词 → 以该词回到 `/search?q=`。
+ */
+function SearchLanding({ source }: { source: MusicSource }) {
+  const categories = useAsync<PlaylistCategoryGroup[]>(
+    () => api.categories(source),
+    [source],
+    [],
+  )
+  const terms = useSearchHistory((s) => s.terms)
+  const removeTerm = useSearchHistory((s) => s.remove)
+  const clearTerms = useSearchHistory((s) => s.clear)
+
+  return (
+    <>
+      {terms.length > 0 && (
+        <section
+          className="recent-searches"
+          aria-labelledby="recent-searches-title"
+        >
+          <header className="recent-searches__header">
+            <h2 id="recent-searches-title" className="recent-searches__title">
+              最近搜索
+            </h2>
+            <button
+              type="button"
+              className="recent-searches__clear"
+              onClick={clearTerms}
+              data-testid="search-history-clear"
+            >
+              清除
+            </button>
+          </header>
+          {/* 与下方流派同一种排列：一排可换行的胶囊，而非纵向列表 */}
+          <ul className="recent-searches__chips">
+            {terms.map((term) => (
+              <li key={term} className="recent-search">
+                <AppLink
+                  to={`/search?q=${encodeURIComponent(term)}`}
+                  className="recent-search__link"
+                >
+                  <span className="recent-search__text">{term}</span>
+                </AppLink>
+                <button
+                  type="button"
+                  className="recent-search__remove"
+                  aria-label={`删除搜索记录「${term}」`}
+                  onClick={() => removeTerm(term)}
+                  data-testid="search-history-remove"
+                >
+                  <X size={13} strokeWidth={2.4} aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {categories.loading ? (
+        <Loading text="加载分类…" />
+      ) : categories.error ? (
+        <ErrorState message={categories.error} onRetry={categories.reload} />
+      ) : (
+        categories.data?.map((group) => (
+          <section key={group.name} className="genre-group">
+            <h2 className="genre-group__title">{group.name}</h2>
+            <div className="genre-group__tags">
+              {group.tags.map((tag) => (
+                <AppLink
+                  key={tag}
+                  to={`/genre/${encodeURIComponent(tag)}`}
+                  className="genre-chip"
+                >
+                  {tag}
+                </AppLink>
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+    </>
+  )
+}
+
 function SearchResults({ q, source }: { q: string; source: MusicSource }) {
-  const [params, setParams] = useSearchParams()
   const navigate = useViewNavigate()
-  // 分类 tab 进 URL（`?tab=`，缺省「歌曲」不占 URL）：下探返回（POP 回本历史条目）即回到
-  // 所处 tab，刷新 / 分享深链同样成立；换词（顶栏 push 不带 tab）自然回到歌曲。
-  // replace 更新还使 location.key 更换 → 滚动记忆（按历史条目记，见 lib/scrollMemory）
-  // 按各 tab 分别记录，切 tab 即归顶。
-  const tabParam = params.get('tab')
-  // 兼容旧深链：磁带 tab 曾名「mv」（`?tab=mv`），别名映射到 cassette，免得静默落回「歌曲」。
-  const tabKey = tabParam === 'mv' ? 'cassette' : tabParam
-  const tab: SearchTab = TABS.some((t) => t.key === tabKey)
-    ? (tabKey as SearchTab)
-    : 'songs'
+  const playTracks = usePlayer((st) => st.playTracks)
 
-  /**
-   * 同页 tab 间穿梭的滚动记忆（tab → scrollTop）。replace 切 tab 产生**新** history key、
-   * 旧 key 即被丢弃，按条目记忆的 `useContentScrollRestoration` 记不住「切走前的 tab」——
-   * 由这里在组件存活期间补齐（下钻返回的位置仍由按条目恢复负责，两者互补）。
-   */
-  const scrollByTab = useRef<Partial<Record<SearchTab, number>>>({})
-  const prevTabRef = useRef<SearchTab>(tab)
-
-  // 同页切 tab → 恢复目标 tab 上次的位置。重挂（下钻返回）时 prev === tab，跳过——
-  // 那由 `useContentScrollRestoration` 按历史条目恢复；用**嵌套 rAF** 确保晚于转场的
-  // `resetContentScroll`（VT 回调内同步）与滚动恢复的同帧补帧（外层 effect 后注册）。
-  useLayoutEffect(() => {
-    const prev = prevTabRef.current
-    prevTabRef.current = tab
-    if (prev === tab) return
-    const saved = scrollByTab.current[tab]
-    if (saved === undefined) return
-    let inner = 0
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => {
-        const el = document.querySelector<HTMLElement>('.app-content')
-        if (!el) return
-        const s = el.style.scrollBehavior
-        el.style.scrollBehavior = 'auto'
-        el.scrollTop = saved
-        el.style.scrollBehavior = s
-      })
-    })
-    return () => {
-      cancelAnimationFrame(outer)
-      cancelAnimationFrame(inner)
-    }
-  }, [tab])
-
-  /** 切 tab：**replace** 不压新历史条目——返回键回到上一页，而非上个 tab。 */
-  const selectTab = (key: SearchTab) => {
-    const el = document.querySelector<HTMLElement>('.app-content')
-    if (el) scrollByTab.current[tab] = el.scrollTop
-    const next = new URLSearchParams(params)
-    if (key === 'songs') next.delete('tab')
-    else next.set('tab', key)
-    setParams(next, { replace: true })
-  }
-
-  // 累积结果（随滚动追加）；首屏由下面的 useAsync 灌入。
-  // 下钻返回重挂时优先从**会话级缓存**同步恢复（等量内容是滚动恢复的前提，见
-  // searchPageCache 说明）；恢复过的挂载跳过一次首屏灌入，免得把列表打回第一页。
-  const cacheKey = q ? `${source}|${q}` : ''
-  const restoredRef = useRef<SearchPageState | undefined>(
-    cacheKey ? loadSearchCache(cacheKey) : undefined,
-  )
-  /** 本挂载是否已从会话级缓存恢复累积状态——若是，全程跳过 data/cassette 的覆盖式灌入。 */
-  const didRestore = useRef(!!restoredRef.current)
-  const [music, setMusic] = useState<SearchResults>(
-    () => restoredRef.current?.music ?? EMPTY_RESULTS,
-  )
-  const [cassettes, setCassettes] = useState<Playlist[]>(
-    () => restoredRef.current?.cassettes ?? [],
-  )
-  const [pagers, setPagers] = useState<Record<SearchTab, PageState>>(
-    () => restoredRef.current?.pagers ?? freshPagers(),
-  )
-
-  const { data, loading, error, reload } = useAsync<SearchResults>(
-    () => (q ? api.searchAll(source, q, 20) : Promise.resolve(EMPTY_RESULTS)),
+  // 音乐四类（歌曲 / 艺人 / 专辑 / 歌单）一次取齐；磁带走 CASSETTE_SOURCE（B 站），
+  // 两者并行，各自的分区只管自己那条结果。
+  const music = useAsync<SearchResults>(
+    () =>
+      q
+        ? api.searchAll(source, q, SEARCH_PAGE_SIZE.songs)
+        : Promise.resolve(EMPTY_RESULTS),
     [q, source],
     EMPTY_RESULTS,
     q ? `search:${source}:${q}` : undefined,
   )
 
-  // 磁带与音乐结果**并行**一次取齐（不等点开磁带 tab 才惰性加载）。
-  // 磁带渠道的「歌单搜索」即搜磁带 → 走 `type=playlists` 短路，只跑 B 站的 searchPlaylists。
   const cassette = useAsync<SearchResults>(
     () =>
       q
         ? api.searchAll(
             CASSETTE_SOURCE,
             q,
-            PAGE_SIZE.cassette,
+            SEARCH_PAGE_SIZE.cassette,
             undefined,
             'playlists',
           )
@@ -246,336 +267,211 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
     q ? `cassette:${q}` : undefined,
   )
 
-  // 首屏（或换词 / 换源）就绪 → 重置累积结果与分页游标。
-  // 「下钻返回」的挂载已从会话级缓存恢复累积结果：**全程跳过，不覆盖**，否则 data 从
-  // EMPTY_RESULTS 更新到真实结果时会把恢复的长列表打回第一页（滚动恢复即被钳制）。
-  useEffect(() => {
-    if (didRestore.current) return
-    const d = data ?? EMPTY_RESULTS
-    // 首屏同样可能自带重复项（上游单页内重叠），一并去重
-    setMusic({
-      ...d,
-      songs: uniq(d.songs),
-      artists: uniq(d.artists),
-      albums: uniq(d.albums),
-      playlists: uniq(d.playlists),
-    })
-    setPagers((p) => ({
-      ...p,
-      songs: {
-        page: 1,
-        more: d.songs.length >= PAGE_SIZE.songs,
-        loading: false,
-      },
-      artists: {
-        page: 1,
-        more: d.artists.length >= PAGE_SIZE.artists,
-        loading: false,
-      },
-      albums: {
-        page: 1,
-        more: d.albums.length >= PAGE_SIZE.albums,
-        loading: false,
-      },
-      playlists: {
-        page: 1,
-        more: d.playlists.length >= PAGE_SIZE.playlists,
-        loading: false,
-      },
-    }))
-  }, [data])
+  if (!q) return <SearchLanding source={source} />
 
-  useEffect(() => {
-    if (didRestore.current) return
-    const items = uniq(cassette.data?.playlists ?? [])
-    setCassettes(items)
-    setPagers((p) => ({
-      ...p,
-      cassette: {
-        page: 1,
-        more: items.length >= PAGE_SIZE.cassette,
-        loading: false,
-      },
-    }))
-  }, [cassette.data])
+  // 首屏同样可能自带重复项（上游单页内重叠），一并去重
+  // 上游综合搜索不保证按 limit 截断（"综合搜索" 会把 MV 等混进 songs），首屏硬截一页
+  const songs = uniq(music.data?.songs ?? []).slice(0, SEARCH_PAGE_SIZE.songs)
+  const artists = uniq(music.data?.artists ?? [])
+  const albums = uniq(music.data?.albums ?? [])
+  const playlists = uniq(music.data?.playlists ?? [])
+  const cassettes = uniq(cassette.data?.playlists ?? [])
 
-  // 累积状态变化即**同步**写回会话级缓存。用 useLayoutEffect 而非 useEffect：
-  // 被动 effect 在 paint 之后才执行，用户点卡下钻时的同步 flushSync（路由转场
-  // VT 回调）会让组件卸载、丢弃尚未运行的被动 effect——缓存里就是旧状态。
-  useLayoutEffect(() => {
-    if (!cacheKey) return
-    saveSearchCache(cacheKey, { music, cassettes, pagers })
-  }, [cacheKey, music, cassettes, pagers])
-
-  // 卸载快照兜底：用 ref 始终持有最新累积状态，cleanup 里做最后一次落盘——
-  // 即使 useLayoutEffect 的 deps 变化批在卸载前还没跑，这里也拿到最新事实。
-  const latestStateRef = useRef<SearchPageState>({ music, cassettes, pagers })
-  latestStateRef.current = { music, cassettes, pagers }
-  useLayoutEffect(() => {
-    return () => {
-      if (!cacheKey) return
-      saveSearchCache(cacheKey, latestStateRef.current)
-    }
-  }, [cacheKey])
-
-  const counts: Record<SearchTab, number> = {
-    songs: music.songs.length,
-    cassette: cassettes.length,
-    artists: music.artists.length,
-    albums: music.albums.length,
-    playlists: music.playlists.length,
-  }
-  const caps = data?.capabilities
-  // 只展示当前音乐源支持的分类（capabilities 缺失视为支持）；磁带 tab 不参与该能力判定、恒可见。
-  const capOf = (key: SearchTab): boolean | undefined =>
-    key === 'cassette' ? true : caps?.[key]
-  const visibleTabs = TABS.filter((t) => capOf(t.key) !== false)
-  const activeTab = visibleTabs.some((t) => t.key === tab)
-    ? tab
-    : (visibleTabs[0]?.key ?? 'songs')
-  // 磁带与音乐结果各自取数，故加载/出错/有无内容均按当前 tab 分流。
-  const tabLoading = activeTab === 'cassette' ? cassette.loading : loading
-  const tabError = activeTab === 'cassette' ? cassette.error : error
-  const musicHasAny = visibleTabs.some(
-    (t) => t.key !== 'cassette' && counts[t.key] > 0,
-  )
-  const activeCount = counts[activeTab]
-  const activePage = pagers[activeTab]
-  const canLoadMore = !!q && !tabLoading && !tabError && activePage.more
+  const musicLoading = music.loading
+  const musicError = music.error
+  const musicReload = music.reload
 
   /**
-   * 单飞锁：**同步**标记某 tab 正在续取。
-   *
-   * `pagers[tab].loading` 是 state，两次背靠背触发（哨兵连发 / 快速滚动）时闭包里的它都还是
-   * `false`，于是两次都取同一页码——既重复又跳页。用 ref 同步锁住。
+   * 某分区是否有下一批（决定滑轨尾部是否给「更多」）：拿到满一页才可能有。
+   * 磁带渠道单页约 20 条，不足 20 即视为已到尽头。
    */
-  const inflightRef = useRef<Partial<Record<SearchTab, boolean>>>({})
+  const hasMore = (cat: SearchCategory, count: number): boolean =>
+    count > 0 && count >= SEARCH_PAGE_SIZE[cat]
 
-  /** 为当前 tab 续取下一页并追加。 */
-  const loadMore = useCallback(async () => {
-    const st = pagers[activeTab]
-    if (!st.more || st.loading || inflightRef.current[activeTab]) return
-    inflightRef.current[activeTab] = true
-    const next = st.page + 1
-    setPagers((p) => ({
-      ...p,
-      [activeTab]: { ...p[activeTab], loading: true },
-    }))
-    try {
-      if (activeTab === 'cassette') {
-        const res = await api.searchAll(
-          CASSETTE_SOURCE,
-          q,
-          PAGE_SIZE.cassette,
-          next,
-          'playlists',
-        )
-        setCassettes((prev) => uniq([...prev, ...res.playlists]))
-        setPagers((p) => ({
-          ...p,
-          cassette: {
-            page: next,
-            more: res.playlists.length >= PAGE_SIZE.cassette,
-            loading: false,
-          },
-        }))
-        return
-      }
-      const type: MusicTab = activeTab
-      const res = await api.searchAll(source, q, PAGE_SIZE[type], next, type)
-      setMusic((prev) =>
-        type === 'songs'
-          ? { ...prev, songs: uniq([...prev.songs, ...res.songs]) }
-          : type === 'artists'
-            ? { ...prev, artists: uniq([...prev.artists, ...res.artists]) }
-            : type === 'albums'
-              ? { ...prev, albums: uniq([...prev.albums, ...res.albums]) }
-              : {
-                  ...prev,
-                  playlists: uniq([...prev.playlists, ...res.playlists]),
-                },
-      )
-      const got =
-        type === 'songs'
-          ? res.songs.length
-          : type === 'artists'
-            ? res.artists.length
-            : type === 'albums'
-              ? res.albums.length
-              : res.playlists.length
-      setPagers((p) => ({
-        ...p,
-        [type]: { page: next, more: got >= PAGE_SIZE[type], loading: false },
-      }))
-    } catch {
-      // 续取失败：停止继续加载，保留已展示的结果
-      setPagers((p) => ({
-        ...p,
-        [activeTab]: { ...p[activeTab], loading: false, more: false },
-      }))
-    } finally {
-      inflightRef.current[activeTab] = false
-    }
-  }, [pagers, activeTab, source, q])
+  /** 分区是否渲染：磁带恒有；其余看该源是否声明了这项能力（缺省视为支持）。 */
+  const visible = (cat: SearchCategory): boolean =>
+    cat === 'cassette' ? true : music.data?.capabilities?.[cat] !== false
 
-  // 滚动哨兵：进入视口即为当前 tab 续取下一页
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!canLoadMore) return
-    const el = sentinelRef.current
-    if (!el || typeof IntersectionObserver === 'undefined') return
-    const root = document.querySelector('.app-content')
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) void loadMore()
-      },
-      { root, rootMargin: '300px' },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [canLoadMore, loadMore])
-
-  if (!q) {
-    return (
-      <div className="search">
-        <header className="search__header">
-          <span className="search__label">搜索</span>
-          <h1 className="search__title">输入关键词开始畅听</h1>
-        </header>
-        <Empty
-          text="在上方搜索框输入歌曲、艺人或专辑名"
-          icon={<SearchX size={32} strokeWidth={1.5} />}
-        />
-      </div>
-    )
-  }
+  const isBusy = musicLoading || cassette.loading
+  const hasAny = [songs, artists, albums, playlists, cassettes].some(
+    (list) => list.length > 0,
+  )
 
   return (
     <div className="search">
       <header className="search__header">
         <span className="search__label">搜索结果</span>
-        <h1 className="search__title">“{q}”</h1>
+        <h1 className="search__title">{q}</h1>
       </header>
 
-      <div className="search__tabs" role="tablist" aria-label="搜索结果分类">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === t.key}
-            className={`browse__tab${activeTab === t.key ? ' browse__tab--active' : ''}`}
-            onClick={() => selectTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* 全部分区都没有结果（且不在加载中）才给空态；某个分区空则只是不渲染那一块 */}
+      {!isBusy && !hasAny && (
+        <Empty
+          text={`没有找到与「${q}」相关的内容`}
+          icon={<SearchX size={32} strokeWidth={1.5} />}
+        />
+      )}
 
-      <section className="search__results">
-        {tabLoading ? (
-          <Loading text="搜索中…" />
-        ) : tabError ? (
-          <ErrorState
-            message={tabError}
-            onRetry={activeTab === 'cassette' ? cassette.reload : reload}
-          />
-        ) : (
-          <>
-            {activeTab === 'cassette' ? (
-              activeCount > 0 ? (
-                /* 磁带即类歌单合集：4:3 磁带卡。点卡本体进详情页选分P，点播放按钮整盘播放。 */
-                <div className="card-grid">
-                  {cassettes.map((c) => (
-                    <CassetteCard
-                      key={keyOf(c)}
-                      cassette={c}
-                      onClick={() => navigate(`/playlist/${c.source}/${c.id}`)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  text={`没有找到与「${q}」相关的磁带`}
-                  icon={<SearchX size={32} strokeWidth={1.5} />}
-                />
-              )
-            ) : !musicHasAny ? (
-              <Empty
-                text={`没有找到与「${q}」相关的内容`}
-                icon={<SearchX size={32} strokeWidth={1.5} />}
+      {/* ---------- 歌曲（紧凑曲目行，4 行 × N 列网格） ---------- */}
+      {visible('songs') && (musicLoading || songs.length > 0) && (
+        <Rail
+          title="歌曲"
+          itemWidth={324}
+          grid
+          action={
+            !musicLoading && !musicError && hasMore('songs', songs.length) ? (
+              <RailMore to={categoryPath('songs', q)} label="歌曲" />
+            ) : undefined
+          }
+        >
+          {musicLoading ? (
+            <div className="rail__placeholder">
+              <Loading text="加载歌曲…" />
+            </div>
+          ) : musicError ? (
+            <div className="rail__placeholder">
+              <ErrorState message={musicError} onRetry={musicReload} />
+            </div>
+          ) : (
+            songs.map((t, i) => (
+              <SongRow
+                key={keyOf(t)}
+                track={t}
+                onPlay={() => playTracks(songs, i)}
               />
-            ) : activeTab === 'songs' ? (
-              <TrackList tracks={music.songs} emptyText="没有找到相关歌曲" />
-            ) : activeTab === 'artists' ? (
-              music.artists.length ? (
-                <div className="card-grid">
-                  {music.artists.map((a) => (
-                    <ArtistCard
-                      key={keyOf(a)}
-                      artist={a}
-                      onClick={() =>
-                        navigate(
-                          `/artist/${a.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              ) : (
-                <Empty text="没有找到相关艺人" />
-              )
-            ) : activeTab === 'albums' ? (
-              music.albums.length ? (
-                <div className="card-grid">
-                  {music.albums.map((album) => (
-                    <AlbumCard
-                      key={keyOf(album)}
-                      album={album}
-                      onClick={() =>
-                        navigate(`/album/${album.source}/${album.id}`)
-                      }
-                    />
-                  ))}
-                </div>
-              ) : (
-                <Empty text="没有找到相关专辑" />
-              )
-            ) : music.playlists.length ? (
-              <div className="card-grid">
-                {music.playlists.map((p) => (
-                  <PlaylistCard
-                    key={keyOf(p)}
-                    playlist={p}
-                    onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <Empty text="没有找到相关歌单" />
-            )}
+            ))
+          )}
+        </Rail>
+      )}
 
-            {/* 分页尾部：仅在有结果时出现——哨兵进入视口即续取下一批 */}
-            {activeCount > 0 && (
-              <div className="search__more">
-                {canLoadMore && (
-                  <div
-                    ref={sentinelRef}
-                    className="search__sentinel"
-                    aria-hidden
-                  />
-                )}
-                {activePage.loading && <Loading text="加载中…" />}
-                {!activePage.more &&
-                  !activePage.loading &&
-                  activePage.page > 1 && (
-                    <p className="search__end">没有更多了</p>
-                  )}
-              </div>
-            )}
-          </>
-        )}
-      </section>
+      {/* ---------- 艺人 ---------- */}
+      {visible('artists') && (musicLoading || artists.length > 0) && (
+        <Rail
+          title="艺人"
+          action={
+            !musicLoading &&
+            !musicError &&
+            hasMore('artists', artists.length) ? (
+              <RailMore to={categoryPath('artists', q)} label="艺人" />
+            ) : undefined
+          }
+        >
+          {musicLoading ? (
+            <div className="rail__placeholder">
+              <Loading text="加载艺人…" />
+            </div>
+          ) : musicError ? (
+            <div className="rail__placeholder">
+              <ErrorState message={musicError} onRetry={musicReload} />
+            </div>
+          ) : (
+            artists.map((a) => (
+              <ArtistCard
+                key={keyOf(a)}
+                artist={a}
+                onClick={() =>
+                  navigate(
+                    `/artist/${a.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
+                  )
+                }
+              />
+            ))
+          )}
+        </Rail>
+      )}
+
+      {/* ---------- 专辑 ---------- */}
+      {visible('albums') && (musicLoading || albums.length > 0) && (
+        <Rail
+          title="专辑"
+          action={
+            !musicLoading && !musicError && hasMore('albums', albums.length) ? (
+              <RailMore to={categoryPath('albums', q)} label="专辑" />
+            ) : undefined
+          }
+        >
+          {musicLoading ? (
+            <div className="rail__placeholder">
+              <Loading text="加载专辑…" />
+            </div>
+          ) : musicError ? (
+            <div className="rail__placeholder">
+              <ErrorState message={musicError} onRetry={musicReload} />
+            </div>
+          ) : (
+            albums.map((album) => (
+              <AlbumCard
+                key={keyOf(album)}
+                album={album}
+                onClick={() => navigate(`/album/${album.source}/${album.id}`)}
+              />
+            ))
+          )}
+        </Rail>
+      )}
+
+      {/* ---------- 歌单 ---------- */}
+      {visible('playlists') && (musicLoading || playlists.length > 0) && (
+        <Rail
+          title="歌单"
+          action={
+            !musicLoading &&
+            !musicError &&
+            hasMore('playlists', playlists.length) ? (
+              <RailMore to={categoryPath('playlists', q)} label="歌单" />
+            ) : undefined
+          }
+        >
+          {musicLoading ? (
+            <div className="rail__placeholder">
+              <Loading text="加载歌单…" />
+            </div>
+          ) : musicError ? (
+            <div className="rail__placeholder">
+              <ErrorState message={musicError} onRetry={musicReload} />
+            </div>
+          ) : (
+            playlists.map((p) => (
+              <PlaylistCard
+                key={keyOf(p)}
+                playlist={p}
+                onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
+              />
+            ))
+          )}
+        </Rail>
+      )}
+      {/* ---------- 磁带（B 站视频合集，4:3 磁带卡） ---------- */}
+      {visible('cassette') && (cassette.loading || cassettes.length > 0) && (
+        <Rail
+          title="磁带"
+          action={
+            !cassette.loading &&
+            !cassette.error &&
+            hasMore('cassette', cassettes.length) ? (
+              <RailMore to={categoryPath('cassette', q)} label="磁带" />
+            ) : undefined
+          }
+        >
+          {cassette.loading ? (
+            <div className="rail__placeholder">
+              <Loading text="加载磁带…" />
+            </div>
+          ) : cassette.error ? (
+            <div className="rail__placeholder">
+              <ErrorState message={cassette.error} onRetry={cassette.reload} />
+            </div>
+          ) : (
+            cassettes.map((c) => (
+              <CassetteCard
+                key={keyOf(c)}
+                cassette={c}
+                onClick={() => navigate(`/playlist/${c.source}/${c.id}`)}
+              />
+            ))
+          )}
+        </Rail>
+      )}
     </div>
   )
 }

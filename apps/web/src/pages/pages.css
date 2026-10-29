@@ -1,6 +1,6 @@
 /* ============================ 首页 ============================ */
 .home {
-  padding: 0 32px 40px;
+  padding: 0 32px var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -19,182 +19,15 @@
   letter-spacing: -0.02em;
 }
 
-/* ---------- 快捷入口 ---------- */
-.home__shortcuts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin-top: 24px;
-}
-
-.shortcut {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease);
-}
-
-.shortcut:hover {
-  background: var(--bg-elevated-2);
-  transform: translateY(-1px);
-}
-
-.shortcut__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-
-.shortcut__icon--fav {
-  background: linear-gradient(135deg, #fa243c, #ff6a5e);
-  color: #fff;
-}
-
-.shortcut__icon--recent {
-  background: linear-gradient(135deg, #5e5ce6, #8e8aff);
-  color: #fff;
-}
-
-.shortcut__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.shortcut__text strong {
-  font-size: 14.5px;
-  font-weight: 600;
-}
-
-.shortcut__text small {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-/* 悬浮浮现的播放按钮：直接播放，不跳转 */
-.shortcut__play {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  transform: translateY(4px);
-  transition:
-    opacity var(--dur) var(--ease),
-    transform var(--dur) var(--ease),
-    background-color var(--dur-fast) var(--ease);
-}
-
-.shortcut:hover .shortcut__play,
-.shortcut__play:focus-visible {
-  opacity: 1;
-  transform: none;
-}
-
-.shortcut__play:hover {
-  background: var(--accent-hover);
-}
-
-.shortcut__play:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
-/* 空集合：按钮仍随 hover 出现，但呈禁用态（无内容可播） */
-.shortcut__play:disabled {
-  background: var(--bg-elevated-2);
-  color: var(--text-tertiary);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-@media (max-width: 640px) {
-  /* 触屏无 hover：常驻显示播放按钮 */
-  .shortcut__play {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* ---------- 精选单曲 ---------- */
-.home__featured {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-}
-
-.featured-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px;
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  text-align: left;
-  transition: background-color var(--dur-fast) var(--ease);
-}
-
-.featured-item:hover {
-  background: var(--bg-elevated-2);
-}
-
-.featured-item__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.featured-item__title {
-  font-size: 13.5px;
-  font-weight: 500;
-}
-
-.featured-item__artist {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.featured-item__play {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
-}
-
-.featured-item:hover .featured-item__play {
-  opacity: 1;
+/* 横向分区内的加载 / 错误占位：撑满一屏宽度，避免折叠成一小块 */
+.rail__placeholder {
+  flex: 1 0 100%;
+  width: 100%;
 }
 
 /* ============================ 浏览 / 电台 ============================ */
 .browse {
-  padding: 0 32px 40px;
+  padding: 0 32px var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -204,50 +37,82 @@
   padding: 32px 0 4px;
 }
 
+/* 分组小标（如「流派」） */
+.browse__label {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
 .browse__title {
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
-.browse__tabs {
-  display: flex;
-  gap: 6px;
-  margin-top: 20px;
-  padding: 3px;
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  width: fit-content;
-}
-
-.browse__tab {
-  padding: 7px 18px;
-  border-radius: 8px;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  transition:
-    background-color var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
-}
-
-.browse__tab--active {
-  background: var(--bg-elevated-2);
-  color: var(--text);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
+/* tab 胶囊样式已随搜索页 tab 一并移除（ADR-050）：搜索结果改为分区滑轨，不再有 tab。 */
 
 /* ============================ 搜索 ============================ */
-.search {
-  padding: 0 32px 40px;
+/* 搜索页：外层只管横向留白与居中；大搜索框与结果区各自排版 */
+.search-page {
+  padding: 0 32px var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
 }
 
+/* 大搜索框：搜索是独立页面（ADR-049），为此页的头号元素。
+ * 不给全宽——满屏宽的输入框既显得空，也让视线横穿整行；限宽后**水平居中**。 */
+.search-page__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 520px;
+  margin: 28px auto 0;
+}
+
+.search-page__icon {
+  position: absolute;
+  left: 16px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.search-page__input {
+  width: 100%;
+  height: 48px;
+  padding: 0 22px 0 50px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 16px;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.search-page__input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.search-page__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-elevated-2);
+}
+
+/* 去掉 webkit search 自带的清除按钮，避免与圆角冲突 */
+.search-page__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search {
+  margin-top: 20px;
+}
+
 .search__header {
-  padding: 28px 0 8px;
+  padding: 8px 0 4px;
 }
 
 .search__label {
@@ -262,31 +127,13 @@
   margin-top: 4px;
 }
 
-/* 搜索：分类 tab（复用浏览页胶囊样式）与结果区 */
-.search__tabs {
-  display: flex;
-  gap: 6px;
-  margin-top: 20px;
-  padding: 3px;
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  width: fit-content;
-  /*
-   * 吸顶：长结果列表滚动途中也能直接切 tab——这是「各 tab 滚动位置记忆」
-   * （SearchPage 的 scrollByTab）可用的前提；不吸顶则用户必须滚回顶部才能点到
-   * tab，记忆到的位置永远是顶部附近，功能形同虚设。实色背景遮住底下滚过的内容。
-   */
-  position: sticky;
-  top: 10px;
-  z-index: 2;
-}
+/*
+ * 搜索结果区（ADR-050）：五条 Rail 分区纵向堆叠，形态与首页「新发现」一致。
+ * 每条 Rail 自带 margin-top，这里不再额外加间距。
+ */
 
-.search__results {
-  margin-top: 20px;
-}
-
-/* 分页尾部：哨兵进入视口即续取下一批；到底后显示提示 */
-.search__more {
+/* 分页尾部（独立类别页用）：哨兵进入视口即续取下一批；到底后显示提示 */
+.section__more {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -295,12 +142,12 @@
   margin-top: 8px;
 }
 
-.search__sentinel {
+.section__sentinel {
   width: 100%;
   height: 1px;
 }
 
-.search__end {
+.section__end {
   margin: 12px 0;
   font-size: 13px;
   color: var(--text-tertiary);
@@ -326,7 +173,6 @@
   width: 200px;
   height: 200px;
   flex-shrink: 0;
-  box-shadow: var(--shadow-lg);
 }
 
 /* 磁带详情页封面：复用磁带外壳（样式见 Cards.css 的 .cassette-shell），只放大细部倍率 */
@@ -369,7 +215,7 @@
 
 .detail__name--editable:hover {
   background: var(--bg-hover);
-  box-shadow: 0 0 0 6px var(--bg-hover);
+  outline: 6px solid var(--bg-hover);
 }
 
 .detail__name--editing {
@@ -464,30 +310,194 @@
   outline: none;
 }
 
-/* ============================ 唱片盒（收藏的艺人 + 专辑） ============================ */
-.crate {
-  padding: 0 32px 40px;
+/* ============================ 库（艺术家 / 专辑 两个子页） ============================ */
+.library-page {
+  padding: 0 32px var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
 }
 
-.crate__header {
+.library-page__header {
   padding: 32px 0 8px;
 }
 
-.crate__title {
+.library-page__label {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.library-page__title {
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  margin-top: 4px;
+}
+
+/* ============================ 最近搜索（搜索落地页） ============================ */
+.recent-searches {
+  margin-top: 32px;
+}
+
+.recent-searches__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.recent-searches__title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.recent-searches__clear {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.recent-searches__clear:hover {
+  color: var(--text);
+}
+
+/* 与 .genre-group__tags 同一套换行排布：一排胶囊 */
+.recent-searches__chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/*
+ * 单条历史 = 胶囊（外观对齐 .genre-chip）+ 内侧删除按钮。
+ * 整枚胶囊不做成链接：里面还有一个按钮，嵌套交互元素不可访问——
+ * 文字区是链接、右侧是删除，各自独立可聚焦。
+ */
+.recent-search {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.recent-search:hover {
+  background: var(--bg-elevated-2);
+  border-color: var(--separator-strong);
+}
+
+.recent-search:focus-within {
+  border-color: var(--accent);
+}
+
+.recent-search__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 4px 9px 18px;
+  border-radius: 999px 0 0 999px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  min-width: 0;
+}
+
+.recent-search__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.recent-search__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.recent-search__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.recent-search__remove:hover {
+  color: var(--text);
+  background: var(--separator);
+}
+
+.recent-search__remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ============================ 流派快捷入口（搜索落地页） ============================ */
+.genre-group {
+  margin-top: 32px;
+}
+
+.genre-group__title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+}
+
+.genre-group__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* 分类胶囊：点选进入该流派的歌单列表 */
+.genre-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.genre-chip:hover {
+  background: var(--bg-elevated-2);
+  border-color: var(--separator-strong);
+}
+
+.genre-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ============================ 响应式 ============================ */
 @media (max-width: 760px) {
   .home,
-  .browse,
-  .search,
-  .crate {
+  .search-page,
+  .library-page {
     padding-left: 16px;
     padding-right: 16px;
   }
@@ -529,8 +539,27 @@
   .home__greeting,
   .browse__title,
   .search__title,
-  .crate__title {
+  .recent-searches__title,
+  .genre-group__title,
+  .library-page__title {
     font-size: 24px;
+  }
+
+  /*
+   * 窄屏左上角浮着汉堡按钮（顶栏移除后的抽屉开关，见 MobileMenuButton.css），
+   * 故所有页面 hero 的顶部与左侧都要让位，避免标题与按钮重叠。
+   */
+  .home__hero,
+  .search-page__bar,
+  .library-page__header,
+  .browse__header {
+    padding-top: 60px;
+  }
+
+  /* 窄屏下搜索框恢复占满可用宽度（仍居中）：限宽只对宽屏有意义 */
+  .search-page__bar {
+    max-width: none;
+    margin-inline: 0;
   }
 }
 
@@ -556,7 +585,6 @@
   flex-shrink: 0;
   background: linear-gradient(135deg, #fa243c, #ff7a5e);
   color: #fff;
-  box-shadow: 0 8px 24px rgba(250, 36, 60, 0.34);
 }
 
 .radio-hero__text {
@@ -598,7 +626,6 @@
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, #fa243c, #ff7a5e);
   color: #fff;
-  box-shadow: var(--shadow-lg);
 }
 
 @media (max-width: 760px) {
@@ -619,7 +646,6 @@
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, #5e5ce6, #8e8aff);
   color: #fff;
-  box-shadow: var(--shadow-lg);
 }
 
 @media (max-width: 760px) {

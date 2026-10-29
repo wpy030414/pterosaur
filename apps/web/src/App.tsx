@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect, useMemo } from 'react'
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar.js'
-import { Topbar } from './components/Topbar.js'
 import { PlayerBar } from './components/PlayerBar.js'
 import { AppBackground } from './components/AppBackground.js'
 import { NowPlaying } from './components/NowPlaying.js'
@@ -12,16 +11,18 @@ import { ConfirmDialog } from './components/ConfirmDialog.js'
 import { RipDialog } from './components/RipDialog.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
 import { PlayErrorToast } from './components/PlayErrorToast.js'
+import { MobileMenuButton } from './components/MobileMenuButton.js'
 import { Home } from './pages/Home.js'
-import { Browse } from './pages/Browse.js'
 import { Radio } from './pages/Radio.js'
 import { SearchPage } from './pages/Search.js'
+import { SearchCategoryPage } from './pages/SearchCategory.js'
+import { GenrePage } from './pages/Genre.js'
 import { PlaylistPage } from './pages/Playlist.js'
 import { ArtistPage } from './pages/Artist.js'
 import { AlbumPage } from './pages/Album.js'
-import { CratePage } from './pages/Crate.js'
+import { ArtistsPage } from './pages/library/Artists.js'
+import { AlbumsPage } from './pages/library/Albums.js'
 import { FavoritesPage } from './pages/Favorites.js'
-import { RecentPage } from './pages/Recent.js'
 import { useAudioEngine } from './hooks/useAudioEngine.js'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js'
 import { useLibrarySync } from './hooks/useLibrarySync.js'
@@ -70,12 +71,22 @@ export default function App() {
   useSourceTheme()
   useAccentFromBackground()
 
-  const searchRef = useRef<HTMLInputElement | null>(null)
-  const focusSearch = () => searchRef.current?.focus()
-  useKeyboardShortcuts(focusSearch)
-
   const modalOpen = useAuth((s) => s.modalOpen)
   const location = useLocation()
+  const navigate = useNavigate()
+
+  /*
+   * `/` 快捷键：搜索框已不在全局（顶栏移除，ADR-049），改为「去搜索页」。
+   * 已在搜索页时不再跳转（那会 push 一条重复历史），直接聚焦页面的大搜索框。
+   */
+  const focusSearch = () => {
+    if (location.pathname === '/search') {
+      document.querySelector<HTMLInputElement>('.search-page__input')?.focus()
+      return
+    }
+    void navigate('/search')
+  }
+  useKeyboardShortcuts(focusSearch)
 
   // 探测 View Transition 能力并写入 <html data-vt>，供 CSS 降级进场动画判断
   const vt = useMemo(supportsViewTransition, [])
@@ -94,13 +105,13 @@ export default function App() {
       {/* 全局唯一的 audio 元素，由引擎驱动 */}
       <audio ref={audioEl} preload="metadata" data-testid="audio-engine" />
 
-      {/* 自定义应用背景层（铺在顶栏 / 侧边栏 / 主内容区之下，不含底部播放条） */}
+      {/* 自定义应用背景层（铺在侧边栏 / 主内容区之下，不含底部播放条） */}
       <AppBackground />
 
       <Sidebar />
 
       <div className="app-main">
-        <Topbar searchRef={searchRef} />
+        <MobileMenuButton />
         <main className="app-content">
           {/*
             内容区转场：
@@ -110,12 +121,16 @@ export default function App() {
           <div className="route-stage" key={vt ? 'stage' : location.key}>
             <Routes>
               <Route path="/" element={<Home />} />
-              <Route path="/browse" element={<Browse />} />
               <Route path="/radio" element={<Radio />} />
               <Route path="/search" element={<SearchPage />} />
-              <Route path="/crate" element={<CratePage />} />
+              <Route
+                path="/search/:category"
+                element={<SearchCategoryPage />}
+              />
               <Route path="/favorites" element={<FavoritesPage />} />
-              <Route path="/recent" element={<RecentPage />} />
+              <Route path="/library/artists" element={<ArtistsPage />} />
+              <Route path="/library/albums" element={<AlbumsPage />} />
+              <Route path="/genre/:name" element={<GenrePage />} />
               <Route path="/playlist/:source/:id" element={<PlaylistPage />} />
               <Route path="/playlist/:id" element={<PlaylistPage />} />
               <Route path="/artist/:source/:id" element={<ArtistPage />} />
