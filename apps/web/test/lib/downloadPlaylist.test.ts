@@ -45,7 +45,12 @@ function stubFetch() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url
       if (url.includes('/cover')) return fakeRes(true, 'image/png')
       if (url.includes('bad')) return fakeRes(false, null)
       return fakeRes(true, 'audio/flac')

@@ -78,7 +78,7 @@ describe('RipDialog', () => {
 
   it('ffmpeg 缺失：音频 CD 禁用并给原因', async () => {
     mockedCaps.mockResolvedValue(caps({ ffmpeg: { available: false } }))
-    ripDialog(opts)
+    void ripDialog(opts)
     render(<RipDialog loopback={true} />)
     fireEvent.click(screen.getByTestId('rip-dist-physical'))
     await waitFor(() =>
@@ -100,7 +100,7 @@ describe('RipDialog', () => {
         },
       }),
     )
-    ripDialog(opts)
+    void ripDialog(opts)
     render(<RipDialog loopback={true} />)
     fireEvent.click(screen.getByTestId('rip-dist-physical'))
     await waitFor(() =>
@@ -123,7 +123,7 @@ describe('RipDialog', () => {
         },
       }),
     )
-    ripDialog(opts)
+    void ripDialog(opts)
     render(<RipDialog loopback={true} />)
     fireEvent.click(screen.getByTestId('rip-dist-physical'))
     await waitFor(() =>
@@ -137,7 +137,7 @@ describe('RipDialog', () => {
 
   it('总时长超出音频 CD 上限：音频 CD 禁用并给原因', async () => {
     mockedCaps.mockResolvedValue(caps())
-    ripDialog({ name: '长合集', trackCount: 100, totalDuration: 6000 })
+    void ripDialog({ name: '长合集', trackCount: 100, totalDuration: 6000 })
     render(<RipDialog loopback={true} />)
     fireEvent.click(screen.getByTestId('rip-dist-physical'))
     await waitFor(() =>
@@ -153,7 +153,7 @@ describe('RipDialog', () => {
     mockedCaps.mockResolvedValue(
       caps({ recorders: [], media: { present: false, blank: false } }),
     )
-    ripDialog(opts)
+    void ripDialog(opts)
     render(<RipDialog loopback={true} />)
     fireEvent.click(screen.getByTestId('rip-dist-physical'))
     await waitFor(() =>

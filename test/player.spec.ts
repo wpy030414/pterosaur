@@ -9,10 +9,25 @@ import { test, expect, type Page } from '@playwright/test'
 const FREE_SONG_KEYWORD = '陈奕迅 我们'
 
 /** 读取 audio 元素运行时状态。 */
+/**
+ * 读取页内 <audio> 的运行态。
+ *
+ * 缺少元素时也返回**完整字段形状**（数值为 0 / null），避免调用方拿到
+ * 联合类型后每处都要判 undefined——本机无音频只应表现为「未播放」。
+ */
 async function audioState(page: Page) {
   return page.evaluate(() => {
     const a = document.querySelector('audio') as HTMLAudioElement | null
-    if (!a) return { exists: false }
+    if (!a)
+      return {
+        exists: false,
+        paused: true,
+        currentTime: 0,
+        duration: 0,
+        readyState: 0,
+        errorCode: null as number | null,
+        src: '',
+      }
     return {
       exists: true,
       paused: a.paused,

@@ -189,13 +189,23 @@ test('搜索页：tab 间来回切换各自保留滚动位置', async ({ page })
  * 只看 `running`：被 `skipTransition()` 掐掉的转场其动画会转为 finished，伪树拆除可能晚一两帧，
  * 但**在飞**（`running`）就说明它还在往屏上画旧内容。
  */
+/**
+ * 取动画效果的伪元素选择器。
+ *
+ * `pseudoElement` 不在 TS 的 `AnimationEffect` 声明里（仅 Chromium 实现），
+ * 但 View Transition 的判定必须靠它，故此处显式收窄后再读。
+ */
+const pseudoElementOf = (effect: AnimationEffect | null | undefined) =>
+  (effect as (AnimationEffect & { pseudoElement?: string }) | null | undefined)
+    ?.pseudoElement
+
 const runningViewTransitionLayers = (page: Page): Promise<number> =>
   page.evaluate(
     () =>
       (document.getAnimations?.() ?? []).filter(
         (a) =>
           a.playState === 'running' &&
-          a.effect?.pseudoElement?.startsWith('::view-transition'),
+          pseudoElementOf(a.effect)?.startsWith('::view-transition'),
       ).length,
   )
 
@@ -226,7 +236,7 @@ test('磁带下钻返回的转场未结束时切 tab：不残留旧快照层、�
         (document.getAnimations?.() ?? []).some(
           (a) =>
             a.playState === 'running' &&
-            a.effect?.pseudoElement?.startsWith('::view-transition'),
+            pseudoElementOf(a.effect)?.startsWith('::view-transition'),
         ),
       undefined,
       { timeout: 2000 },

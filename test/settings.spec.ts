@@ -299,7 +299,13 @@ test.describe('设置弹窗', () => {
     ])
 
     const navType = await page.evaluate(
-      () => performance.getEntriesByType('navigation')[0]?.type ?? '',
+      // PerformanceEntry 基类型没有 type，导航时序条目才有
+      () =>
+        (
+          performance.getEntriesByType('navigation')[0] as
+            | (PerformanceEntry & { type?: string })
+            | undefined
+        )?.type ?? '',
     )
     expect(navType).toBe('reload')
   })
@@ -333,7 +339,13 @@ test.describe('设置弹窗', () => {
 
     // 整页刷新
     const navType = await page.evaluate(
-      () => performance.getEntriesByType('navigation')[0]?.type ?? '',
+      // PerformanceEntry 基类型没有 type，导航时序条目才有
+      () =>
+        (
+          performance.getEntriesByType('navigation')[0] as
+            | (PerformanceEntry & { type?: string })
+            | undefined
+        )?.type ?? '',
     )
     expect(navType).toBe('reload')
 

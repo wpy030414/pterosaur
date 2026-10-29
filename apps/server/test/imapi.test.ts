@@ -35,7 +35,11 @@ describe('parsePsLine', () => {
 
 describe('PS 模板守卫', () => {
   it('模板为 ASCII-only（PS 5.1 按 ANSI 解析 .ps1，中文会乱码）', () => {
+    // 控制字符区间是切题语义——只接受 ASCII
+    // eslint-disable-next-line no-control-regex
     expect(/^[\x00-\x7F]*$/.test(PS_PROBE_SCRIPT)).toBe(true)
+    // 控制字符区间是切题语义——只接受 ASCII
+    // eslint-disable-next-line no-control-regex
     expect(/^[\x00-\x7F]*$/.test(PS_BURN_SCRIPT)).toBe(true)
   })
 

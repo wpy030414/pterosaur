@@ -31,12 +31,11 @@ describe('resetAll', () => {
     const reload = vi.fn()
     await resetAll({ reload })
 
-    expect(mocks.idbClear.mock.calls.map((c) => c[0]).sort()).toEqual([
-      'background',
-      'library',
-      'media',
-      'mediaMeta',
-    ])
+    expect(
+      mocks.idbClear.mock.calls
+        .map((c) => c[0])
+        .sort((a, b) => String(a).localeCompare(String(b))),
+    ).toEqual(['background', 'library', 'media', 'mediaMeta'])
     expect(mocks.clearAllCaches).toHaveBeenCalledOnce()
     expect(mocks.unregisterServiceWorkers).toHaveBeenCalledOnce()
     expect(localStorage.length).toBe(0)

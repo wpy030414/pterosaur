@@ -124,6 +124,8 @@ describe('safeRipName', () => {
 
   it('超长按码点截断到 80', () => {
     const long = '喵'.repeat(200)
+    // 按码点计数而非 UTF-16 码元计数，是 safeRipName 的核心约定
+    // eslint-disable-next-line no-misused-spread
     expect([...safeRipName(long)].length).toBe(80)
   })
 

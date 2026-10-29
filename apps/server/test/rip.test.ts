@@ -96,7 +96,13 @@ function stubFetch() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request): Promise<unknown> => {
-      const url = String(input)
+      // Request / URL / 字符串三种入参都归一成 URL 字符串
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url
       if (url.includes('/cover')) {
         return {
           ok: true,
