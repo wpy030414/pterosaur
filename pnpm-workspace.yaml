@@ -7,3 +7,9 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - '@types/node@26.6.4'
+
+# vitest 5.0.5 回归：`.rejects.toThrow(msg)` 不再匹配消息（5.0.3/5.0.4 正常）。
+# vp 1.4.0 内置 vitest 5.0.5，故把 workspaces 内的 vitest 钉回 5.0.3；
+# 待上游修复后删除此 override。
+overrides:
+  vitest: 5.0.3
