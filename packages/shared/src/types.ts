@@ -166,6 +166,19 @@ export interface Playlist {
   creator?: string
 }
 
+/**
+ * 歌单分类分组（流派快捷入口用）。
+ *
+ * 与 Playlist 不同，这不是内容实体，而是**检索维度**：搜索页在未输入关键词时
+ * 用它铺出「语种 / 风格 / 场景 / 情感 / 主题」的快捷入口，点选后按该分类取歌单。
+ */
+export interface PlaylistCategoryGroup {
+  /** 分组名（如「语种」「风格」）。 */
+  name: string
+  /** 该分组下的分类标签（如「华语」「流行」「夜晚」）。 */
+  tags: string[]
+}
+
 /** 用户自建歌单（本地存储，不含曲目正文，仅存曲目引用）。 */
 export interface LocalPlaylist {
   id: string

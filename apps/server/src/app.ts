@@ -21,6 +21,7 @@ import {
   type SyncEnvelope,
   type Artist,
   type Album,
+  type PlaylistCategoryGroup,
 } from '@pterosaur/shared/types'
 import { isLibraryState, readLibrary, writeLibrary } from './syncStore.js'
 import { broadcast, subscribe } from './syncEvents.js'
@@ -344,8 +345,10 @@ export function createApp() {
   /**
    * 多类型搜索：并行返回歌曲 / 艺人 / 专辑 / 歌单；缺失的能力返回空数组并标记。
    *
+   * 每类条数统一取请求的 `limit`（收口 1–50，缺省 20）——主搜索页要歌曲 32 条、
+   * 其余分区 20 条，独立类别页续页时也按同一口径判断「是否还有下一批」。
    * `page`（从 1 起）供前端滚动续取下一批；`type` 可**只跑某一类**（省掉其余三类上游请求，
-   * 供「续取当前 tab 的下一页」用），未指定时四类全跑。
+   * 供独立类别页续取下一页用），未指定时四类全跑。
    */
   app.get('/api/search/all', async (c) => {
     const keywords = (c.req.query('keywords') ?? '').trim()
@@ -369,7 +372,7 @@ export function createApp() {
         async () => {
           const [songs, artists, albums, playlists] = await Promise.all([
             want('songs')
-              ? adapter.searchSongs(keywords, 50, cred, page)
+              ? adapter.searchSongs(keywords, limit, cred, page)
               : Promise.resolve([] as Track[]),
             want('artists') && adapter.searchArtists
               ? adapter.searchArtists(keywords, limit, cred, page)
@@ -460,6 +463,59 @@ export function createApp() {
       return c.json(ok<Playlist[]>(list))
     } catch (e) {
       return c.json(fail(`获取歌单失败：${(e as Error).message}`), 502)
+    }
+  })
+
+  /** 「新歌精选」：发现流的纵向分区之一（见 ADR-049）。 */
+  app.get('/api/discover/new-songs', async (c) => {
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
+    if (!adapter?.newSongs) return c.json(fail('该音源暂不支持新歌'), 501)
+    const limit = Number(c.req.query('limit') ?? 20)
+    const cred = credentialOf(c, adapter)
+    try {
+      const list = await cached(
+        `${source}|new-songs|${limit}|${credentialKey(cred)}`,
+        () => adapter.newSongs!(limit, cred),
+      )
+      return c.json(ok<Track[]>(list))
+    } catch (e) {
+      return c.json(fail(`获取新歌失败：${(e as Error).message}`), 502)
+    }
+  })
+
+  /** 歌单分类标签（搜索页的流派快捷入口）。 */
+  app.get('/api/discover/categories', async (c) => {
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
+    if (!adapter?.playlistCategories)
+      return c.json(fail('该音源暂不支持分类'), 501)
+    const cred = credentialOf(c, adapter)
+    try {
+      const list = await cached(
+        `${source}|categories|${credentialKey(cred)}`,
+        () => adapter.playlistCategories!(cred),
+      )
+      return c.json(ok<PlaylistCategoryGroup[]>(list))
+    } catch (e) {
+      return c.json(fail(`获取分类失败：${(e as Error).message}`), 502)
+    }
+  })
+  /** 「本周新发行」：最近发布的专辑。 */
+  app.get('/api/discover/new-albums', async (c) => {
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
+    if (!adapter?.newAlbums) return c.json(fail('该音源暂不支持新专辑'), 501)
+    const limit = Number(c.req.query('limit') ?? 12)
+    const cred = credentialOf(c, adapter)
+    try {
+      const list = await cached(
+        `${source}|new-albums|${limit}|${credentialKey(cred)}`,
+        () => adapter.newAlbums!(limit, cred),
+      )
+      return c.json(ok<Album[]>(list))
+    } catch (e) {
+      return c.json(fail(`获取新专辑失败：${(e as Error).message}`), 502)
     }
   })
 

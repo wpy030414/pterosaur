@@ -1,6 +1,7 @@
 import type {
   Album,
   Artist,
+  PlaylistCategoryGroup,
   AudioLevel,
   AudioQuality,
   LoginStatus,
@@ -130,6 +131,15 @@ export interface SourceAdapter {
     cat?: string,
     cred?: string,
   ): Promise<Playlist[]>
+  /** 「新歌精选」：上游推荐的新歌（首页发现流的一个纵向分区）。 */
+  newSongs?(this: void, limit: number, cred?: string): Promise<Track[]>
+  /** 「本周新发行」：最近发布的专辑（首页发现流的一个纵向分区）。 */
+  newAlbums?(this: void, limit: number, cred?: string): Promise<Album[]>
+  /** 歌单分类标签（流派快捷入口用），按上游的类别分组返回。 */
+  playlistCategories?(
+    this: void,
+    cred?: string,
+  ): Promise<PlaylistCategoryGroup[]>
 
   /* ---- 登录（可选能力：扫码） ---- */
   /**
