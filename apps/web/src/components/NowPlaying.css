@@ -370,7 +370,8 @@
 
 .lyric-line {
   padding: 7px 0;
-  font-size: 19px;
+  /* 字号与译文用 `em` 相对缩放：只调这一处，正文、译文、当前行放大一同跟着变。 */
+  font-size: 22px;
   font-weight: 400;
   line-height: 1.45;
   color: var(--text-tertiary);
@@ -394,18 +395,18 @@
 .lyric-line--active {
   color: var(--text);
   font-weight: 600;
-  transform: scale(1.04);
+  transform: scale(1.06);
   opacity: 1;
 }
 
 .lyric-line--plain {
-  font-size: 16px;
+  font-size: 0.82em;
   cursor: default;
 }
 
 .lyric-line__trans {
   display: block;
-  font-size: 14px;
+  font-size: 0.73em;
   font-weight: 400;
   color: var(--text-secondary);
   margin-top: 2px;
@@ -517,7 +518,7 @@
   }
 
   .lyric-line {
-    font-size: 16px;
+    font-size: 18px;
   }
 
   .nowplaying__lyrics {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Play, Shuffle, Trash2, Star } from 'lucide-react'
+import { Play, Trash2, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -34,7 +34,7 @@ import { isRipping, runRip } from '../lib/rip.js'
  * - 网易云歌单（数字 id，通过 API 拉取）；
  * - **磁带**（`source` 为磁带渠道，如 B 站——`Playlist` 即磁带，见 ADR-044）：版式仿照艺术家页——
  *   封面通栏铺满（16:9 视频封面），底部渐隐到页面底色，信息与操作在下方**左对齐**常规排布；
- *   其余（播放 / 随机 / 收藏到资料库 / 翻录 / 分P 列表）全部复用。
+ *   其余（播放 / 收藏到资料库 / 翻录 / 分P 列表）全部复用。
  */
 export function PlaylistPage() {
   const params = useParams()
@@ -52,7 +52,6 @@ export function PlaylistPage() {
   const savedPlaylists = useLibrary((s) => s.savedPlaylists)
   const toggleSavePlaylist = useLibrary((s) => s.toggleSavePlaylist)
   const playTracks = usePlayer((s) => s.playTracks)
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
   const level = useSettings((s) => s.level)
 
   // 本地歌单标题的内联重命名
@@ -106,10 +105,9 @@ export function PlaylistPage() {
   const isSaved =
     !isLocal && savedPlaylists.some((p) => p.source === source && p.id === id)
 
-  const handlePlay = (shuffle = false) => {
+  const handlePlay = () => {
     if (!tracks.length) return
-    if (shuffle && !usePlayer.getState().shuffle) toggleShuffle()
-    playTracks(tracks, shuffle ? Math.floor(Math.random() * tracks.length) : 0)
+    playTracks(tracks, 0)
   }
 
   // 切换歌单时退出重命名态
@@ -220,20 +218,12 @@ export function PlaylistPage() {
             <button
               type="button"
               className="detail__play"
-              onClick={() => handlePlay(false)}
+              onClick={handlePlay}
               disabled={!tracks.length}
             >
               <Play size={18} fill="currentColor" strokeWidth={0} />
               播放
             </button>
-            <IconButton
-              label="随机播放"
-              size="lg"
-              onClick={() => handlePlay(true)}
-              disabled={!tracks.length}
-            >
-              <Shuffle size={20} strokeWidth={2} />
-            </IconButton>
             <IconButton
               label={isSaved ? '取消收藏' : '收藏到资料库'}
               size="lg"
@@ -315,20 +305,12 @@ export function PlaylistPage() {
             <button
               type="button"
               className="detail__play"
-              onClick={() => handlePlay(false)}
+              onClick={handlePlay}
               disabled={!tracks.length}
             >
               <Play size={18} fill="currentColor" strokeWidth={0} />
               播放
             </button>
-            <IconButton
-              label="随机播放"
-              size="lg"
-              onClick={() => handlePlay(true)}
-              disabled={!tracks.length}
-            >
-              <Shuffle size={20} strokeWidth={2} />
-            </IconButton>
             {!isLocal && (
               <IconButton
                 label={isSaved ? '取消收藏' : '收藏到资料库'}

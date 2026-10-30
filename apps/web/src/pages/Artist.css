@@ -80,7 +80,8 @@
 }
 
 /* 「详情」「收藏」：与播放同形的圆形图标按钮，不带文字。
- * 用主题的中性抬升面 + 主题前景，深色浅色各自成立（与详情页其它按钮一致）。 */
+ * 毛玻璃材质（与侧栏 / 队列面板同一套），直接压在通栏大图上，能透出背后头像的模糊色，
+ * 比实色中性面更贴合「浮在大图上」的位置。「-webkit-」在前、标准属性在后（见 ADR-009）。 */
 .artist-action {
   display: flex;
   align-items: center;
@@ -88,16 +89,19 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--bg-elevated-2);
+  background: var(--glass-overlay);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--separator-strong);
   color: var(--text);
   transition:
-    background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease),
     transform var(--dur-fast) var(--ease);
 }
 
+/* 悬停：提亮描边并轻微抬高「玻璃」——用更高 alpha 的同色档，而不是换成实色中性面 */
 .artist-action:hover {
-  background: var(--bg-active);
+  border-color: var(--text-tertiary);
   transform: scale(1.06);
 }
 
@@ -111,7 +115,8 @@
   color: var(--star);
 }
 
-/* 主播放：比两侧按钮更大的圆形实心按钮 */
+/* 主播放：比两侧按钮更大的圆形按钮，与两侧同属毛玻璃材质（不透明底色 + 模糊不生效，
+   但保住了主按钮的「实」与主次层级） */
 .artist-play {
   display: flex;
   align-items: center;
@@ -120,6 +125,7 @@
   height: 52px;
   border-radius: 50%;
   background: var(--play-neutral);
+  border: 1px solid var(--separator-strong);
   color: var(--play-neutral-text);
   transition:
     background-color var(--dur-fast) var(--ease),

@@ -1,4 +1,4 @@
-/* 艺术家作品子页：返回链接 + 标题 + 作品网格 */
+/* 艺术家作品子页：标题 + 作品网格 */
 .artist-works {
   max-width: 1600px;
   margin-inline: auto;
@@ -6,30 +6,13 @@
 }
 
 .artist-works__header {
-  padding: 32px 0 20px;
-}
-
-/* 返回艺术家页：小号中性链接，与标题拉开层级 */
-.artist-works__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  transition: color var(--dur-fast) var(--ease);
-}
-
-.artist-works__back:hover {
-  color: var(--text);
+  padding: 0 0 20px;
 }
 
 .artist-works__title {
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  margin-top: 8px;
 }
 
 .artist-works__count {
@@ -39,10 +22,6 @@
 }
 
 @media (max-width: 768px) {
-  .artist-works__header {
-    padding: 20px 0 16px;
-  }
-
   .artist-works__title {
     font-size: 24px;
   }

@@ -1,5 +1,4 @@
 import { useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -14,7 +13,6 @@ import {
 import { AlbumCard } from '../components/EntityCards.js'
 import { TrackList } from '../components/TrackList.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
-import { AppLink } from '../components/AppLink.js'
 import '../pages/pages.css'
 import './ArtistWorks.css'
 
@@ -95,9 +93,6 @@ export function ArtistWorksPage({ kind }: { kind: WorksKind }) {
         ? albums.filter(isSingleOrEp)
         : albums.filter((a) => !isSingleOrEp(a))
 
-  // 返回艺术家页时带上名字，供按名检索的源使用
-  const backTo = `/artist/${source}/${id}${name ? `?name=${encodeURIComponent(name)}` : ''}`
-
   if (loading && !artist) {
     return (
       <div className="artist-works">
@@ -116,11 +111,8 @@ export function ArtistWorksPage({ kind }: { kind: WorksKind }) {
 
   return (
     <div className="artist-works">
+      {/* 不再单独给返回按钮：浏览器/应用返回与侧栏导航即可回到艺术家页 */}
       <header className="artist-works__header">
-        <AppLink to={backTo} className="artist-works__back">
-          <ArrowLeft size={16} strokeWidth={2.2} />
-          <span className="ellipsis">{artist.name}</span>
-        </AppLink>
         <h1 className="artist-works__title">{copy.title}</h1>
         <p className="artist-works__count">
           {works.length} {copy.unit}

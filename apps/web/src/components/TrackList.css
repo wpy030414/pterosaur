@@ -27,8 +27,23 @@
   border-bottom: 1px solid var(--separator);
   margin-bottom: 6px;
   font-size: 11px;
+  font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+/*
+ * 表头各列字号 / 颜色一律统一：序号与操作列的小号规则（`.col-index` / `.col-actions`
+ * 的 13px 及次级文字色）在行内成立，但在表头里会让「#」比「标题」大一号、符号颜色
+ * 也比其它表头字深——这里把它们拉回与文字列相同的 11px / 三级文字色。
+ */
+.track-list__head .col-index,
+.track-list__head .col-artist,
+.track-list__head .col-album,
+.track-list__head .col-duration,
+.track-list__head .col-actions {
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 
@@ -61,18 +76,18 @@
   background: var(--bg-active);
 }
 
-/* 默认列宽：序号 / 标题 / 专辑 / 时长 / 操作 */
+/* 默认列宽：序号 / 标题 / 艺术家 / 专辑 / 时长 / 操作 */
 .track-list,
 .track-list__head,
 .track-row {
-  --tl-cols: 32px minmax(0, 4fr) minmax(0, 2.4fr) 56px 76px;
+  --tl-cols: 32px minmax(0, 4fr) minmax(0, 2.4fr) minmax(0, 2.4fr) 56px 76px;
 }
 
-/* 无专辑列变体（磁带列表等）：序号 / 标题 / 时长 / 操作，标题列占满余宽 */
+/* 无专辑列变体（歌单 / 搜索结果 / 磁带等）：序号 / 标题 / 艺术家 / 时长 / 操作 */
 .track-list--no-album,
 .track-list--no-album .track-list__head,
 .track-list--no-album .track-row {
-  --tl-cols: 32px minmax(0, 1fr) 56px 76px;
+  --tl-cols: 32px minmax(0, 4fr) minmax(0, 2.8fr) 56px 76px;
 }
 
 /* 无封面变体（专辑详情页等）：行更短、标题列贴顶对齐，纯文本标题 */
@@ -193,16 +208,19 @@
   font-weight: 500;
 }
 
-.track-row--current .col-title__name {
-  color: var(--accent);
-}
-
+/* 艺术家副标题：仅移动端呈现（桌面由独立艺术家列承担），见文末 768px 档 */
 .col-title__artist {
+  display: none;
   font-size: 12.5px;
   color: var(--text-secondary);
 }
 
-/* ---------- 列：专辑 / 时长 ---------- */
+.track-row--current .col-title__name {
+  color: var(--accent);
+}
+
+/* ---------- 列：艺术家 / 专辑 / 时长 ---------- */
+.col-artist,
 .col-album {
   font-size: 13px;
   color: var(--text-secondary);
@@ -279,8 +297,20 @@
     --tl-cols: 28px minmax(0, 1fr) 52px 68px;
   }
 
+  .track-list--no-album,
+  .track-list--no-album .track-list__head,
+  .track-list--no-album .track-row {
+    --tl-cols: 28px minmax(0, 1fr) 52px 68px;
+  }
+
+  /* 移动端收起艺术家 / 专辑列：艺术家回到标题下方作副标题，宽度整块给标题 */
+  .col-artist,
   .col-album {
     display: none;
+  }
+
+  .col-title__artist {
+    display: block;
   }
 
   .row-action {
