@@ -261,6 +261,7 @@ export function PlaylistPage() {
             tracks={tracks}
             emptyText="这盘磁带还没有曲目"
             showAlbum={false}
+            showSummary
           />
         </div>
       </div>
@@ -362,6 +363,7 @@ export function PlaylistPage() {
         <TrackList
           tracks={tracks}
           emptyText="这个歌单还没有曲目"
+          showSummary
         />
       </div>
     </div>

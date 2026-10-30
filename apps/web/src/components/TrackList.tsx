@@ -1,6 +1,10 @@
 import { Play, Pause, Star, MoreHorizontal, Clock } from 'lucide-react'
 import type { Track } from '@pterosaur/shared/types'
-import { formatTime, keyOf } from '@pterosaur/shared/types'
+import {
+  formatTime,
+  formatCollectionSummary,
+  keyOf,
+} from '@pterosaur/shared/types'
 import { usePlayer } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -32,6 +36,11 @@ interface TrackListProps {
   className?: string
   /** 行点击的自定义处理（不传则默认「以本列表为队列播放」，并展开 B 站分P）。 */
   onPlayRow?: (track: Track, index: number) => void
+  /**
+   * 是否在列表末尾显示尾注（`共 N 项，X 小时 Y 分钟`）。
+   * 歌单 / 专辑 / 磁带等「整页即一个集合」的详情页开启；首页分区等片段列表保持关闭。
+   */
+  showSummary?: boolean
 }
 
 /**
@@ -52,6 +61,7 @@ export function TrackList({
   emptyText = '暂无曲目',
   className,
   onPlayRow,
+  showSummary = false,
 }: TrackListProps) {
   const queue = usePlayer((s) => s.queue)
   const current = usePlayer((s) => s.current)
@@ -287,6 +297,12 @@ export function TrackList({
           </div>
         )
       })}
+
+      {showSummary && (
+        <div className="track-list__summary">
+          {formatCollectionSummary(tracks)}
+        </div>
+      )}
     </div>
   )
 }

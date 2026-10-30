@@ -50,10 +50,23 @@
   view-transition-name: none;
 }
 
+/*
+ * 播放岛底部空档——**全站唯一出口**。
+ *
+ * 播放岛是悬浮层（见上），内容区拿到完整高度、内容从岛下方滚过，故滚到底时
+ * 最后一行不能被胶囊压住。这条留白集中在这里，而不是让每个页面自己贴
+ * `padding-bottom: var(--page-bottom-inset)`——本节选择器即**全部滚动页的根节点**
+ * （外加通用骨架 `.page`，供将来新页直接套用）。
+ *
+ * 新增页面：根节点套上 `.page` 即可继承留白，**不要再自己写**底部留白。
+ */
+.route-stage > :where(.page, .home, .browse, .search-page, .library-page, .artist-page, .artist-works, .detail) {
+  padding-bottom: var(--page-bottom-inset);
+}
+
 /* ============================ 通用页面骨架 ============================ */
 .page {
-  /* 底部留白：内容滚到底时不被悬浮播放岛压住 */
-  padding: 0 var(--page-gutter) calc(40px + var(--page-bottom-inset));
+  padding: 0 var(--page-gutter);
   max-width: 1600px;
 }
 

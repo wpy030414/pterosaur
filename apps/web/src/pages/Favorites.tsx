@@ -103,7 +103,7 @@ export function FavoritesPage() {
             icon={<Star size={32} strokeWidth={1.5} />}
           />
         ) : (
-          <TrackList tracks={favorites} />
+          <TrackList tracks={favorites} showSummary />
         )}
       </div>
     </div>

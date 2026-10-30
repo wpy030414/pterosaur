@@ -8,6 +8,7 @@ import {
   isCassetteSource,
   formatQuality,
   formatSampleRate,
+  formatCollectionSummary,
 } from '../src/types.js'
 import type { MusicSource } from '../src/types.js'
 
@@ -126,5 +127,30 @@ describe('formatQuality', () => {
     expect(formatQuality({ br: 320000 })).toBe('320Kbps')
     expect(formatQuality({ codec: 'FLAC' })).toBe('FLAC')
     expect(formatQuality({})).toBe('')
+  })
+})
+
+describe('formatCollectionSummary', () => {
+  const t = (duration: number) => ({ duration }) as never
+
+  it('不满 1 小时只给分钟，且分钟向上取整', () => {
+    expect(formatCollectionSummary([t(61), t(59)])).toBe('共 2 项，2 分钟')
+    expect(formatCollectionSummary([t(30)])).toBe('共 1 项，1 分钟')
+    expect(formatCollectionSummary([t(60), t(60)])).toBe('共 2 项，2 分钟')
+  })
+
+  it('满 1 小时带上小时段', () => {
+    expect(formatCollectionSummary([t(3600)])).toBe('共 1 项，1 小时 0 分钟')
+    // 1:23:10 → 84 分钟 → 1 小时 24 分钟（向上取整）
+    expect(formatCollectionSummary([t(4990)])).toBe('共 1 项，1 小时 24 分钟')
+  })
+
+  it('未知时长按 0 计，不参与累加', () => {
+    expect(formatCollectionSummary([t(0), t(120)])).toBe('共 2 项，2 分钟')
+    expect(formatCollectionSummary([t(NaN), t(0)])).toBe('共 2 项，0 分钟')
+  })
+
+  it('空集合返回空串（由调用方决定不渲染）', () => {
+    expect(formatCollectionSummary([])).toBe('')
   })
 })

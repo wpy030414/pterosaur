@@ -413,3 +413,24 @@ export function formatTime(sec: number): string {
     return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
   return `${m}:${String(ss).padStart(2, '0')}`
 }
+
+/**
+ * 集合（歌单 / 专辑 / 磁带）的尾注：`共 N 项，X 小时 Y 分钟`。
+ *
+ * - 项数取曲目条数（不含表头）；时长为各曲目 `duration` 之和，未知时长（0）不计入。
+ * - 满 1 小时才带「X 小时」段；此后分钟向上取整到整分钟（不足 1 分钟也显示「1 分钟」，
+ *   避免出现「0 分钟」这种无信息量的写法）。空集合返回空串，由调用方决定是否渲染。
+ */
+export function formatCollectionSummary(tracks: ReadonlyArray<Track>): string {
+  if (!tracks.length) return ''
+  const total = tracks.reduce(
+    (sum, t) => sum + (Number.isFinite(t.duration) && t.duration > 0 ? t.duration : 0),
+    0,
+  )
+  // 向上取整到分钟；有秒即算 1 分钟
+  const totalMinutes = total > 0 ? Math.ceil(total / 60) : 0
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes - h * 60
+  const dur = h > 0 ? `${h} 小时 ${m} 分钟` : `${m} 分钟`
+  return `共 ${tracks.length} 项，${dur}`
+}

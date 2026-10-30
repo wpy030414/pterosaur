@@ -1,6 +1,6 @@
 /* ============================ 首页 ============================ */
 .home {
-  padding: 0 var(--page-gutter) var(--page-bottom-inset);
+  padding: 0 var(--page-gutter);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -27,7 +27,7 @@
 
 /* ============================ 浏览 / 电台 ============================ */
 .browse {
-  padding: 0 var(--page-gutter) var(--page-bottom-inset);
+  padding: 0 var(--page-gutter);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -54,7 +54,7 @@
 /* ============================ 搜索 ============================ */
 /* 搜索页：外层只管横向留白与居中；大搜索框与结果区各自排版 */
 .search-page {
-  padding: 0 var(--page-gutter) var(--page-bottom-inset);
+  padding: 0 var(--page-gutter);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -374,9 +374,11 @@
  *
  * 改为纵向：**通栏封面**（16:9，铺满内容区整宽）→ 底部线性渐隐到 `--bg`
  * → 信息与操作左对齐、压在渐隐过渡带上 → 曲目列表。
+ *
+ * 底部留白由播放岛统一提供（见 styles/app.css 的 `.route-stage >` 规则）。
  */
 .detail--cassette {
-  padding-bottom: var(--page-bottom-inset);
+  /* 仅承载版式开关；底部留白不在这里重复声明 */
 }
 
 /* 通栏封面：铺满内容区整宽（与艺术家页大图同理，不受 1600px 槽宽约束） */
@@ -473,7 +475,7 @@
 
 /* ============================ 库（艺术家 / 专辑 两个子页） ============================ */
 .library-page {
-  padding: 0 var(--page-gutter) var(--page-bottom-inset);
+  padding: 0 var(--page-gutter);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;

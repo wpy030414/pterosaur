@@ -186,6 +186,7 @@ export function AlbumPage() {
           showCover={false}
           showArtist={false}
           emptyText="这张专辑还没有曲目"
+          showSummary
         />
       </div>
     </div>

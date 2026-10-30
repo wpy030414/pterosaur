@@ -8,7 +8,6 @@
 .artist-page {
   max-width: 1600px;
   margin-inline: auto;
-  padding-bottom: var(--page-bottom-inset);
 }
 
 /* ---------- 通栏大图 ---------- */

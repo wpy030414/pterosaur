@@ -310,3 +310,11 @@
     height: 36px;
   }
 }
+
+/* ---------- 尾注（N 项 · 时长） ---------- */
+.track-list__summary {
+  padding: 14px 12px 4px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
