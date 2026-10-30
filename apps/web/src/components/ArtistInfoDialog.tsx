@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import type { Artist } from '@pterosaur/shared/types'
+import { ARTIST_SEPARATOR, type Artist } from '@pterosaur/shared/types'
 import { IconButton } from './IconButton.js'
 import './ArtistInfoDialog.css'
 
@@ -74,7 +74,7 @@ export function ArtistInfoDialog({
           {artist.alias?.length ? (
             <p className="artist-info__row">
               <span className="artist-info__label">别名</span>
-              <span>{artist.alias.join(' / ')}</span>
+              <span>{artist.alias.join(ARTIST_SEPARATOR)}</span>
             </p>
           ) : null}
           {stats.length > 0 && (

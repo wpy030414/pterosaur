@@ -84,7 +84,8 @@ describe('TrackList', () => {
     renderList(<TrackList tracks={SONGS} />)
     for (const s of SONGS) {
       expect(screen.getByText(s.title)).toBeInTheDocument()
-      expect(screen.getByText(s.artist)).toBeInTheDocument()
+      // 桌面艺术家列 + 移动端标题副标题各一处
+      expect(screen.getAllByText(s.artist)).toHaveLength(2)
     }
   })
 
@@ -184,7 +185,8 @@ describe('TrackList', () => {
       }),
     ]
     renderList(<TrackList tracks={t} />)
-    fireEvent.click(screen.getByRole('button', { name: '某艺术家' }))
+    // 桌面列与移动端副标题各有一个链接，点第一个即可
+    fireEvent.click(screen.getAllByRole('button', { name: '某艺术家' })[0])
     expect(screen.getByTestId('loc')).toHaveTextContent('/artist/netease/9')
     expect(usePlayer.getState().current).toBeNull()
   })
@@ -192,7 +194,7 @@ describe('TrackList', () => {
   it('多艺术家各自可点击跳转', () => {
     const t = [
       track('1', '合唱', {
-        artist: '甲 / 乙',
+        artist: '甲、乙',
         artistRefs: [
           { id: '1', name: '甲' },
           { id: '2', name: '乙' },
@@ -200,7 +202,7 @@ describe('TrackList', () => {
       }),
     ]
     renderList(<TrackList tracks={t} />)
-    fireEvent.click(screen.getByRole('button', { name: '乙' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '乙' })[0])
     expect(screen.getByTestId('loc')).toHaveTextContent('/artist/netease/2')
   })
 
@@ -212,12 +214,83 @@ describe('TrackList', () => {
     expect(usePlayer.getState().current).toBeNull()
   })
 
+  it('艺术家单独成列（紧随标题列），而非标题下方的副标题', () => {
+    const t = [
+      track('1', '第一首', {
+        artist: '某艺术家',
+        artistRefs: [{ id: '9', name: '某艺术家' }],
+      }),
+    ]
+    const { container } = renderList(<TrackList tracks={t} />)
+    const row = container.querySelector('.track-row')
+    const cols = Array.from(row?.children ?? []).map((el) => el.className)
+    // 列顺序：序号 / 标题 / 艺术家 / 专辑 / 时长 / 操作
+    expect(cols).toEqual([
+      'col-index',
+      'col-title',
+      'col-artist ellipsis',
+      'col-album ellipsis',
+      'col-duration',
+      'col-actions',
+    ])
+    // 标题列内不再是艺术家列表：艺术家单独成列，标题下仅有移动端副标题
+    expect(row?.querySelector('.col-title .col-artist')).toBeNull()
+    expect(row?.querySelector('.col-artist .track-link')).toHaveTextContent(
+      '某艺术家',
+    )
+    // 表头同步多出「艺术家」
+    expect(
+      container.querySelector('.track-list__head .col-artist'),
+    ).toHaveTextContent('艺术家')
+  })
+
+  it('艺术家同时渲染为标题副标题（移动端呈现，样式默认隐藏）', () => {
+    const t = [
+      track('1', '第一首', {
+        artist: '甲、乙',
+        artistRefs: [
+          { id: '1', name: '甲' },
+          { id: '2', name: '乙' },
+        ],
+      }),
+    ]
+    const { container } = renderList(<TrackList tracks={t} />)
+    const sub = container.querySelector('.col-title .col-title__artist')
+    expect(sub).not.toBeNull()
+    // 副标题与艺术家列内容等价：逐个可点击
+    expect(sub?.querySelectorAll('.track-link')).toHaveLength(2)
+    expect(sub).toHaveTextContent('甲、乙')
+  })
+
+  it('showArtist=false 时副标题也不渲染（专辑页）', () => {
+    const t = [track('1', '第一首', { artist: '某艺术家' })]
+    const { container } = renderList(
+      <TrackList tracks={t} showArtist={false} />,
+    )
+    expect(container.querySelector('.col-title__artist')).toBeNull()
+  })
+
+  it('艺术家列与专辑列并存（showAlbum=false 时只去掉专辑列）', () => {
+    const t = [track('1', '第一首', { artist: '某艺术家' })]
+    const { container } = renderList(<TrackList tracks={t} />)
+    const row = container.querySelector('.track-row')
+    expect(row?.querySelector('.col-artist')).toHaveTextContent('某艺术家')
+    expect(row?.querySelector('.col-album')).toHaveTextContent('专辑1')
+
+    const off = renderList(<TrackList tracks={t} showAlbum={false} />)
+    const offRow = off.container.querySelector('.track-row')
+    expect(offRow?.querySelector('.col-artist')).toHaveTextContent('某艺术家')
+    expect(
+      off.container.querySelector('.track-list__head .col-album'),
+    ).toBeNull()
+  })
+
   it('缺少 id 时艺术家 / 专辑降级为纯文本（不可点击）', () => {
     const t = [track('1', '第一首')]
     renderList(<TrackList tracks={t} />)
     expect(screen.queryByRole('button', { name: '艺术家1' })).toBeNull()
     expect(screen.queryByRole('button', { name: '专辑1' })).toBeNull()
-    expect(screen.getByText('艺术家1')).toBeInTheDocument()
+    expect(screen.getAllByText('艺术家1')).toHaveLength(2)
     expect(screen.getByText('专辑1')).toBeInTheDocument()
   })
 

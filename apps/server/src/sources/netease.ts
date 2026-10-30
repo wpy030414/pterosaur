@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import QRCode from 'qrcode'
 import {
+  ARTIST_SEPARATOR,
   DEFAULT_AUDIO_LEVEL,
   type Album,
   type Artist,
@@ -185,7 +186,7 @@ export function normalizeTrack(raw: RawSong): Track {
     source: 'netease',
     id: String(raw.id),
     title: raw.name ?? '未知曲目',
-    artist: artists.join(' / ') || '未知艺术家',
+    artist: artists.join(ARTIST_SEPARATOR) || '未知艺术家',
     album: album?.name ?? '',
     // 封面按需放大，网易云支持 ?param=WxH 缩略参数
     cover: coverUrl(coverRaw, BASE_COVER_SIZE),
@@ -237,7 +238,7 @@ export function normalizeAlbum(raw: RawAlbum): Album {
     id: String(raw.id),
     name: raw.name ?? '未命名专辑',
     cover: coverUrl(raw.picUrl, BASE_COVER_SIZE),
-    artist: names.join(' / ') || '未知艺术家',
+    artist: names.join(ARTIST_SEPARATOR) || '未知艺术家',
     artistId: primaryId,
     artistRefs: artistRefs.length ? artistRefs : undefined,
     year: raw.publishTime ? new Date(raw.publishTime).getFullYear() : undefined,

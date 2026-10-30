@@ -1,6 +1,7 @@
 import { Play, Pause, Star, MoreHorizontal, Clock } from 'lucide-react'
 import type { Track } from '@pterosaur/shared/types'
 import {
+  ARTIST_SEPARATOR,
   formatTime,
   formatCollectionSummary,
   keyOf,
@@ -28,7 +29,7 @@ interface TrackListProps {
    * 专辑详情页等「歌名 / 艺术家已在页头交代」的语境可关掉，行更紧凑。
    */
   showCover?: boolean
-  /** 是否显示标题下方的副标题（艺术家行）。专辑页可关掉（整页同一张专辑、同一批艺术家）。 */
+  /** 是否显示艺术家列（位于标题列之后）。专辑页可关掉（整页同一张专辑、同一批艺术家）。 */
   showArtist?: boolean
   /** 空状态文案 */
   emptyText?: string
@@ -48,7 +49,9 @@ interface TrackListProps {
  *
  * - 单击行：以该列表为队列播放；
  * - 播放中且为当前曲目：显示跳动音柱 + 高亮；
- * - 行内艺术家名 / 专辑名可点击，跳转到对应的艺术家页 / 专辑页（缺 id 时降级为纯文本）；
+ * - 桌面：艺术家与专辑各占一列（艺术家列紧随标题列），行内名称可点击跳转到对应的
+ *   艺术家页 / 专辑页（缺 id 时降级为纯文本）；
+ * - 移动端（≤768px）：收起艺术家 / 专辑列，艺术家改作标题下方副标题、专辑不展示；
  * - 行内提供喜欢、添加到歌单操作。
  */
 export function TrackList({
@@ -146,6 +149,7 @@ export function TrackList({
         <div className="track-list__head">
           {showIndex && <span className="col-index">#</span>}
           <span className="col-title">标题</span>
+          {showArtist && <span className="col-artist">艺术家</span>}
           {showAlbum && <span className="col-album">专辑</span>}
           <span className="col-duration">
             <Clock size={14} strokeWidth={2} />
@@ -217,32 +221,21 @@ export function TrackList({
               )}
               <span className="col-title__text">
                 <span className="col-title__name ellipsis">{t.title}</span>
+                {/* 移动端（≤768px）呈现用：标题下方的艺术家副标题，桌面由 CSS 隐藏，
+                    此列与艺术家列是同一份内容的两处呈现。 */}
                 {showArtist && (
                   <span className="col-title__artist ellipsis">
-                    {t.artistRefs?.length
-                      ? t.artistRefs.map((a, ai) => (
-                          <span key={`${a.id}-${ai}`}>
-                            {ai > 0 && ' / '}
-                            <button
-                              type="button"
-                              className="track-link"
-                              onClick={(e) =>
-                                openEntity(
-                                  e,
-                                  `/artist/${t.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
-                                )
-                              }
-                              onKeyDown={stopKey}
-                            >
-                              {a.name}
-                            </button>
-                          </span>
-                        ))
-                      : t.artist}
+                    {artistNode(t, openEntity, stopKey)}
                   </span>
                 )}
               </span>
             </span>
+
+            {showArtist && (
+              <span className="col-artist ellipsis">
+                {artistNode(t, openEntity, stopKey)}
+              </span>
+            )}
 
             {showAlbum && (
               <span className="col-album ellipsis">
@@ -305,6 +298,36 @@ export function TrackList({
       )}
     </div>
   )
+}
+
+/**
+ * 艺术家名渲染：有 `artistRefs` 时逐个可点击跳转艺术家页，否则降级为整体名串。
+ * 桌面艺术家列与移动端标题下方副标题共用这一份。
+ */
+function artistNode(
+  t: Track,
+  openEntity: (e: React.SyntheticEvent, to: string) => void,
+  stopKey: (e: React.KeyboardEvent) => void,
+) {
+  if (!t.artistRefs?.length) return t.artist
+  return t.artistRefs.map((a, ai) => (
+    <span key={`${a.id}-${ai}`}>
+      {ai > 0 && ARTIST_SEPARATOR}
+      <button
+        type="button"
+        className="track-link"
+        onClick={(e) =>
+          openEntity(
+            e,
+            `/artist/${t.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
+          )
+        }
+        onKeyDown={stopKey}
+      >
+        {a.name}
+      </button>
+    </span>
+  ))
 }
 
 /** 判断两个队列是否为同一批曲目（顺序与身份键一致）。 */

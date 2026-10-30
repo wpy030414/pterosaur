@@ -25,7 +25,12 @@ import {
   COVER_LARGE,
 } from '@pterosaur/shared/image'
 import { startNowPlayingTransition } from '../lib/nowPlayingTransition.js'
-import { formatTime, keyOf, formatQuality } from '@pterosaur/shared/types'
+import {
+  formatTime,
+  keyOf,
+  formatQuality,
+  ARTIST_SEPARATOR,
+} from '@pterosaur/shared/types'
 import type { AudioQuality, Lyric } from '@pterosaur/shared/types'
 import { Cover } from './Cover.js'
 import { IconButton } from './IconButton.js'
@@ -391,7 +396,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
                 {current.artistRefs?.length
                   ? current.artistRefs.map((a, i) => (
                       <span key={`${a.id}-${i}`}>
-                        {i > 0 && ' / '}
+                        {i > 0 && ARTIST_SEPARATOR}
                         <button
                           type="button"
                           className="nowplaying__link"

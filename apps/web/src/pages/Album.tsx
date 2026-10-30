@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { Play, Shuffle, Star } from 'lucide-react'
+import { Play, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -8,6 +8,7 @@ import { useLibrary } from '../store/library.js'
 import { ripDialog } from '../store/ui.js'
 import type { Album, Track } from '@pterosaur/shared/types'
 import {
+  ARTIST_SEPARATOR,
   DEFAULT_SOURCE,
   keyOf,
   isMusicSource,
@@ -39,7 +40,6 @@ export function AlbumPage() {
   const id = params.id ?? ''
   const navigate = useViewNavigate()
   const playTracks = usePlayer((s) => s.playTracks)
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
   const level = useSettings((s) => s.level)
   const savedAlbums = useLibrary((s) => s.savedAlbums)
   const toggleSaveAlbum = useLibrary((s) => s.toggleSaveAlbum)
@@ -60,10 +60,9 @@ export function AlbumPage() {
   const album = data?.album
   const tracks = data?.tracks ?? []
 
-  const handlePlay = (shuffle = false) => {
+  const handlePlay = () => {
     if (!tracks.length) return
-    if (shuffle && !usePlayer.getState().shuffle) toggleShuffle()
-    playTracks(tracks, shuffle ? Math.floor(Math.random() * tracks.length) : 0)
+    playTracks(tracks, 0)
   }
 
   const handleDownloadPlaylist = async () => {
@@ -141,20 +140,12 @@ export function AlbumPage() {
             <button
               type="button"
               className="detail__play"
-              onClick={() => handlePlay(false)}
+              onClick={handlePlay}
               disabled={!tracks.length}
             >
               <Play size={18} fill="currentColor" strokeWidth={0} />
               播放
             </button>
-            <IconButton
-              label="随机播放"
-              size="lg"
-              onClick={() => handlePlay(true)}
-              disabled={!tracks.length}
-            >
-              <Shuffle size={20} strokeWidth={2} />
-            </IconButton>
             <IconButton
               label={isSaved ? '取消收藏' : '收藏到资料库'}
               size="lg"
@@ -211,7 +202,7 @@ function albumArtistLinks(
   if (!refs.length) return null
   return refs.map((a, i) => (
     <span key={`${a.id}-${i}`}>
-      {i > 0 && ' / '}
+      {i > 0 && ARTIST_SEPARATOR}
       <button
         type="button"
         className="detail__artist-link"

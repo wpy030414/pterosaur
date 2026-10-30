@@ -61,6 +61,13 @@ export function keyOf(e: { id: string; source?: MusicSource }): string {
   return `${sourceOf(e)}:${e.id}`
 }
 
+/**
+ * 多艺术家分隔符。一首歌 / 一张专辑涉及多个艺术家时，全仓（后端归一化拼接
+ * `Track.artist` / `Album.artist`，前端逐个渲染可点艺术家引用、艺术家别名）一律用它。
+ * 不要在别处另写字面量，否则同一实体在不同界面会呈现出不同的分隔符。
+ */
+export const ARTIST_SEPARATOR = '、'
+
 /** 播放循环模式。 */
 export type RepeatMode = 'off' | 'all' | 'one'
 
@@ -78,7 +85,7 @@ export interface Track {
   id: string
   /** 曲名。 */
   title: string
-  /** 主艺术家（多艺术家以 `/` 连接）。 */
+  /** 主艺术家（多艺术家以 `ARTIST_SEPARATOR` 连接）。 */
   artist: string
   /** 专辑名。 */
   album: string
@@ -126,7 +133,7 @@ export interface Album {
   name: string
   /** 封面地址（已改写为 https）。 */
   cover: string
-  /** 艺术家名（多艺术家以 `/` 连接）。 */
+  /** 艺术家名（多艺术家以 `ARTIST_SEPARATOR` 连接）。 */
   artist: string
   /** 主艺术家 id，供跳转艺术家页。 */
   artistId?: string

@@ -24,7 +24,7 @@ describe('normalizeTrack', () => {
       ],
       al: { id: 99, name: '专辑', picUrl: 'http://p1.music.126.net/x.jpg' },
     })
-    expect(t.artist).toBe('甲 / 乙')
+    expect(t.artist).toBe('甲、乙')
     expect(t.artistRefs).toEqual([
       { id: '10', name: '甲' },
       { id: '20', name: '乙' },
@@ -96,7 +96,7 @@ describe('normalizeAlbum', () => {
       publishTime: Date.UTC(2020, 5, 15, 12),
     })
     expect(al.id).toBe('7')
-    expect(al.artist).toBe('甲 / 乙')
+    expect(al.artist).toBe('甲、乙')
     expect(al.artistId).toBe('3')
     // 合作专辑：每个艺术家都带 id，供界面逐个跳转（此前只有整体名串，只能跳到第一个）
     expect(al.artistRefs).toEqual([
