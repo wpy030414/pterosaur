@@ -306,6 +306,49 @@ test.describe('应用外壳', () => {
     // 减少动效：直连切换，不应设转场标记
     await expect(root).not.toHaveAttribute('data-theme-vt', 'on')
   })
+
+  test('主题转场期间侧栏毛玻璃被停用，结束后恢复', async ({ page }) => {
+    await page.goto('/')
+    const root = page.locator('html')
+    const sidebar = page.locator('.sidebar').first()
+
+    // 平时：侧栏有毛玻璃
+    const blurred = await sidebar.evaluate(
+      (el) => getComputedStyle(el).backdropFilter || 'none',
+    )
+    expect(blurred).not.toBe('none')
+
+    // 在转场标记存在的那一刻取样：根快照会栅格化整页，backdrop-filter 找不到真实背景，
+    // 毛玻璃会塌成半透明（iOS 上表现为「透明一帧再复原」，见 global.css 的说明）
+    const during = await page.evaluate(async () => {
+      const btn = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="切换到浅色"], button[aria-label="切换到深色"]',
+      )!
+      btn.click()
+      // 等标记就绪（主题转场在其同步设置后才开始）
+      await new Promise<void>((r) => {
+        const tick = () =>
+          document.documentElement.dataset.themeVt
+            ? r()
+            : requestAnimationFrame(tick)
+        tick()
+      })
+      const el = document.querySelector('.sidebar')!
+      const cs = getComputedStyle(el)
+      return { filter: cs.backdropFilter || 'none', bg: cs.backgroundColor }
+    })
+    expect(during.filter).toBe('none')
+    // 换成不透明同色填充：alpha 为 1，避免揭示期间透出背后的旧页面
+    expect(during.bg).not.toMatch(/rgba\([^)]*,\s*0?\.\d+\s*\)/)
+
+    // 结束后恢复毛玻璃（标记已清除）
+    await expect(root).not.toHaveAttribute('data-theme-vt', 'on')
+    await expect
+      .poll(() =>
+        sidebar.evaluate((el) => getComputedStyle(el).backdropFilter || 'none'),
+      )
+      .not.toBe('none')
+  })
 })
 
 test.describe('搜索与播放', () => {
@@ -952,6 +995,69 @@ test.describe('移动端', () => {
       return el ? el.className || el.tagName : null
     })
     expect(String(topClass)).toMatch(/sidebar/)
+  })
+
+  /**
+   * 窄屏左上角浮着汉堡按钮（`.mobile-menu-btn`，absolute 定位、36px 见方、左上各 12px）。
+   * 让位由 `styles/app.css` 按路由根节点统一给出（艺人 / 磁带页豁免）；新增页面若漏掉
+   * 根节点结构就会在此变红。此处量内容区首个可见元素的框与按钮框是否相交。
+   */
+  test('各页顶部内容不被左上角菜单按钮遮挡', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const s = await page.request.get('/api/search/all', {
+      params: { keywords: FREE_SONG_KEYWORD, limit: 1 },
+    })
+    const data = (await s.json()).data
+    const albumId = data.albums?.[0]?.id
+    const paths = [
+      '/',
+      '/radio',
+      '/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD),
+      '/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD),
+      '/favorites',
+      '/library/artists',
+      '/library/albums',
+      '/genre/' + encodeURIComponent('流行'),
+      ...(albumId ? [`/album/netease/${albumId}`] : []),
+    ]
+    for (const path of paths) {
+      await page.goto(path)
+      const btn = await page.locator('.mobile-menu-btn').boundingBox()
+      expect(btn, `${path} 应有菜单按钮`).toBeTruthy()
+      /*
+       * 内容区里顶部的文字（h1 / 文案）不得与按钮相交。
+       * 通栏大图（艺人 / 磁带页的封面）本就铺到屏幕顶端、藏在按钮下方——那是背景，
+       * 不算遮挡，故只看带文字的 h1 / p。
+       */
+      const texts = await page
+        .locator('.app-content h1, .app-content p')
+        .evaluateAll((els) =>
+          els.slice(0, 3).map((el) => el.getBoundingClientRect()),
+        )
+      if (!texts.length) continue // 加载态暂无内容
+      const hit = texts.find(
+        (t) =>
+          t.x < btn!.x + btn!.width &&
+          btn!.x < t.x + t.width &&
+          t.y < btn!.y + btn!.height &&
+          btn!.y < t.y + t.height,
+      )
+      expect(hit, `${path} 顶部文字被菜单按钮遮挡`).toBeUndefined()
+      /*
+       * 首屏间距只由根节点提供：文字应紧贴 `--page-top-inset` 让位，header 若又自带
+       * 上间距就会把页首压得远低于按钮。搜索页例外——页首是搜索框，结果标题在其下。
+       */
+      if (path.startsWith('/search')) continue
+      const gap = await page.evaluate(() => {
+        const el = document.querySelector('.app-content h1, .app-content p')
+        if (!el) return 0
+        const top = document
+          .querySelector('.app-content')!
+          .getBoundingClientRect()
+        return el.getBoundingClientRect().top - top.top
+      })
+      expect(gap, `${path} 页首文字应紧贴让位`).toBeLessThan(72)
+    }
   })
 })
 

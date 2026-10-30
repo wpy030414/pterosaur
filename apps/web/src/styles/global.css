@@ -182,3 +182,55 @@ ol {
     animation: none !important;
   }
 }
+
+/* ---------- 主题转场期间停用毛玻璃 ---------- */
+/*
+ * 根快照会栅格化整页：`backdrop-filter` 在快照里找不到真实背景，毛玻璃塌成纯半透明。
+ * 揭示期间（旧层铺满、新层在圆内）这个半透明窗口一直可见；iOS Safari 还会在
+ * backdrop root 重建时多闪一帧。故转场期间给所有毛玻璃**换成不透明的同色填充**——
+ * 不做模糊，也就不存在玻璃核重启。
+ *
+ * 为什么改底色而不是叠一层遮罩：遮罩会额外拉一个层，层内元素重新成为 backdrop root，
+ * 毛玻璃当场失效，转场结束再复原时又是一次闪烁；直接改 `background` 不产生新层。
+ * 填充色取不透明令牌（各自等于「同色 alpha 叠在纯 --bg 上」的合成结果），深色 / 浅色
+ * 各一套，随 data-theme 在转场回调里一起切换。
+ */
+:root[data-theme-vt] .sidebar,
+:root[data-theme-vt] .queuepanel,
+:root[data-theme-vt] .mobile-menu-button,
+:root[data-theme-vt] .rail__arrow {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-theme-vt] .sidebar,
+:root[data-theme-vt] .queuepanel {
+  background: var(--glass-sidebar-solid);
+}
+
+:root[data-theme-vt] .mobile-menu-button,
+:root[data-theme-vt] .rail__arrow {
+  background: var(--glass-overlay-solid);
+}
+
+:root[data-theme-vt] .playerbar__dock {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--glass-player-solid);
+}
+
+/*
+ * 自定义背景：侧栏平时调得更透明让背景图透出（见 app.css），转场时保留这个透明度、
+ * 只是把模糊换掉——否则揭示圆外会闪出一整块实色侧栏。透明版改用带 alpha 的
+ * `--glass-sidebar`（无模糊时它就等于同色但透，与平时观感差得最少）。
+ * 放最后、同特异性后写者胜，压过上面的 `--glass-sidebar-solid`。
+ */
+:root[data-theme-vt][data-has-bg] .sidebar,
+:root[data-theme-vt][data-has-bg] .queuepanel {
+  background: var(--glass-sidebar);
+}
+
+/*
+ * 透明版仅在「设置了自定义背景」时才真的透明；未设背景时侧栏底下就是纯 --bg，
+ * 透出的观感与上面的不透明档完全相同，故无需再写一条「侧栏是否另有透明变体」的重叠规则。
+ */
