@@ -6,9 +6,10 @@ import { defineConfig } from 'vite-plus'
 // - alwaysBundle @pterosaur/shared → 产物自包含，部署只需 node dist/index.js
 //   注意：alwaysBundle 用 picomatch 匹配 **完整导入 id**，因此必须同时写包名与子路径 glob，
 //   仅写 '@pterosaur/shared' 不会命中 '@pterosaur/shared/types' 等子路径导出。
-// - neverBundle 保留三项外部依赖：
+// - neverBundle 保留四项外部依赖：
 //   NeteaseCloudMusicApi（CJS 大包）、@hono/node-server（原生绑定）、
-//   @ffmpeg-installer/ffmpeg（内部按平台探测二进制路径并 require JSON，打包必坏）
+//   @ffmpeg-installer/ffmpeg（内部按平台探测二进制路径并 require JSON，打包必坏）、
+//   playwright-core（可选依赖，扫码登录的设备身份 headless 用，运行时按需存在）
 // - tsdown 默认保留 node: 前缀，等价于 tsup 的 removeNodeProtocol: false，
 //   故 node:sqlite 等内建能正常解析。
 export default defineConfig({
@@ -26,6 +27,7 @@ export default defineConfig({
         'NeteaseCloudMusicApi',
         '@hono/node-server',
         '@ffmpeg-installer/ffmpeg',
+        'playwright-core',
       ],
     },
   },

@@ -14,6 +14,13 @@ import {
 } from '@pterosaur/shared/types'
 import { parseLrc } from '@pterosaur/shared/lyric'
 import { canonicalNeteaseImage, COVER_LARGE } from '@pterosaur/shared/image'
+import {
+  ensureNeteaseDeviceIdentity,
+  getCachedNeteaseDeviceIdentity,
+  invalidateNeteaseDeviceIdentity,
+  refreshNeteaseDeviceIdentity,
+  NETEASE_WEB_UA,
+} from './neteaseDevice.js'
 import type { SourceAdapter } from './types.js'
 
 const require = createRequire(import.meta.url)
@@ -677,8 +684,8 @@ export async function getLyric(id: string, cookie?: string): Promise<Lyric> {
  * 这几条端点用明文 form 即可，无需 eapi / weapi 加密，故在此直连上游。
  */
 const NETEASE_API_ORIGIN = 'https://music.163.com'
-const NETEASE_QR_UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+/** 登录请求的 UA：与 headless 取设备身份时用的完全一致（见 neteaseDevice.ts）。 */
+const NETEASE_QR_UA = NETEASE_WEB_UA
 
 /** 一次明文 POST；返回解析后的 JSON 与原始 Set-Cookie 数组。 */
 async function postNeteaseApi(
@@ -713,6 +720,7 @@ async function postNeteaseApi(
  * 每个二维码 key 对应的 `chainId`（`v1_<sDeviceId>_web_login_<ts>`）。
  * 官方把同一条 chainId 既写进二维码链接、又作为轮询请求头 `x-login-chain-id` 回传，
  * 这里按 key 缓存以保持两侧一致；条目有界、2 分钟后清理，避免长驻进程积累。
+ * `sDeviceId` 取设备身份里的真实值（headless 已就绪时），否则回落 `unknown-<随机>`。
  */
 const qrChainIds = new Map<string, { chainId: string; at: number }>()
 const QR_CHAIN_TTL_MS = 2 * 60 * 1000
@@ -725,18 +733,36 @@ function chainIdOf(key: string): string {
   }
   const hit = qrChainIds.get(key)
   if (hit) return hit.chainId
-  const chainId = `v1_unknown-${Math.floor(Math.random() * 1e6)}_web_login_${now}`
+  const sDeviceId =
+    getCachedNeteaseDeviceIdentity()?.sDeviceId ??
+    `unknown-${Math.floor(Math.random() * 1e6)}`
+  const chainId = `v1_${sDeviceId}_web_login_${now}`
   qrChainIds.set(key, { chainId, at: now })
   return chainId
 }
 
+/**
+ * 设备 cookie（服务端 headless 所得，`WM_TID` 等）与用户会话 cookie（前端透传，
+ * 可空）合并为一个 Cookie 头值。键位几乎不相交（WM_* vs MUSIC_U），直接拼接即可。
+ */
+function withDeviceCookies(cred?: string): string | undefined {
+  const device = getCachedNeteaseDeviceIdentity()
+  if (!device?.cookieHeader) return cred
+  if (!cred) return device.cookieHeader
+  return `${device.cookieHeader}; ${cred}`
+}
+
 /** 生成二维码 key（`unikey`）。 */
 export async function qrKey(cookie?: string): Promise<string> {
+  // 等设备身份就绪（服务启动已有预热，通常瞬时；首次最多等 6s）：
+  // 一来 unikey 请求带上 WM cookie，二来 chainId 能用真实 sDeviceId——
+  // 没有设备身份（token）时手机确认后会命中 8821 设备风控（见 neteaseDevice.ts）。
+  await ensureNeteaseDeviceIdentity(6_000)
   const { data } = await postNeteaseApi(
     '/api/login/qrcode/unikey',
     { type: '1' },
     {},
-    cookie,
+    withDeviceCookies(cookie),
   )
   const key = typeof data.unikey === 'string' ? data.unikey : ''
   if (key) chainIdOf(key)
@@ -775,19 +801,28 @@ export async function qrCheck(
   key: string,
   cookie?: string,
 ): Promise<{ code: number; cookies?: string[]; message?: string }> {
+  // 设备身份（ydDeviceToken + WM cookie）——不带 token 时手机确认后会被 8821 拦截。
+  // 首次登录的预热若尚未完成，这里先降级为空发出去（801/802 阶段上游不校验 token），
+  // 下一次轮询（前端每秒一次）缓存就绪后自然带上。
+  const device = getCachedNeteaseDeviceIdentity()
   const { data, cookies } = await postNeteaseApi(
     '/api/login/qrcode/client/login',
     {
       key,
       type: '1',
       noCheckToken: 'true',
-      // 官方用浏览器指纹 SDK 取；取不到时同样以空串继续，Node 侧没有该 SDK 故恒为空
-      ydDeviceToken: '',
+      // NEFingerprint 的 32 字符 token，来自 headless 设备身份；降级时空串
+      ydDeviceToken: device?.token ?? '',
     },
     { 'X-loginMethod': 'QrCode', 'x-login-chain-id': chainIdOf(key) },
-    cookie,
+    withDeviceCookies(cookie),
   )
   const code = typeof data.code === 'number' ? data.code : 800
+  if (code === 8821) {
+    // 设备风控拦截：token 失效或被判风险。作废并后台重取，用户重开弹窗再扫即用新身份。
+    invalidateNeteaseDeviceIdentity()
+    refreshNeteaseDeviceIdentity()
+  }
   if (code === 803 || code === 800) qrChainIds.delete(key)
   return {
     code,

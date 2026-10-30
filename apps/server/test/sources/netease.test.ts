@@ -217,6 +217,36 @@ describe('collectAlbumPages', () => {
 })
 
 /**
+ * 设备身份桩：netease.ts 登录链路会向 neteaseDevice 借 ydDeviceToken + WM cookie
+ * （真实现要起 headless 浏览器）。这里换成可控桩，默认降级（identity 为 null）。
+ */
+const device = vi.hoisted(() => {
+  const state: {
+    identity: { token: string; cookieHeader: string; sDeviceId?: string } | null
+    refreshed: number
+    invalidated: number
+  } = { identity: null, refreshed: 0, invalidated: 0 }
+  return state
+})
+vi.mock('../../src/sources/neteaseDevice.js', async (importOriginal) => {
+  const orig =
+    await importOriginal<typeof import('../../src/sources/neteaseDevice.js')>()
+  return {
+    ...orig,
+    ensureNeteaseDeviceIdentity: async () =>
+      device.identity ?? { token: '', cookieHeader: '' },
+    getCachedNeteaseDeviceIdentity: () => device.identity,
+    invalidateNeteaseDeviceIdentity: () => {
+      device.identity = null
+      device.invalidated++
+    },
+    refreshNeteaseDeviceIdentity: () => {
+      device.refreshed++
+    },
+  }
+})
+
+/**
  * 扫码登录走现行网页协议（明文 `/api/login/qrcode/*` + `type=1` + `st/platform/scanlogin`），
  * 不再复用库里的 `login_qr_*`（eapi + `type=3` + 旧二维码链接，2026-10 起失效）。
  * 这里 mock 全局 fetch，断言请求形态与响应收敛。
@@ -234,6 +264,9 @@ describe('扫码登录（现行网页协议）', () => {
 
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
+    device.identity = null
+    device.refreshed = 0
+    device.invalidated = 0
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -279,6 +312,60 @@ describe('扫码登录（现行网页协议）', () => {
     const headers = init.headers as Record<string, string>
     expect(headers['X-loginMethod']).toBe('QrCode')
     expect(headers['x-login-chain-id']).toBe(chainId)
+  })
+
+  it('设备身份就绪时：chainId 用真实 sDeviceId，轮询带 ydDeviceToken 与 WM cookie', async () => {
+    device.identity = {
+      token: 'tok-32chars',
+      cookieHeader: 'WM_TID=abc; WM_NIKE=nik; NMTID=nm',
+      sDeviceId: 'YD-real-1',
+    }
+    fetchMock.mockResolvedValue(respond({ code: 200, unikey: 'k-dev' }))
+    const key = await qrKey()
+
+    // unikey 请求带上了设备 cookie
+    const [, uniInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(String((uniInit.headers as Record<string, string>).Cookie)).toContain(
+      'WM_TID=abc',
+    )
+
+    // chainId 用真实 sDeviceId
+    const url = new URL(await qrLoginUrl(key))
+    expect(url.searchParams.get('chainId')).toMatch(/^v1_YD-real-1_web_login_\d+$/)
+
+    fetchMock.mockResolvedValue(respond({ code: 801, message: '等待扫码' }, []))
+    await qrCheck(key)
+    const [u, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit]
+    expect(u).toBe('https://music.163.com/api/login/qrcode/client/login')
+    expect(new URLSearchParams(String(init.body)).get('ydDeviceToken')).toBe(
+      'tok-32chars',
+    )
+    expect(String((init.headers as Record<string, string>).Cookie)).toContain(
+      'WM_NIKE=nik',
+    )
+    // 设备 cookie 与用户 cookie（前端透传）并存，用户侧在后
+    fetchMock.mockResolvedValue(respond({ code: 801 }, []))
+    await qrCheck(key, 'MUSIC_U=old; __csrf=x')
+    const [, init2] = fetchMock.mock.calls.at(-1) as [string, RequestInit]
+    const ck = String((init2.headers as Record<string, string>).Cookie)
+    expect(ck).toContain('WM_TID=abc')
+    expect(ck).toContain('MUSIC_U=old')
+  })
+
+  it('轮询命中 8821 设备风控时作废设备身份并触发后台刷新', async () => {
+    device.identity = {
+      token: 'stale',
+      cookieHeader: 'WM_TID=old',
+      sDeviceId: 'YD-x',
+    }
+    fetchMock.mockResolvedValue(
+      respond({ code: 8821, message: '请切换其他登录方式或升级新版本再试' }, []),
+    )
+    const res = await qrCheck('k-risk')
+    expect(res.code).toBe(8821)
+    expect(device.invalidated).toBe(1)
+    expect(device.identity).toBeNull()
+    expect(device.refreshed).toBeGreaterThanOrEqual(1)
   })
 
   it('qrCheck 803 透传 Set-Cookie；非 JSON 响应按过期处理', async () => {

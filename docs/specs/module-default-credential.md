@@ -11,7 +11,8 @@
 
 - 预期行为：
   - `pnpm log-in` 在终端打印一个二维码（`qrcode` 的 terminal 渲染，半块字符），内容为现行扫码落地页 `https://music.163.com/st/platform/scanlogin?codekey=<key>&chainId=<chainId>&hdw_device=web&hdw_appid=web&hitExp=1`；`key` 由明文 `POST /api/login/qrcode/unikey`（`type=1`）取得，二维码由本地渲染（`qrcode` 包，不请求上游）。协议细节见 `docs/researches/netease-web-login-protocol.md`。
-  - 扫码状态由本进程**统一轮询**（每 1.5s，`POST /api/login/qrcode/client/login`，随带 `X-loginMethod: QrCode` 与同一 `chainId` 的 `x-login-chain-id`）；终端字样随「等待扫码 → 已扫码待确认 → 成功」变化，并**去重打印**避免刷屏。
+  - 取 key 前会先就绪一份**设备身份**（`sources/neteaseDevice.ts`，ADR-052）：headless 系统 Edge/Chrome 打开网易云首页，让官方 `createNEFingerprint` SDK 自己取 `ydDeviceToken` 并种下 WM cookie；进程内缓存 20h。没有它，手机确认后轮询会被 8821 设备风控拦截。`playwright-core` 为可选依赖——部署机没有系统浏览器时降级为空身份（登录大概率被风控拦，但不影响其余功能）。
+  - 扫码状态由本进程**统一轮询**（每 1.5s，`POST /api/login/qrcode/client/login`，随带 `ydDeviceToken`（设备身份）、`X-loginMethod: QrCode` 与同一 `chainId` 的 `x-login-chain-id`）；终端字样随「等待扫码 → 已扫码待确认 → 成功」变化，并**去重打印**避免刷屏。
   - 二维码过期（800）时**自动换一张新码**并重置有效期计时；整体超时 5 分钟退出 1，`Ctrl-C` 退出 130。
   - 扫码成功（803）时，把会话 cookie 写入仓库根 `.env` 的 `NETEASE_COOKIE`（并记 `NETEASE_COOKIE_UPDATED_AT`），保留文件其余行与注释；随后退出 0。
   - 服务端启动时先 `loadEnv()` 读取仓库根 `.env`（存在才读，缺失不报错）。

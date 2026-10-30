@@ -44,3 +44,4 @@ coverage
 
 # 云同步数据目录（服务端持久化，勿入库）
 .data
+.scratch/
