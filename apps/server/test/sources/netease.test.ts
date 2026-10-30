@@ -1,8 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   normalizeTrack,
   normalizeArtist,
   normalizeAlbum,
+  qrKey,
+  qrLoginUrl,
+  qrCheck,
+  qrCreate,
 } from '../../src/sources/netease.js'
 import { NETEASE_IMAGE_HOST } from '@pterosaur/shared/image'
 
@@ -96,5 +100,90 @@ describe('normalizeAlbum', () => {
     expect(al.year).toBe(2020)
     expect(al.trackCount).toBe(10)
     expect(al.cover).toBe(`https://${NETEASE_IMAGE_HOST}/b.jpg?param=1200y1200`)
+  })
+})
+
+/**
+ * 扫码登录走现行网页协议（明文 `/api/login/qrcode/*` + `type=1` + `st/platform/scanlogin`），
+ * 不再复用库里的 `login_qr_*`（eapi + `type=3` + 旧二维码链接，2026-10 起失效）。
+ * 这里 mock 全局 fetch，断言请求形态与响应收敛。
+ */
+describe('扫码登录（现行网页协议）', () => {
+  const fetchMock = vi.fn()
+
+  /** 造一个最小 Response，可带若干 Set-Cookie。 */
+  function respond(body: unknown, setCookies: string[] = []) {
+    return {
+      text: async () => JSON.stringify(body),
+      headers: { getSetCookie: () => setCookies },
+    }
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+  })
+
+  it('qrKey 用 type=1 明文 POST 取 unikey', async () => {
+    fetchMock.mockResolvedValue(respond({ code: 200, unikey: 'k-1' }))
+    await expect(qrKey()).resolves.toBe('k-1')
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://music.163.com/api/login/qrcode/unikey')
+    expect(init.method).toBe('POST')
+    expect(String(init.body)).toBe('type=1')
+  })
+
+  it('qrCreate 生成的二维码内容即现行扫码落地页，且与轮询共用同一 chainId', async () => {
+    fetchMock.mockResolvedValue(respond({ code: 200, unikey: 'k-2' }))
+    const key = await qrKey()
+    const url = new URL(await qrLoginUrl(key))
+    expect(url.origin + url.pathname).toBe(
+      'https://music.163.com/st/platform/scanlogin',
+    )
+    expect(url.searchParams.get('codekey')).toBe(key)
+    expect(url.searchParams.get('hdw_device')).toBe('web')
+    expect(url.searchParams.get('hdw_appid')).toBe('web')
+    const chainId = url.searchParams.get('chainId')
+    expect(chainId).toMatch(/^v1_unknown-\d+_web_login_\d+$/)
+
+    const img = await qrCreate(key)
+    expect(img.startsWith('data:image/png;base64,')).toBe(true)
+
+    // 轮询：type=1 + noCheckToken + X-loginMethod + 同一条 chainId
+    fetchMock.mockResolvedValue(respond({ code: 801, message: '等待扫码' }, []))
+    const res = await qrCheck(key)
+    expect(res.code).toBe(801)
+    const [u, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit]
+    expect(u).toBe('https://music.163.com/api/login/qrcode/client/login')
+    const body = new URLSearchParams(String(init.body))
+    expect(body.get('type')).toBe('1')
+    expect(body.get('noCheckToken')).toBe('true')
+    expect(body.get('key')).toBe(key)
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-loginMethod']).toBe('QrCode')
+    expect(headers['x-login-chain-id']).toBe(chainId)
+  })
+
+  it('qrCheck 803 透传 Set-Cookie；非 JSON 响应按过期处理', async () => {
+    const cookies = [
+      'MUSIC_U=abc; Path=/;',
+      '__csrf=def; Path=/;',
+      'NMTID=ghi; Path=/;',
+    ]
+    fetchMock.mockResolvedValue(respond({ code: 803 }, cookies))
+    const ok = await qrCheck('k-3')
+    expect(ok.code).toBe(803)
+    expect(ok.cookies).toEqual(cookies)
+
+    fetchMock.mockResolvedValue({
+      text: async () => '<html>oops</html>',
+      headers: { getSetCookie: () => [] },
+    })
+    const bad = await qrCheck('k-4')
+    expect(bad.code).toBe(800)
   })
 })

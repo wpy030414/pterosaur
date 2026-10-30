@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import QRCode from 'qrcode'
 import {
   DEFAULT_AUDIO_LEVEL,
   type Album,
@@ -532,28 +533,106 @@ export async function getLyric(id: string, cookie?: string): Promise<Lyric> {
   }
 }
 
-/** 生成二维码 key。 */
-export async function qrKey(cookie?: string): Promise<string> {
-  const res = await api.login_qr_key({ cookie })
-  return res?.body?.data?.unikey ?? ''
-}
+/* ---------------------- 扫码登录（现行网页协议） ---------------------- */
 
-/** 生成二维码图片（base64 data URI）。 */
-export async function qrCreate(key: string, cookie?: string): Promise<string> {
-  const res = await api.login_qr_create({ key, qrimg: true, cookie })
-  return res?.body?.data?.qrimg ?? ''
+/**
+ * 扫码登录走**网页端现行协议**，不再复用 NeteaseCloudMusicApi 的 `login_qr_*`。
+ *
+ * 库里的实现写死了三件事：`eapi` 加密、`type=3`、二维码内容 `music.163.com/login?codekey=`。
+ * 2026-10 起官方网页改用明文 `/api/login/qrcode/*` + `type=1`，二维码内容改成
+ * `https://music.163.com/st/platform/scanlogin?...`——旧链接已 302 到 `/404`，手机 App 认不出，
+ * 于是轮询永远停在 801（见 `docs/researches/netease-web-login-protocol.md`）。
+ * 这几条端点用明文 form 即可，无需 eapi / weapi 加密，故在此直连上游。
+ */
+const NETEASE_API_ORIGIN = 'https://music.163.com'
+const NETEASE_QR_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+/** 一次明文 POST；返回解析后的 JSON 与原始 Set-Cookie 数组。 */
+async function postNeteaseApi(
+  path: string,
+  body: Record<string, string>,
+  extraHeaders: Record<string, string> = {},
+  cred?: string,
+): Promise<{ data: Record<string, unknown>; cookies: string[] }> {
+  const headers: Record<string, string> = {
+    'User-Agent': NETEASE_QR_UA,
+    Referer: `${NETEASE_API_ORIGIN}/`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+    ...extraHeaders,
+  }
+  if (cred) headers.Cookie = cred
+  const res = await fetch(NETEASE_API_ORIGIN + path, {
+    method: 'POST',
+    headers,
+    body: new URLSearchParams(body).toString(),
+  })
+  const text = await res.text()
+  let data: Record<string, unknown> = {}
+  try {
+    data = JSON.parse(text) as Record<string, unknown>
+  } catch {
+    data = {}
+  }
+  return { data, cookies: res.headers.getSetCookie() }
 }
 
 /**
- * 生成二维码**内容 URL**（形如 `https://music.163.com/login?codekey=<key>`）。
- * 网易云 `login_qr_create` 为本地构造、不请求上游，故可直接用于终端自行渲染二维码。
+ * 每个二维码 key 对应的 `chainId`（`v1_<sDeviceId>_web_login_<ts>`）。
+ * 官方把同一条 chainId 既写进二维码链接、又作为轮询请求头 `x-login-chain-id` 回传，
+ * 这里按 key 缓存以保持两侧一致；条目有界、2 分钟后清理，避免长驻进程积累。
+ */
+const qrChainIds = new Map<string, { chainId: string; at: number }>()
+const QR_CHAIN_TTL_MS = 2 * 60 * 1000
+
+/** 取（或补建）某 key 的 chainId。 */
+function chainIdOf(key: string): string {
+  const now = Date.now()
+  for (const [k, v] of qrChainIds) {
+    if (now - v.at > QR_CHAIN_TTL_MS) qrChainIds.delete(k)
+  }
+  const hit = qrChainIds.get(key)
+  if (hit) return hit.chainId
+  const chainId = `v1_unknown-${Math.floor(Math.random() * 1e6)}_web_login_${now}`
+  qrChainIds.set(key, { chainId, at: now })
+  return chainId
+}
+
+/** 生成二维码 key（`unikey`）。 */
+export async function qrKey(cookie?: string): Promise<string> {
+  const { data } = await postNeteaseApi(
+    '/api/login/qrcode/unikey',
+    { type: '1' },
+    {},
+    cookie,
+  )
+  const key = typeof data.unikey === 'string' ? data.unikey : ''
+  if (key) chainIdOf(key)
+  return key
+}
+
+/**
+ * 生成二维码**内容 URL**——现行扫码落地页：
+ * `https://music.163.com/st/platform/scanlogin?codekey=…&chainId=…&hdw_device=web&hdw_appid=web&hitExp=1`
  */
 export async function qrLoginUrl(
   key: string,
-  cookie?: string,
+  _cookie?: string,
 ): Promise<string> {
-  const res = await api.login_qr_create({ key, cookie })
-  return res?.body?.data?.qrurl ?? ''
+  const params = new URLSearchParams({
+    codekey: key,
+    chainId: chainIdOf(key),
+    hdw_device: 'web',
+    hdw_appid: 'web',
+    hitExp: '1',
+  })
+  return `${NETEASE_API_ORIGIN}/st/platform/scanlogin?${params.toString()}`
+}
+
+/** 生成二维码图片（base64 data URI）。二维码内容即 {@link qrLoginUrl}。 */
+export async function qrCreate(key: string, cookie?: string): Promise<string> {
+  const url = await qrLoginUrl(key, cookie)
+  return QRCode.toDataURL(url)
 }
 
 /**
@@ -564,11 +643,24 @@ export async function qrCheck(
   key: string,
   cookie?: string,
 ): Promise<{ code: number; cookies?: string[]; message?: string }> {
-  const res = await api.login_qr_check({ key, cookie })
+  const { data, cookies } = await postNeteaseApi(
+    '/api/login/qrcode/client/login',
+    {
+      key,
+      type: '1',
+      noCheckToken: 'true',
+      // 官方用浏览器指纹 SDK 取；取不到时同样以空串继续，Node 侧没有该 SDK 故恒为空
+      ydDeviceToken: '',
+    },
+    { 'X-loginMethod': 'QrCode', 'x-login-chain-id': chainIdOf(key) },
+    cookie,
+  )
+  const code = typeof data.code === 'number' ? data.code : 800
+  if (code === 803 || code === 800) qrChainIds.delete(key)
   return {
-    code: res?.body?.code ?? 800,
-    cookies: res?.cookie,
-    message: res?.body?.message,
+    code,
+    cookies,
+    message: typeof data.message === 'string' ? data.message : undefined,
   }
 }
 
