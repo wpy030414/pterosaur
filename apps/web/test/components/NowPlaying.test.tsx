@@ -43,7 +43,7 @@ function track(id: string, cover: string): Track {
     source: 'netease',
     id,
     title: `歌曲${id}`,
-    artist: `艺人${id}`,
+    artist: `艺术家${id}`,
     album: `专辑${id}`,
     cover,
     duration: 200,

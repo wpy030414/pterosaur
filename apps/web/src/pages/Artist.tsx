@@ -26,7 +26,7 @@ interface ArtistDetail {
 }
 
 /**
- * 艺人详情页：圆形头像 + 档案 + 热门歌曲 + 专辑网格。
+ * 艺术家详情页：圆形头像 + 档案 + 热门歌曲 + 专辑网格。
  */
 export function ArtistPage() {
   const params = useParams()
@@ -64,7 +64,7 @@ export function ArtistPage() {
   if (loading && !artist) {
     return (
       <div className="detail">
-        <Loading text="加载艺人…" />
+        <Loading text="加载艺术家…" />
       </div>
     )
   }
@@ -72,7 +72,7 @@ export function ArtistPage() {
   if (error || !artist) {
     return (
       <div className="detail">
-        <ErrorState message={error ?? '艺人不存在'} onRetry={reload} />
+        <ErrorState message={error ?? '艺术家不存在'} onRetry={reload} />
       </div>
     )
   }
@@ -95,7 +95,7 @@ export function ArtistPage() {
           className="detail__cover"
         />
         <div className="detail__info">
-          <span className="detail__type">艺人</span>
+          <span className="detail__type">艺术家</span>
           <h1 className="detail__name">{artist.name}</h1>
           {artist.alias?.length ? (
             <p className="detail__desc">{artist.alias.join(' / ')}</p>

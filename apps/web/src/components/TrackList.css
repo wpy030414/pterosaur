@@ -208,7 +208,7 @@
   color: var(--text-secondary);
 }
 
-/* 行内实体链接（艺人 / 专辑）：点击跳转详情页 */
+/* 行内实体链接（艺术家 / 专辑）：点击跳转详情页 */
 .track-link {
   font: inherit;
   color: inherit;

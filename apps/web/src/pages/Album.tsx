@@ -29,7 +29,7 @@ interface AlbumDetail {
 }
 
 /**
- * 专辑详情页：封面 + 档案（含可点击的艺人）+ 曲目列表。
+ * 专辑详情页：封面 + 档案（含可点击的艺术家）+ 曲目列表。
  */
 export function AlbumPage() {
   const params = useParams()
@@ -180,7 +180,7 @@ export function AlbumPage() {
         </div>
       </header>
 
-      {/* 专辑页整页同一张专辑、同一批艺人：行内不再重复封面 / 歌手 / 专辑列 */}
+      {/* 专辑页整页同一张专辑、同一批艺术家：行内不再重复封面 / 歌手 / 专辑列 */}
       <div className="detail__list">
         <TrackList
           tracks={tracks}
@@ -195,9 +195,9 @@ export function AlbumPage() {
 }
 
 /**
- * 专辑艺人的可点击链接（合作专辑逐个可点）。
+ * 专辑艺术家的可点击链接（合作专辑逐个可点）。
  *
- * 优先用 `artistRefs`（每个艺人都有 id）；旧数据只有 `artistId` 时用整体名串兜底；
+ * 优先用 `artistRefs`（每个艺术家都有 id）；旧数据只有 `artistId` 时用整体名串兜底；
  * 都没有时返回 `null`，由调用方降级为纯文本。
  */
 function albumArtistLinks(

@@ -55,7 +55,7 @@ const uniq = <T extends { id: string; source?: MusicSource }>(list: T[]): T[] =>
  * 关键词来自 `?q=`，音乐源来自 `?source=`（缺省跟随活动账号）。
  *
  * **版式（ADR-050）**：搜索结果不再用 tab 分类，而是像首页「新发现」那样**五条分区滑轨**
- * 同页堆叠（歌曲 / 磁带 / 艺人 / 专辑 / 歌单，磁带恒查询 B 站，见 ADR-044）。每个分区只取
+ * 同页堆叠（歌曲 / 磁带 / 艺术家 / 专辑 / 歌单，磁带恒查询 B 站，见 ADR-044）。每个分区只取
  * 一页，滑轨尾部给「更多」——想看全部就去独立类别页（`/search/{类别}?q=`，见 pages/SearchCategory）。
  * 旧深链上的 `?tab=` 参数被忽略，五条分区照常展示。
  *
@@ -239,7 +239,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
   const navigate = useViewNavigate()
   const playTracks = usePlayer((st) => st.playTracks)
 
-  // 音乐四类（歌曲 / 艺人 / 专辑 / 歌单）一次取齐；磁带走 CASSETTE_SOURCE（B 站），
+  // 音乐四类（歌曲 / 艺术家 / 专辑 / 歌单）一次取齐；磁带走 CASSETTE_SOURCE（B 站），
   // 两者并行，各自的分区只管自己那条结果。
   const music = useAsync<SearchResults>(
     () =>
@@ -351,15 +351,15 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         </Rail>
       )}
 
-      {/* ---------- 艺人 ---------- */}
+      {/* ---------- 艺术家 ---------- */}
       {resultsReady &&
         visible('artists') &&
         (musicError || artists.length > 0) && (
           <Rail
-            title="艺人"
+            title="艺术家"
             action={
               !musicError && hasMore('artists', artists.length) ? (
-                <RailMore to={categoryPath('artists', q)} label="艺人" />
+                <RailMore to={categoryPath('artists', q)} label="艺术家" />
               ) : undefined
             }
           >

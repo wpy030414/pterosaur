@@ -84,7 +84,7 @@ interface RawSong {
   album?: { id?: number; name?: string; picUrl?: string; blurPicUrl?: string }
 }
 
-/** 网易云返回的原始艺人结构（部分字段）。 */
+/** 网易云返回的原始艺术家结构（部分字段）。 */
 interface RawArtist {
   id: number
   name: string
@@ -176,24 +176,24 @@ export function normalizeTrack(raw: RawSong): Track {
     source: 'netease',
     id: String(raw.id),
     title: raw.name ?? '未知曲目',
-    artist: artists.join(' / ') || '未知艺人',
+    artist: artists.join(' / ') || '未知艺术家',
     album: album?.name ?? '',
     // 封面按需放大，网易云支持 ?param=WxH 缩略参数
     cover: coverUrl(coverRaw, BASE_COVER_SIZE),
     duration: Math.round(((raw.dt ?? raw.duration ?? 0) as number) / 1000),
     fee: feeOf(raw.fee),
-    // 供界面跳转艺人页 / 专辑页；缺失时前端降级为纯文本
+    // 供界面跳转艺术家页 / 专辑页；缺失时前端降级为纯文本
     artistRefs: artistRefs.length ? artistRefs : undefined,
     albumId: album && album.id != null ? String(album.id) : undefined,
   }
 }
 
-/** 将网易云原始艺人归一化为共享 Artist。 */
+/** 将网易云原始艺术家归一化为共享 Artist。 */
 export function normalizeArtist(raw: RawArtist): Artist {
   return {
     source: 'netease',
     id: String(raw.id),
-    name: raw.name ?? '未知艺人',
+    name: raw.name ?? '未知艺术家',
     avatar: coverUrl(raw.picUrl, BASE_COVER_SIZE),
     alias: raw.alias?.length ? raw.alias : undefined,
     albumSize: raw.albumSize,
@@ -206,7 +206,7 @@ export function normalizeArtist(raw: RawArtist): Artist {
 export function normalizeAlbum(raw: RawAlbum): Album {
   const list = raw.artists ?? (raw.artist ? [raw.artist] : [])
   const names = list.map((a) => a?.name).filter(Boolean)
-  // 逐个艺人的引用（合作专辑每个都能点）；仅保留同时具备 id 与名字的条目，与 normalizeTrack 一致
+  // 逐个艺术家的引用（合作专辑每个都能点）；仅保留同时具备 id 与名字的条目，与 normalizeTrack 一致
   const artistRefs = list
     .filter(
       (a): a is { id?: number; name: string } => !!a?.name && a?.id != null,
@@ -218,7 +218,7 @@ export function normalizeAlbum(raw: RawAlbum): Album {
     id: String(raw.id),
     name: raw.name ?? '未命名专辑',
     cover: coverUrl(raw.picUrl, BASE_COVER_SIZE),
-    artist: names.join(' / ') || '未知艺人',
+    artist: names.join(' / ') || '未知艺术家',
     artistId: primaryId,
     artistRefs: artistRefs.length ? artistRefs : undefined,
     year: raw.publishTime ? new Date(raw.publishTime).getFullYear() : undefined,
@@ -272,7 +272,7 @@ export async function searchSongs(
   return songs.map(normalizeTrack)
 }
 
-/** 搜索艺人（cloudsearch type=100）。 */
+/** 搜索艺术家（cloudsearch type=100）。 */
 export async function searchArtists(
   keywords: string,
   limit = 30,
@@ -425,7 +425,7 @@ export async function playlistTracks(
   return { playlist, tracks }
 }
 
-/** 艺人详情：档案 + 热门单曲 + 专辑列表。 */
+/** 艺术家详情：档案 + 热门单曲 + 专辑列表。 */
 export async function artistDetail(
   id: string,
   cookie?: string,
@@ -435,7 +435,7 @@ export async function artistDetail(
     api.artist_album({ id, limit: 50, cookie }),
   ])
   const artist = normalizeArtist(
-    (info?.body?.artist ?? { id, name: '未知艺人' }) as RawArtist,
+    (info?.body?.artist ?? { id, name: '未知艺术家' }) as RawArtist,
   )
   const tracks: Track[] = ((info?.body?.hotSongs ?? []) as RawSong[]).map(
     normalizeTrack,

@@ -72,7 +72,7 @@ test('浏览器后退走内容区转场（逆放）', async ({ page }) => {
 })
 
 /** 五条分区滑轨的标题（顺序即页面上的纵向顺序）。 */
-const RAIL_TITLES = ['歌曲', '艺人', '专辑', '歌单', '磁带'] as const
+const RAIL_TITLES = ['歌曲', '艺术家', '专辑', '歌单', '磁带'] as const
 
 /**
  * E2E：搜索结果的多分区版式（ADR-050）。
@@ -107,7 +107,7 @@ test('搜索结果：五个分区滑轨同页可见，且没有 tab', async ({ p
     railOf(page, '磁带').locator('.card--cassette').first(),
   ).toBeVisible({ timeout: 20_000 })
   await expect(
-    railOf(page, '艺人').locator('.card--artist').first(),
+    railOf(page, '艺术家').locator('.card--artist').first(),
   ).toBeVisible({ timeout: 20_000 })
 
   // 旧的 tab 胶囊已彻底移除

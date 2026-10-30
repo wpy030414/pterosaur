@@ -1,4 +1,4 @@
-/* 「新歌精选」紧凑曲目行：封面 + 曲名 / 艺人 + 悬浮播放键。 */
+/* 「新歌精选」紧凑曲目行：封面 + 曲名 / 艺术家 + 悬浮播放键。 */
 .song-row {
   display: flex;
   align-items: center;
@@ -31,7 +31,7 @@
   flex: 1;
 }
 
-/* 曲名 / 艺人单行截断：不截断则长标题把整行撑出网格列 */
+/* 曲名 / 艺术家单行截断：不截断则长标题把整行撑出网格列 */
 .song-row__title {
   overflow: hidden;
   text-overflow: ellipsis;

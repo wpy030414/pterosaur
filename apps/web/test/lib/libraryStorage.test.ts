@@ -13,7 +13,7 @@ const track = (id: string): Track => ({
   source: 'netease',
   id,
   title: `曲目 ${id}`,
-  artist: '艺人',
+  artist: '艺术家',
   album: '专辑',
   cover: '',
   duration: 0,

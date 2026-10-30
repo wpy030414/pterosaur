@@ -29,7 +29,7 @@ async function seedSavedAlbums(page: Page, count: number): Promise<void> {
             id: String(i + 1),
             name: `专辑 ${i + 1}`,
             cover: '',
-            artist: `艺人 ${i + 1}`,
+            artist: `艺术家 ${i + 1}`,
           }))
           const tx = d.transaction('library', 'readwrite')
           tx.objectStore('library').put(

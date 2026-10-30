@@ -73,7 +73,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
   const setExpanded = usePlayer((s) => s.setExpanded)
   const navigate = useViewNavigate()
 
-  /** 跳转到专辑 / 艺人页：先收起沉浸页，否则整屏浮层会盖住目标页面。 */
+  /** 跳转到专辑 / 艺术家页：先收起沉浸页，否则整屏浮层会盖住目标页面。 */
   const openEntity = (to: string) => {
     setExpanded(false)
     void navigate(to)

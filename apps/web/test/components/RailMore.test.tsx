@@ -40,7 +40,7 @@ describe('RailMore（分区标题行「更多」按钮）', () => {
   it('data-testid 供 E2E 定位', () => {
     render(
       <MemoryRouter>
-        <RailMore to="/search/artists?q=x" label="艺人" />
+        <RailMore to="/search/artists?q=x" label="艺术家" />
       </MemoryRouter>,
     )
     expect(screen.getByTestId('rail-more')).toBeTruthy()

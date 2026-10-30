@@ -82,7 +82,7 @@ export const api = {
     get<Track[]>(`${API_BASE}/search`, { keywords, limit, source }),
 
   /**
-   * 多类型搜索：并行返回歌曲 / 艺人 / 专辑 / 歌单；`page` 供滚动续取，`type` 限定只跑一类。
+   * 多类型搜索：并行返回歌曲 / 艺术家 / 专辑 / 歌单；`page` 供滚动续取，`type` 限定只跑一类。
    * 磁带渠道（B 站）的 `playlists` 即**磁带**（`source:'bilibili'` 的 Playlist，见 ADR-044）。
    */
   searchAll: (
@@ -100,7 +100,7 @@ export const api = {
       type,
     }),
 
-  /** 艺人详情：档案 + 热门单曲 + 专辑列表（`name` 供「无按-id 取歌手」能力的源按名搜索）。 */
+  /** 艺术家详情：档案 + 热门单曲 + 专辑列表（`name` 供「无按-id 取歌手」能力的源按名搜索）。 */
   artist: (source: MusicSource, id: string, name?: string) =>
     get<{ artist: Artist; tracks: Track[]; albums: Album[] }>(
       `${API_BASE}/artist/${source}/${encodeURIComponent(id)}`,

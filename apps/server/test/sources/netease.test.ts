@@ -67,7 +67,7 @@ describe('normalizeArtist', () => {
   it('归一化头像为 https + 固定镜像主机并保留统计信息', () => {
     const a = normalizeArtist({
       id: 5,
-      name: '某艺人',
+      name: '某艺术家',
       picUrl: 'http://p7.music.126.net/a.jpg',
       albumSize: 3,
       musicSize: 20,
@@ -82,7 +82,7 @@ describe('normalizeArtist', () => {
 })
 
 describe('normalizeAlbum', () => {
-  it('取主艺人 id 与发行年份；封面规范化', () => {
+  it('取主艺术家 id 与发行年份；封面规范化', () => {
     const al = normalizeAlbum({
       id: 7,
       name: '某专辑',
@@ -97,7 +97,7 @@ describe('normalizeAlbum', () => {
     expect(al.id).toBe('7')
     expect(al.artist).toBe('甲 / 乙')
     expect(al.artistId).toBe('3')
-    // 合作专辑：每个艺人都带 id，供界面逐个跳转（此前只有整体名串，只能跳到第一个）
+    // 合作专辑：每个艺术家都带 id，供界面逐个跳转（此前只有整体名串，只能跳到第一个）
     expect(al.artistRefs).toEqual([
       { id: '3', name: '甲' },
       { id: '4', name: '乙' },
@@ -107,7 +107,7 @@ describe('normalizeAlbum', () => {
     expect(al.cover).toBe(`https://${NETEASE_IMAGE_HOST}/b.jpg?param=1200y1200`)
   })
 
-  it('缺少艺人 id 时 artistRefs 缺省，artistId 亦缺省', () => {
+  it('缺少艺术家 id 时 artistRefs 缺省，artistId 亦缺省', () => {
     const al = normalizeAlbum({ id: 8, name: '无名专辑', artist: { name: '甲' } })
     expect(al.artist).toBe('甲')
     expect(al.artistRefs).toBeUndefined()

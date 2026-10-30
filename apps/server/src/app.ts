@@ -343,7 +343,7 @@ export function createApp() {
   })
 
   /**
-   * 多类型搜索：并行返回歌曲 / 艺人 / 专辑 / 歌单；缺失的能力返回空数组并标记。
+   * 多类型搜索：并行返回歌曲 / 艺术家 / 专辑 / 歌单；缺失的能力返回空数组并标记。
    *
    * 每类条数统一取请求的 `limit`（收口 1–50，缺省 20）——主搜索页要歌曲 32 条、
    * 其余分区 20 条，独立类别页续页时也按同一口径判断「是否还有下一批」。
@@ -544,7 +544,7 @@ export function createApp() {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)
     if (!ctx.adapter.artistDetail)
-      return c.json(fail('该音源暂不支持艺人页'), 501)
+      return c.json(fail('该音源暂不支持艺术家页'), 501)
     const name = c.req.query('name')
     const id = c.req.param('id') ?? ''
     const cred = credentialOf(c, ctx.adapter)
@@ -555,7 +555,7 @@ export function createApp() {
       )
       return c.json(ok(detail))
     } catch (e) {
-      return c.json(fail(`获取艺人详情失败：${(e as Error).message}`), 502)
+      return c.json(fail(`获取艺术家详情失败：${(e as Error).message}`), 502)
     }
   }
   app.get('/api/artist/:source/:id', artistHandler)
