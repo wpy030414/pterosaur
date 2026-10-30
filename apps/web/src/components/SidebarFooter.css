@@ -5,7 +5,16 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  padding: 10px 14px;
+  /*
+   * 与播放岛对齐：按钮行中线 = 胶囊中线（桌面与移动端同一套算式）。
+   * 胶囊：高 74px（`--playerbar-height` − 14）、底距 `--playerbar-bottom-inset`，
+   * 故中线距窗口底 = inset + 74 / 2。底栏取其高度为 `inset + 74`，下内边距为 inset，
+   * 剩余 74px 内 `align-items: center` 居中 → 中线同样落在 inset + 37px。
+   * 按钮尺寸（图标 / 登录按钮 / 头像）不影响结果。
+   */
+  height: calc(var(--playerbar-bottom-inset) + 74px);
+  box-sizing: border-box;
+  padding: 0 14px var(--playerbar-bottom-inset);
   border-top: 1px solid var(--separator);
 }
 

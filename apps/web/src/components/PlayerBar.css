@@ -271,12 +271,26 @@
 }
 
 /* ============================ 右：副控制区 ============================ */
+/*
+ * 收藏 / 播放列表两端**对调**：
+ * - 桌面：左区末位是下一首 → 播放列表（左区提供），收藏在右区首位（走带键侧）；
+ * - 移动：左区隐藏 → 右区出场顺序 播放列表 - 播放 - 收藏（本区 DOM 顺序即此）。
+ * 收藏在桌面已位于首位，移动端用 `order` 挪到末尾；移动端的播放列表是
+ * `--queue-mobile` 这一枚（桌面藏在左区里）。
+ * 右区不再额外加左内边距：它与左区之间由胶囊的 `gap` 统一拉开，
+ * 首位按钮（桌面为收藏）到左区末位（播放列表）的距离与组内一致。
+ */
 .playerbar__right {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
   flex-shrink: 0;
+}
+
+/* 桌面端播放列表在左区，右区这枚只在移动端出现 */
+.playerbar__queue-mobile {
+  display: none;
 }
 
 .playerbar__volume {
@@ -302,8 +316,8 @@
   }
 }
 
-.playerbar__play-mobile,
-.playerbar__fav-mobile {
+/* 桌面端由左控制区提供播放键；移动端的播放键见下方 768 块 */
+.playerbar__play-mobile {
   display: none;
 }
 
@@ -316,8 +330,10 @@
      * - 但 iPhone 17 这类**大圆角屏**，指示条之下的圆角弧线还会继续「吃掉」可视区，
      *   若岛按 inset 顶格就绪，胶囊两端会顶到弧线边缘、显得发飘。
      * 故在 inset 之余再压 6px，让岛整体下探一点，两端落进弧线的安全区。
+     * 该值与侧栏底部操作栏共用 `--playerbar-bottom-inset`（见 tokens.css），
+     * 抽屉里的按钮行据此与胶囊的中线对齐。
      */
-    padding: 0 20px 20px;
+    padding: 0 20px var(--playerbar-bottom-inset);
   }
 
   .playerbar__dock {
@@ -335,6 +351,11 @@
     display: none;
   }
 
+  /* 左区整体隐藏后，播放列表改由右区那枚顶上（与收藏对调的两端之一） */
+  .playerbar__queue-mobile {
+    display: inline-flex;
+  }
+
   .playerbar__progress {
     display: none;
   }
@@ -343,8 +364,12 @@
     flex: 1 1 auto;
   }
 
+  /*
+   * 移动端只有「播放列表 / 播放 / 收藏」三键（左区与静音 / 音量均已隐藏），
+   * 统一切到同一个间距，且不带任何单侧外边距——三键因此严格等距。
+   */
   .playerbar__right {
-    gap: 2px;
+    gap: 8px;
   }
 
   .playerbar__right .icon-btn[aria-label='静音'],
@@ -358,12 +383,12 @@
   }
 
   .playerbar__play-mobile {
-    display: inline-flex !important;
-    margin-right: 4px;
+    display: inline-flex;
   }
 
-  .playerbar__fav-mobile {
-    display: inline-flex !important;
+  /* 移动端排列：播放列表 - 播放 - 收藏（收藏挪到本区末尾；其余保持 DOM / 默认顺序） */
+  .playerbar__fav {
+    order: 1;
   }
 
   .playerbar__meta {

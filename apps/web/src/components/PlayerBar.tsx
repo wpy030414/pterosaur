@@ -137,18 +137,19 @@ export function PlayerBar() {
           >
             <SkipForward size={17} strokeWidth={2} fill="currentColor" />
           </IconButton>
+          {/*
+            播放列表：桌面端紧跟下一首（走带 / 队列同组）。
+            移动端左区整体隐藏，由右区的 `--queue-mobile` 顶上；
+            两端差异全部由 PlayerBar.css 的 768 块表达。
+          */}
           <IconButton
-            label={isFav ? '取消喜欢' : '喜欢'}
+            className="playerbar__queue"
+            label={queueOpen ? '关闭播放队列' : '播放队列'}
             size="sm"
-            active={isFav}
-            onClick={() => current && toggleFavorite(current)}
-            disabled={!current}
+            active={queueOpen}
+            onClick={toggleQueue}
           >
-            <Star
-              size={16}
-              strokeWidth={2}
-              fill={isFav ? 'currentColor' : 'none'}
-            />
+            <ListMusic size={16} strokeWidth={2} />
           </IconButton>
         </div>
 
@@ -225,9 +226,30 @@ export function PlayerBar() {
           </div>
         </div>
 
-        {/* ---------- 右：副控制区（播放列表 / 音量） ---------- */}
+        {/*
+          右：副控制区。
+          桌面端收藏在首位（走带键那一侧的相邻位），播放列表由左区提供；
+          移动端左区隐藏，本区按 DOM 顺序呈现「播放列表 - 播放 - 收藏」——
+          两端的差异全部由 CSS 的 `--queue` / `--fav` 规则表达，DOM 只此一份。
+        */}
         <div className="playerbar__right">
           <IconButton
+            className="playerbar__fav"
+            label={isFav ? '取消喜欢' : '喜欢'}
+            size="sm"
+            active={isFav}
+            onClick={() => current && toggleFavorite(current)}
+            disabled={!current}
+          >
+            <Star
+              size={16}
+              strokeWidth={2}
+              fill={isFav ? 'currentColor' : 'none'}
+            />
+          </IconButton>
+          {/* 移动端专用的播放列表（桌面端由左区提供）；两端只显示其中一个 */}
+          <IconButton
+            className="playerbar__queue playerbar__queue-mobile"
             label={queueOpen ? '关闭播放队列' : '播放队列'}
             size="sm"
             active={queueOpen}
@@ -274,21 +296,6 @@ export function PlayerBar() {
               <Play size={20} strokeWidth={2.2} fill="currentColor" />
             )}
           </IconButton>
-          {current && (
-            <IconButton
-              className="playerbar__fav-mobile"
-              label={isFav ? '取消喜欢' : '喜欢'}
-              size="sm"
-              active={isFav}
-              onClick={() => toggleFavorite(current)}
-            >
-              <Star
-                size={17}
-                strokeWidth={2}
-                fill={isFav ? 'currentColor' : 'none'}
-              />
-            </IconButton>
-          )}
         </div>
       </div>
     </footer>

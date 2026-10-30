@@ -22,6 +22,12 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    /*
+     * 无动画偏好：应用对此有完整适配（styles/global.css 的 prefers-reduced-motion 块，
+     * 含 `scroll-behavior: auto`），滚动 / 转场瞬时完成——否则 smooth 滚动与页面转场
+     * 会让「滚到底」「元素位置」类断言在动画中途取到中间态。
+     */
+    reducedMotion: 'reduce',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

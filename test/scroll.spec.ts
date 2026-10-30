@@ -94,15 +94,16 @@ test.describe('内容区滚动位置', () => {
 /**
  * 播放岛底部空档（不变量）。
  *
- * 播放岛是悬浮层，不占网格高度；滚动页滚到底时最后一行必须停在岛的上沿之上。
- * 这条留白集中由 styles/app.css 的 `.route-stage >` 规则提供——本用例守住
- * 「新增页面时别把它忘了」（曾经歌单 / 专辑页就漏了）。
+ * 播放岛是悬浮层，不占网格高度；滚动页滚到底时**最后一项内容**必须停在岛的上沿之上。
+ * 这条留白由 styles/app.css 的 `.route-stage >` 规则一次性覆盖**每条路由的根节点**，
+ * 不按页面类名枚举——本用例遍历全部离线可构造的页面守住这一点
+ * （曾经库页漏配、首页 / 电台 / 歌单页被自身的 `padding` 简写压掉）。
  */
 test.describe('播放岛底部空档', () => {
-  /** 向 library store 种入 N 首收藏曲目（「我喜欢的音乐」据此渲染可滚动列表）。 */
-  async function seedFavorites(page: Page, count: number): Promise<void> {
+  /** 向 library store 种入各页面所需数据（曲目 / 专辑 / 艺术家），造出可滚动列表。 */
+  async function seedLibrary(page: Page): Promise<void> {
     await page.evaluate(
-      ({ db, key, count }) =>
+      ({ db, key }) =>
         new Promise<void>((resolve, reject) => {
           const req = indexedDB.open(db)
           req.onupgradeneeded = () => {
@@ -112,19 +113,38 @@ test.describe('播放岛底部空档', () => {
           }
           req.onsuccess = () => {
             const d = req.result
-            const favorites = Array.from({ length: count }, (_, i) => ({
-              source: 'netease',
-              id: String(i + 1),
-              title: `歌曲 ${i + 1}`,
-              artist: `艺术家 ${i + 1}`,
-              album: `专辑 ${i + 1}`,
-              cover: '',
-              duration: 180,
-              fee: 'free',
-            }))
+            const rows = (n: number, mk: (i: number) => object) =>
+              Array.from({ length: n }, (_, i) => mk(i + 1))
             const tx = d.transaction('library', 'readwrite')
             tx.objectStore('library').put(
-              { state: { favorites }, version: 0 },
+              {
+                state: {
+                  favorites: rows(80, (i) => ({
+                    source: 'netease',
+                    id: String(i),
+                    title: `歌曲 ${i}`,
+                    artist: `艺术家 ${i}`,
+                    album: `专辑 ${i}`,
+                    cover: '',
+                    duration: 180,
+                    fee: 'free',
+                  })),
+                  savedAlbums: rows(80, (i) => ({
+                    source: 'netease',
+                    id: String(i),
+                    name: `专辑 ${i}`,
+                    cover: '',
+                    artist: `艺术家 ${i}`,
+                  })),
+                  savedArtists: rows(80, (i) => ({
+                    source: 'netease',
+                    id: String(i),
+                    name: `艺术家 ${i}`,
+                    avatar: '',
+                  })),
+                },
+                version: 0,
+              },
               key,
             )
             tx.oncomplete = () => {
@@ -135,48 +155,104 @@ test.describe('播放岛底部空档', () => {
           }
           req.onerror = () => reject(req.error)
         }),
-      { db: IDB_DB, key: LIBRARY_KEY, count },
+      { db: IDB_DB, key: LIBRARY_KEY },
     )
   }
 
-  test('详情页滚到底时最后一行不被播放岛压住', async ({ page }) => {
-    await page.goto('/')
-    await seedFavorites(page, 80)
-    await page.goto('/favorites')
-
-    const rows = page.locator('.track-row')
-    await expect(rows.first()).toBeVisible({ timeout: 10000 })
-
-    // 内容区滚到最底。
-    // 注意：内容异步撑高后，useContentScrollRestoration 会在下一帧把滚动位置写回
-    // 「该历史条目的记录值」（首次进入为 0），故直接赋值 scrollTop 可能被覆盖——
-    // 这里用真实滚轮并轮询确认已到底（用户实际会经历的就是这条路径）。
-    const content = page.locator('.app-content')
-    await page.mouse.move(640, 400)
-    for (let i = 0; i < 20; i++) await page.mouse.wheel(0, 2000)
-    await expect
-      .poll(
-        () =>
-          content.evaluate(
-            (el) => el.scrollHeight - el.scrollTop - el.clientHeight,
-          ),
-        { timeout: 5000 },
-      )
-      .toBeLessThan(2)
-
-    // 末尾空档 ≥ 播放岛高度：最后一行底边停在岛顶之上
-    const gap = await page.evaluate(() => {
-      const rows = document.querySelectorAll('.track-row')
-      const last = rows[rows.length - 1]
-      const island = document.querySelector('.playerbar')
-      if (!last || !island) return NaN
-      return (
-        island.getBoundingClientRect().top - last.getBoundingClientRect().bottom
-      )
+  /**
+   * 滚到内容区最底，返回到达底部后的空档：
+   * - `slack`：最后一个叶子元素底边 → 内容区**内容盒**底边（页面为播放岛让出的留白）；
+   * - `visualGap`：最后一个叶子元素底边 → 播放岛胶囊顶边（用户实际看到的空隙）。
+   *
+   * 只看**叶子元素**：中间层容器（页面根、栅格、轨道）会被拉伸或被伪元素撑高，
+   * 量它们的底边只会得到「岛高」的恒定负值。
+   */
+  async function bottomMetrics(page: Page) {
+    /*
+     * 内容异步撑高（首页 / 发现流逐块加载），一次赋值可能只是「当时」的底部。
+     * 反复滚到底直到 scrollTop 稳定——既覆盖了 useContentScrollRestoration
+     * 布局期回写位置的时机，也覆盖了内容后续撑高。
+     */
+    const reached = await page.locator('.app-content').evaluate(async (el) => {
+      const prev = el.style.scrollBehavior
+      el.style.scrollBehavior = 'auto'
+      let last = -1
+      for (let i = 0; i < 40; i++) {
+        el.scrollTop = el.scrollHeight
+        if (
+          el.scrollTop === last &&
+          el.scrollHeight - el.scrollTop <= el.clientHeight + 1
+        )
+          break
+        last = el.scrollTop
+        await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50)))
+      }
+      el.style.scrollBehavior = prev
+      return el.scrollHeight - el.scrollTop - el.clientHeight
     })
-    expect(gap).toBeGreaterThanOrEqual(0)
+    expect(reached).toBeLessThanOrEqual(1)
 
-    // 尾注：`N 项，X 小时 Y 分钟`（80 首 × 3:00 = 240 分钟 = 4 小时 0 分钟）
+    return page.evaluate(() => {
+      const content = document.querySelector('.app-content') as HTMLElement
+      const stage = document.querySelector('.route-stage')!
+      const island = document.querySelector('.playerbar__dock')!
+      const cs = getComputedStyle(content)
+      const contentBoxBottom =
+        content.getBoundingClientRect().bottom -
+        parseFloat(cs.paddingBottom) -
+        parseFloat(cs.borderBottomWidth)
+
+      let leaf = -Infinity
+      for (const el of stage.querySelectorAll('*')) {
+        if (el.childElementCount > 0) continue
+        const r = el.getBoundingClientRect()
+        if (r.width && r.height && getComputedStyle(el).position !== 'fixed')
+          leaf = Math.max(leaf, r.bottom)
+      }
+      return {
+        // 内容区底部与播放岛顶边的距离：留白至少要盖住这一段，最后一行才不被压住
+        islandReach: contentBoxBottom - island.getBoundingClientRect().top,
+        slack: contentBoxBottom - leaf,
+        visualGap: island.getBoundingClientRect().top - leaf,
+      }
+    })
+  }
+
+  // 全部离线可构造的页面（无需上游音源）。
+  const PAGES = [
+    ['我喜欢的音乐', '/favorites'],
+    ['库 · 专辑', '/library/albums'],
+    ['库 · 艺术家', '/library/artists'],
+    ['广播', '/radio'],
+    ['发现（首页）', '/'],
+  ] as const
+
+  for (const [name, path] of PAGES) {
+    test(`${name}滚到底时最后一行不被播放岛压住`, async ({ page }) => {
+      await page.goto('/')
+      await seedLibrary(page)
+      await page.goto(path)
+      await expect(page.locator('.route-stage > *').first()).toBeVisible({
+        timeout: 10000,
+      })
+
+      const { islandReach, slack, visualGap } = await bottomMetrics(page)
+      expect(islandReach).toBeGreaterThan(0)
+      // 留白盖住播放岛占用的那一段，最后一行才停在胶囊之上
+      expect(slack).toBeGreaterThanOrEqual(islandReach - 1)
+      expect(visualGap).toBeGreaterThanOrEqual(-1)
+    })
+  }
+
+  test('尾注：N 项与总时长', async ({ page }) => {
+    await page.goto('/')
+    await seedLibrary(page)
+    await page.goto('/favorites')
+    await expect(page.locator('.track-row').first()).toBeVisible({
+      timeout: 10000,
+    })
+
+    // 80 首 × 3:00 = 240 分钟 = 4 小时 0 分钟
     await expect(page.locator('.track-list__summary')).toHaveText(
       '共 80 项，4 小时 0 分钟',
     )

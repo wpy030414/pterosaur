@@ -42,6 +42,12 @@
   /* ---------- 尺寸 ---------- */
   --sidebar-width: 260px;
   --playerbar-height: 88px;
+  /*
+   * 播放岛与窗口底边的距离（胶囊底距）。桌面端 14px；移动端在安全区之上再压
+   * 6px（见 PlayerBar.css 的 768 块）。侧栏底部操作栏用它推算胶囊中线，
+   * 保证「主题 / 设置 / 账户」与岛中心水平对齐（见 SidebarFooter.css）。
+   */
+  --playerbar-bottom-inset: 14px;
   --topbar-height: 56px;
   /*
    * 页面底部留白：播放区是**悬浮玻璃岛**（见 PlayerBar.css），内容会从它下面滚过，
@@ -98,6 +104,10 @@
 @media (max-width: 768px) {
   :root {
     --page-gutter: 16px;
+    /* 与 PlayerBar.css 的 768 块一致：安全区 + 6px（大圆角屏的弧线余量） */
+    --playerbar-bottom-inset: calc(
+      max(20px, env(safe-area-inset-bottom, 0px)) + 6px
+    );
   }
 }
 

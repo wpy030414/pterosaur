@@ -55,22 +55,26 @@
  *
  * 播放岛是悬浮层（见上），内容区拿到完整高度、内容从岛下方滚过，故滚到底时
  * 最后一行不能被胶囊压住。这条留白集中在这里，而不是让每个页面自己贴
- * `padding-bottom: var(--page-bottom-inset)`——本节选择器即**全部滚动页的根节点**
- * （外加通用骨架 `.page`，供将来新页直接套用）。
+ * （曾按页面类名逐个列举，库页就漏配了；不要再回到枚举式的写法）。
  *
- * 新增页面：根节点套上 `.page` 即可继承留白，**不要再自己写**底部留白。
+ * 覆盖范围是**每条路由的根节点**（`.route-stage` 的直接子元素，见 App.tsx 的
+ * <Routes>）——页面根叫什么类都自动生效，新增页面无需任何声明。
+ *
+ * 为什么不直接给它们加 `padding-bottom`：本文件属于分块异步加载的 `index-*.css`，
+ * 页面样式 `pages-*.css` 在其后加载，平局时后者胜出；而多数页面根的
+ * `padding: 0 var(--page-gutter)` 简写会把底边一并重置。故：
+ *   1. 常规页面 ← 根节点的 `::after` 占位，不参与任何简写；
+ *   2. 详情页（`.detail`：专辑 / 歌单 / 磁带 / 我喜欢的音乐）← 其内部有通栏封面与
+ *      负外边距版式，放在根上的占位会被吃掉，改用 `padding-bottom`（双类选择器
+ *      提高特异性，压过 `pages-*.css` 的同类声明）。
  */
-.route-stage
-  > :where(
-    .page,
-    .home,
-    .browse,
-    .search-page,
-    .library-page,
-    .artist-page,
-    .artist-works,
-    .detail
-  ) {
+.route-stage > :not(.detail)::after {
+  content: '';
+  display: block;
+  height: var(--page-bottom-inset);
+}
+
+.route-stage > .detail.detail {
   padding-bottom: var(--page-bottom-inset);
 }
 
