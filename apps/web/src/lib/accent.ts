@@ -1,8 +1,8 @@
 /**
- * 从自定义背景取色并派生主题强调色（替换默认红 `--accent*`）。
+ * 从自定义背景取色并派生主题强调色（覆写默认的中性 `--accent*`）。
  *
  * 做法：把图 / 视频首帧绘到离屏 canvas → 缩到 24×24 → 取平均色（跳过近透明像素）；
- * 再规整到「适合做强调色」的饱和度 / 明度区间（前景多为白字，故取中低明度、较高饱和）。
+ * 再规整到「适合做强调色」的饱和度 / 明度区间（实心按钮前景为 `--accent-contrast`，取中低明度、较高饱和）。
  *
  * 仅依赖 DOM（canvas / Image / video），无 DOM 环境（测试等）返回 `null`。
  */
@@ -44,9 +44,12 @@ function rgbToHsl(
   return { h, s, l }
 }
 
+/** 非法 hex 时的回落基色（中性灰，无色相可选；派生结果落在饱和度下限）。 */
+const FALLBACK_HEX = 0x77777a
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
-  const n = m ? parseInt(m[1], 16) : 0xfa243c
+  const n = m ? parseInt(m[1], 16) : FALLBACK_HEX
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
 }
 

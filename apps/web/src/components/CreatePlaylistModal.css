@@ -119,7 +119,7 @@
 
 .cp-modal__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .cp-modal__btn--primary:hover:not(:disabled) {

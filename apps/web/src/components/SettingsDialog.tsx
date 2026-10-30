@@ -142,9 +142,9 @@ export function SettingsDialog() {
     try {
       const kind = file.type.startsWith('video') ? 'video' : 'image'
       await saveBackground(file)
-      // 自动取色作为主题色（失败则回落默认红）
+      // 自动取色作为主题强调色（失败则落 `undefined`：不覆写，回落主题的中性令牌）
       const accent = await accentFromBlob(file)
-      setBackground({ kind, mime: file.type, accent: accent ?? '#fa243c' })
+      setBackground({ kind, mime: file.type, ...(accent ? { accent } : {}) })
     } catch (err) {
       // 写入失败（如 IndexedDB 不可用 / background store 缺失）→ 明示，且**不落配置**
       console.warn('[settings] 设置背景失败', err)

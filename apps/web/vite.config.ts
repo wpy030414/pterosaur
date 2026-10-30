@@ -71,14 +71,16 @@ export default defineConfig({
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#1c1c1e',
-        // 图标集仅 4 个：favicon.svg（标签页，见 index.html）+ pwa-192 / pwa-512 + apple-touch-icon。
-        // 512 那张为全出血红底、图形落在安全区内，故直接兼作 maskable，不必再单独产出一份。
+        // 图标集 5 个：favicon.svg（标签页，见 index.html）+ pwa-192 / pwa-512 + apple-touch-icon
+        // + maskable。图形取自 Apple Music 官方音符标（白底黑符、无圆角，由系统加圆角）。
+        // maskable 单独一份：白底铺满、图形缩到 78%（落在 Android 0.8 安全区内），
+        // 不能与 pwa-512 共用——普通图标若被裁成圆形，音符会切到边缘。
         // 生成器源在 apps/web/assets/pwa-icon.svg（不随站点发布），重新生成见 ADR-013。
         icons: [
           { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           {
-            src: '/pwa-512x512.png',
+            src: '/pwa-512x512-maskable.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

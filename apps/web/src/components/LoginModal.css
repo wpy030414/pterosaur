@@ -130,7 +130,7 @@
   padding: 8px 18px;
   border-radius: 20px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 13px;
   font-weight: 600;
 }

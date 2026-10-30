@@ -137,7 +137,7 @@
   background: var(--control-overlay-hover);
 }
 
-/* 已收藏：常显 + 中性令牌底与令牌前景（深色白星 / 浅色黑星），不再用强调红 */
+/* 已收藏：常显 + 中性令牌底与令牌前景（深色白星 / 浅色黑星） */
 .card__fav.card__fav--active {
   opacity: 1;
   transform: translateY(0);

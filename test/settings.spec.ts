@@ -154,13 +154,13 @@ async function favoriteCount(page: Page): Promise<number> {
   return (await storeCounts(page)).favorites
 }
 
-/** 1×1 红色 PNG，用作自定义背景的 fixture。 */
+/** 1×1 不透明蓝色 PNG，用作自定义背景的 fixture（须不透明，否则取色会跳过该像素）。 */
 const PNG_1x1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOwzlv6HwAEhAJODN6dAwAAAABJRU5ErkJggg==',
   'base64',
 )
 
-/** 读取根元素上被 JS 覆写的 `--accent`（空串表示未覆写、回落默认红）。 */
+/** 读取根元素上被 JS 覆写的 `--accent`（空串表示未覆写、回落主题的中性令牌）。 */
 function accentVar(page: Page): Promise<string> {
   return page.evaluate(() =>
     document.documentElement.style.getPropertyValue('--accent'),
@@ -260,7 +260,7 @@ test.describe('设置弹窗', () => {
     await page.getByTestId('settings-button').click()
     await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible()
 
-    // 未设置背景时无背景层、强调色为默认红（未被 JS 覆写）
+    // 未设置背景时无背景层、强调色为中性令牌（未被 JS 覆写）
     await expect(page.locator('.app-bg')).toHaveCount(0)
     expect(await accentVar(page)).toBe('')
 

@@ -157,7 +157,7 @@
 }
 
 /*
- * 进度条：静默时是 **1.5px** 的细线（无读数）；hover / 拖拽时变红、加粗到 5px，
+ * 进度条：静默时是 **1.5px** 的细线（无读数）；hover / 拖拽时转为强调色、加粗到 5px，
  * 但**长度不变**——读数浮在线的两端**上方**，不靠收缩轨道给读数让位。
  *
  * 纵向位置：位于「封面下边界 → 岛下边界」之间，即在内容区底部（内容区与封面行同轴，见下）。
@@ -187,7 +187,7 @@
   background: color-mix(in srgb, var(--text-secondary) 62%, transparent);
 }
 
-/* hover / 拖拽：变红并加粗到 2.5px；长度不变（不加 padding、不改宽度） */
+/* hover / 拖拽：转为强调色并加粗到 2.5px；长度不变（不加 padding、不改宽度） */
 .playerbar__progress:hover .slider__rail,
 .playerbar__progress .slider--hover .slider__rail,
 .playerbar__progress .slider--dragging .slider__rail {

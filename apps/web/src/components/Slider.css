@@ -77,9 +77,9 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #fff;
-  /* 白色把手压在轨道上，靠一圈暗描边保证可见 */
-  border: 1px solid rgba(0, 0, 0, 0.3);
+  background: var(--text);
+  /* 把手取前景色压在轨道上，靠一圈半透明描边在两态下都保证可见 */
+  border: 1px solid color-mix(in srgb, var(--bg) 55%, transparent);
   transform: translate(-50%, -50%) scale(0.8);
   opacity: 0;
   transition:

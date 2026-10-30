@@ -11,7 +11,7 @@ const VARS = [
 ] as const
 
 /**
- * 依自定义背景取出的主题色，覆写 `--accent*`（替代默认红）。清除背景则回落 `:root` 的红色。
+ * 依自定义背景取出的主题色，覆写 `--accent*`。清除背景（或未取到色）则回落各主题块里的中性令牌。
  *
  * 仿 `useSourceTheme` 的「JS 覆写 CSS 变量」做法：直接写 `document.documentElement.style`。
  * 取色结果随 `settings.background.accent` 持久化，故刷新后无需重新取色、无闪变。

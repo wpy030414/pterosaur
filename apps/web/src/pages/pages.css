@@ -359,7 +359,7 @@
   gap: 8px;
   padding: 10px 24px;
   border-radius: 22px;
-  /* 中性色实心：深色白底黑字、浅色黑底白字（不再使用强调红） */
+  /* 中性色实心：深色白底黑字、浅色黑底白字（与 `--play-neutral` 同形） */
   background: var(--play-neutral);
   color: var(--play-neutral-text);
   font-size: 14px;

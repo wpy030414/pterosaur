@@ -181,7 +181,7 @@
   - 离线语义：首次访问后外壳 / 封面才有缓存；外壳缓存超过 7 天未用即被清除，此后离线不可用——这是「7 天有效期」的预期行为。
   - IDB v2 升级会丢弃旧音频缓存（纯缓存，可接受），`library` 原样保留；`e2e` 的 IDB 辅助已同步到 v2。
   - 设置弹窗「检查更新」= 注销全部 SW 注册 + 清空 Cache Storage + `fetch(href, { cache: 'reload' })` 后 `location.reload()`；**不触碰 IndexedDB**，资料库与媒体缓存保留。
-  - 构建：`apps/web` 的 `build` 回归单条 `vite build`，产出 `sw.js` + `manifest.webmanifest` + 图标；图标提交进仓库（CI 无需浏览器 / sharp）。生成器源为 `apps/web/assets/pwa-icon.svg`（**不放 `public/`**，避免作为站点资源发布、也不再进 precache）；生成器固定会多产出 64px / maskable / `.ico` 等无用文件，**只保留 4 个**：`favicon.svg`（标签页，`index.html` 引用）、`pwa-192x192.png`、`pwa-512x512.png`、`apple-touch-icon-180x180.png`，且 512 那张直接兼作 maskable（全出血红底、图形落在安全区）。重新生成：对源跑 `pnpm dlx @vite-pwa/assets-generator@latest --preset minimal-2023 apps/web/assets/pwa-icon.svg`，再把所需产物移入 `public/`。
+  - 构建：`apps/web` 的 `build` 回归单条 `vite build`，产出 `sw.js` + `manifest.webmanifest` + 图标；图标提交进仓库（CI 无需浏览器 / sharp）。生成器源为 `apps/web/assets/pwa-icon.svg`（**不放 `public/`**，避免作为站点资源发布、也不再进 precache）；生成器固定会多产出 64px / maskable / `.ico` 等无用文件，**保留 5 个**：`favicon.svg`（标签页，`index.html` 引用）、`pwa-192x192.png`、`pwa-512x512.png`、`pwa-512x512-maskable.png`、`apple-touch-icon-180x180.png`（maskable 为何单列，见 ADR-057 第 7 条）。重新生成：对源跑 `pnpm dlx @vite-pwa/assets-generator@latest --preset minimal-2023 apps/web/assets/pwa-icon.svg`，再把所需产物移入 `public/`。
   - **开发态作用域**：dev 下 SW 源码位于 `/src/sw.ts`，其默认作用域会被限制为 `/src/`，SW 便永不控制 `/` 下的页面、缓存恒为空。故 `vite.config.ts` 加了一个 dev 中间件为该响应补 `Service-Worker-Allowed: /`，`main.tsx` 再以 `scope: '/'` 注册；生产由 `/sw.js` 天然位于根作用域，无需此插件。
 - 何时重新审视：若希望离线首帧即用外壳（放弃 7 天过期，改用 precache）；若网易云 CDN 关闭 CORS（需改走后端代理）；若引入 OPFS。
 
@@ -636,15 +636,15 @@
 
 - 日期：2026-10-07
 - 状态：已采纳（沉浸页部分**已被 ADR-041 修订**：自定义背景不再作用于沉浸页）
-- 背景：需求——设置弹窗「音质」下方新增「背景」，允许上传图片 / 动图 / 视频作为应用背景（涵盖顶栏、侧边栏、主内容区，**不含底部播放条**），并自动从背景取色替换默认红主题色；此设置**仅存本地**。
+- 背景：需求——设置弹窗「音质」下方新增「背景」，允许上传图片 / 动图 / 视频作为应用背景（涵盖顶栏、侧边栏、主内容区，**不含底部播放条**），并自动从背景取色覆写默认的**中性**主题色（深色下白 / 浅色下黑，见 ADR-057）；此设置**仅存本地**。
 - 决策：
   - 媒体本体落 **IndexedDB** 的**专用 `background` store**（IDB 库 v3 → v4；单条、固定键），settings store 只留轻量元数据 `{ kind, mime, accent }`（localStorage）。取色结果 `accent`（base hex）随元数据持久化，刷新无需重新取色、无闪变。
   - 渲染：`components/AppBackground.tsx` 作 `.app-shell` 内绝对定位层（`z-index: -1`，配合 `.app-shell { isolation: isolate }`；`inset: 0 0 var(--playerbar-height) 0` 恰好排除底栏）。有背景时在 `<html>` 打 `data-has-bg`，CSS 据此把 `.app-main` / `.sidebar` / `.topbar` 调得更透明（默认外观不变）。
-  - 取色：`lib/accent.ts` 把图 / 视频首帧绘到 24×24 离屏 canvas 取平均色 → 规整到适合做强调色的饱和度 / 明度，派生 `--accent / --accent-hover / --accent-press / --accent-soft`；`hooks/useAccentFromBackground` 以 JS 覆写变量（仿 `useSourceTheme`），清除背景则回落 `:root` 的红。
+  - 取色：`lib/accent.ts` 把图 / 视频首帧绘到 24×24 离屏 canvas 取平均色 → 规整到适合做强调色的饱和度 / 明度，派生 `--accent / --accent-hover / --accent-press / --accent-soft`；`hooks/useAccentFromBackground` 以 JS 覆写变量（仿 `useSourceTheme`），清除背景则以 `removeProperty` 回落各主题块里的中性令牌（见 ADR-057）。
   - 沉浸播放页（`NowPlaying`）：~~设了自定义背景即**隐藏封面**、背景改用（高斯模糊的）自定义图~~——**已被 ADR-041 废止**：自定义背景不再作用于沉浸页，恒定「封面 + 封面模糊背景」。
   - 生命周期：`lib/clearCaches.ts`（登录 / 退出清缓存，ADR-034）**不触碰** `background` store（背景是本地设置、与账号无关）；`lib/reset.ts`（整库重置）会清它。
 - 为什么选这个：视频 / 动图动辄数 MB，localStorage ~5MB 且只存字符串，放不下 → 媒体本体必须落 IDB。独立 store 且**不参与媒体池 LRU**，避免被当作缓存淘汰。
-- 后果 / 已知边界：设置项**不同步到云**（本地项）；浅色 / 深色下背景可见度靠 `data-has-bg` 的 `color-mix` 透明度调节；取色对灰度图会回落接近默认红。
+- 后果 / 已知边界：设置项**不同步到云**（本地项）；浅色 / 深色下背景可见度靠 `data-has-bg` 的 `color-mix` 透明度调节；取色对灰度图会得到饱和度下限的灰调强调色，视觉上接近中性令牌。
 
 ## ADR-040：顶栏前进 / 后退也走内容区转场——自定义路由器包裹 popstate
 
@@ -962,3 +962,19 @@
   - 封面不漂移：封面框与信息块都是固定宽度 `--np-col`，长文本只在自身宽度内折行（`overflow-wrap: anywhere`），无法撑开或挤压封面。
   - 换行：去掉 `ellipsis`，改用 `overflow-wrap: anywhere` + `line-height: 1.3`；移动端标题降为 16px（封面变小、列内空间紧张）。
 - 影响：`test/player.spec.ts` 的专辑链接定位从 `.nowplaying__header-title .nowplaying__link` 改为 `.nowplaying__artist .nowplaying__album .nowplaying__link`；单测新增「信息块位于封面下方」用例。
+
+## ADR-057：主题强调色改为中性令牌，全站不再使用红色
+
+- 日期：2026-10-30
+- 状态：已采纳（修订 ADR-013 的图标配色、ADR-039 的取色回落）
+- 背景：原强调色是 Apple Music 红（`--accent: #fa243c`），约 120 处引用铺满全站（选中行、进度条、开关、CTA、焦点环、文字链接、页签下划线……）。需求：**除表达危险语义外，全站不再使用红色**作主题色，统一换成中性令牌。
+- 决策：
+  1. `--accent*` 四档改为**前景中性色**，在三个主题块（深色 / 浅色 / 系统浅色）各自定义：深色 `#f5f5f7`（hover 纯白、press `#d9d9dc`、soft `rgba(245,245,247,.14)`），浅色 `#1d1d1f`（hover `#3a3a3c`、press 纯黑、soft `rgba(29,29,31,.1)`）。不再挂在 `:root`——取色的 JS 覆写靠 `removeProperty` 回落，若挂在 `:root` 则浅色下会退回白色。
+  2. 新增 `--accent-contrast`：实心强调按钮上的图标 / 文字色（与强调色互为反色）。所有 `background: var(--accent)` + `color: #fff` 的组合改为 `color: var(--accent-contrast)`，否则浅色下黑底白字变成黑底黑字。
+  3. `--danger` / `--danger-soft` 原样保留，红色只服务于危险 / 删除语义。
+  4. 连带中性化：滑块把手 `#fff` → `var(--text)` + 半透明描边（小圆形控件不跟强调色走）；`::selection` 文字色走 `--accent-contrast`。
+  5. 取色回落：`SettingsDialog` 取色失败不再硬写 `#fa243c`，改为不写 `accent` 字段（不覆写）；`lib/accent.ts` 的非法 hex 回落基色改为中性灰 `#77777a`。
+  6. 图标：改用 **Apple Music 官方音符标**（`https://music.apple.com/assets/favicon/favicon.svg`，白底黑色音符、无圆角、由系统加圆角），源保存在 `assets/pwa-icon.svg` 与 `public/favicon.svg`；由它导出 `apple-touch-icon-180x180.png`（180）、`pwa-192x192.png`（192）、`pwa-512x512.png`（512，预乘 alpha 双线性缩放）。
+  7. maskable 单出一份 `pwa-512x512-maskable.png`：白底铺满、图形缩到 78% 居中，落在 Android maskable 的 0.8 安全区内。**不能与 512 共用**——Apple 音符标是满出血图形，直接当 maskable 被裁成圆形时音符会切到边缘。
+- 为什么选这个：中性强调色让封面 / 专辑主色成为页面上唯一的彩色，视觉焦点回归内容；且中性令牌天然满足两态对比度，不必为浅色单独发明一套彩色。实心按钮反色与既有 `--play-neutral` / `--star` 同一套思路，语义一致。
+- 后果 / 已知边界：强调色与正文前景同色，部分「文字用强调色」处（当前播放行标题、页签选中、链接 hover）不再靠色相区分，改由字重 / 下划线 / 背景承担——已在需要处保留或补足。自定义背景取色仍会带来彩色强调（用户主动选择，不属默认外观）。图标 PNG 由源 SVG 离线导出（预乘 alpha 缩放）后提交进仓库，不走 assets-generator；若日后重新生成，需按第 7 条另出 maskable 一份。

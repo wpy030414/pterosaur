@@ -81,7 +81,7 @@
 
 .confirm-dialog__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .confirm-dialog__btn--primary:hover {

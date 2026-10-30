@@ -32,7 +32,7 @@ function currentSource(
 /**
  * 给 `<html>` 打 `data-source="<源>"`，触发 `tokens.css` 里对应的强调色。
  *
- * 当前仅网易云一个源，即缺省红；机制保留以便将来新增源时零改动接入
+ * 当前仅网易云一个源，即缺省（中性）强调色；机制保留以便将来新增源时零改动接入
  * （新源只需在 `tokens.css` 增 `:root[data-source='<新源>']` 覆盖块）。
  */
 export function useSourceTheme(): void {

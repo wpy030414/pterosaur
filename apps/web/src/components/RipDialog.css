@@ -91,7 +91,7 @@
 .rip-dialog__seg-btn--active,
 .rip-dialog__seg-btn--active:hover:not(:disabled) {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .rip-dialog__seg-btn:disabled {
@@ -191,7 +191,7 @@
 
 .rip-dialog__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .rip-dialog__btn--primary:hover:not(:disabled) {

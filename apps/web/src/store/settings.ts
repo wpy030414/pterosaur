@@ -13,8 +13,8 @@ export interface BackgroundConfig {
   kind: 'image' | 'video'
   /** 原始媒体类型（用于回放时判断，以及个别浏览器的兼容处理）。 */
   mime: string
-  /** 从背景取出的主题色（base，十六进制如 `#3b6ea5`），用于替换默认强调色。 */
-  accent: string
+  /** 从背景取出的主题色（base，十六进制如 `#3b6ea5`），用于覆写中性强调色；缺省表示未取到色（不覆写）。 */
+  accent?: string
 }
 
 interface SettingsState {

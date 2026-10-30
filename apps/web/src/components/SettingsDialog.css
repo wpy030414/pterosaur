@@ -145,14 +145,14 @@
 
 .settings-dialog__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .settings-dialog__btn--primary:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
-/* 中性按钮：非危险操作（清理缓存）走这一档，避免与「重置」两个红按钮并排 */
+/* 中性按钮：非危险操作（清理缓存）走这一档，避免与「重置」（危险色）按钮并排 */
 .settings-dialog__btn--neutral {
   background: var(--bg-hover);
   color: var(--text);
@@ -213,10 +213,10 @@
 
 .settings-dialog__seg-btn--active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .settings-dialog__seg-btn--active:hover {
   background: var(--accent-hover);
-  color: #fff;
+  color: var(--accent-contrast);
 }
