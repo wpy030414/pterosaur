@@ -9,6 +9,7 @@ import {
   Plus,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { keyOf } from '@pterosaur/shared/types'
 import { useLibrary } from '../store/library.js'
 import { useCreatePlaylist, useSidebarDrawer } from '../store/ui.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -189,6 +190,7 @@ export function Sidebar() {
                 <Cover
                   src={coverAt(p.tracks[0]?.cover, COVER_SMALL)}
                   alt={p.name}
+                  seed={keyOf({ id: p.id })}
                   radius="sm"
                   size={19}
                 />
@@ -211,6 +213,7 @@ export function Sidebar() {
                 <Cover
                   src={coverAt(p.cover, COVER_SMALL)}
                   alt={p.name}
+                  seed={keyOf(p)}
                   radius="sm"
                   size={19}
                 />
