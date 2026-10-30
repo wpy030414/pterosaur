@@ -3,7 +3,7 @@ import {
   Search,
   LayoutGrid,
   Radio,
-  Heart,
+  Star,
   User,
   Disc3,
   Plus,
@@ -174,7 +174,7 @@ export function Sidebar() {
                 `nav-item${isActive ? ' nav-item--active' : ''}`
               }
             >
-              <Heart size={19} strokeWidth={1.9} />
+              <Star size={19} strokeWidth={1.9} />
               <span className="nav-item__label">我喜欢的音乐</span>
             </AppLink>
 

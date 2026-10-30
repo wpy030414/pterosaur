@@ -9,8 +9,8 @@ import '../pages.css'
 /**
  * 库 · 专辑：收藏的专辑。
  *
- * 原「唱片盒」一页里的专辑分区，拆成独立子页（艺人见 `Artists.tsx`）。
- * 与艺人页一致：列表在**进入时冻结**（读一次 store 快照），页内取消收藏不即时移除。
+ * 原「唱片盒」一页里的专辑分区，拆成独立子页（艺术家见 `Artists.tsx`）。
+ * 与艺术家页一致：列表在**进入时冻结**（读一次 store 快照），页内取消收藏不即时移除。
  */
 export function AlbumsPage() {
   const navigate = useViewNavigate()
@@ -26,7 +26,7 @@ export function AlbumsPage() {
       {savedAlbums.length === 0 ? (
         <section className="section">
           <Empty
-            text="还没有收藏的专辑，去专辑页点红心收藏吧"
+            text="还没有收藏的专辑"
             icon={<Disc3 size={32} strokeWidth={1.5} />}
           />
         </section>

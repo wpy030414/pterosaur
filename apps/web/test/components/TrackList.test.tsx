@@ -20,7 +20,7 @@ function track(id: string, title: string, extra: Partial<Track> = {}): Track {
     source: 'netease',
     id,
     title,
-    artist: `艺人${id}`,
+    artist: `艺术家${id}`,
     album: `专辑${id}`,
     cover: '',
     duration: 200,
@@ -80,7 +80,7 @@ describe('TrackList', () => {
     expect(screen.getByText('这里空空如也')).toBeInTheDocument()
   })
 
-  it('渲染所有曲目名称与艺人', () => {
+  it('渲染所有曲目名称与艺术家', () => {
     renderList(<TrackList tracks={SONGS} />)
     for (const s of SONGS) {
       expect(screen.getByText(s.title)).toBeInTheDocument()
@@ -176,20 +176,20 @@ describe('TrackList', () => {
     expect(usePlayer.getState().current?.id).toBe('BV1:1')
   })
 
-  it('点击艺人名跳转艺人页，且不触发行播放', () => {
+  it('点击艺术家名跳转艺术家页，且不触发行播放', () => {
     const t = [
       track('1', '第一首', {
-        artist: '某艺人',
-        artistRefs: [{ id: '9', name: '某艺人' }],
+        artist: '某艺术家',
+        artistRefs: [{ id: '9', name: '某艺术家' }],
       }),
     ]
     renderList(<TrackList tracks={t} />)
-    fireEvent.click(screen.getByRole('button', { name: '某艺人' }))
+    fireEvent.click(screen.getByRole('button', { name: '某艺术家' }))
     expect(screen.getByTestId('loc')).toHaveTextContent('/artist/netease/9')
     expect(usePlayer.getState().current).toBeNull()
   })
 
-  it('多艺人各自可点击跳转', () => {
+  it('多艺术家各自可点击跳转', () => {
     const t = [
       track('1', '合唱', {
         artist: '甲 / 乙',
@@ -212,12 +212,36 @@ describe('TrackList', () => {
     expect(usePlayer.getState().current).toBeNull()
   })
 
-  it('缺少 id 时艺人 / 专辑降级为纯文本（不可点击）', () => {
+  it('缺少 id 时艺术家 / 专辑降级为纯文本（不可点击）', () => {
     const t = [track('1', '第一首')]
     renderList(<TrackList tracks={t} />)
-    expect(screen.queryByRole('button', { name: '艺人1' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '艺术家1' })).toBeNull()
     expect(screen.queryByRole('button', { name: '专辑1' })).toBeNull()
-    expect(screen.getByText('艺人1')).toBeInTheDocument()
+    expect(screen.getByText('艺术家1')).toBeInTheDocument()
     expect(screen.getByText('专辑1')).toBeInTheDocument()
+  })
+
+  it('showCover/showArtist/showAlbum 全关时只留歌名（专辑页精简行）', () => {
+    const t = [track('1', '第一首', { album: '某专辑', albumId: '77' })]
+    const { container } = renderList(
+      <TrackList
+        tracks={t}
+        showCover={false}
+        showArtist={false}
+        showAlbum={false}
+      />,
+    )
+    expect(container.querySelector('.track-list')).toHaveClass(
+      'track-list--no-cover',
+      'track-list--no-album',
+    )
+    // 封面：行内不再渲染 <img> 或封面占位
+    expect(screen.getByRole('list').querySelector('.cover')).toBeNull()
+    // 艺术家副标题与专辑列均不渲染
+    expect(screen.queryByText('艺术家1')).toBeNull()
+    expect(screen.queryByRole('button', { name: '某专辑' })).toBeNull()
+    expect(screen.queryByText('专辑')).toBeNull()
+    // 歌名仍在
+    expect(screen.getByText('第一首')).toBeInTheDocument()
   })
 })

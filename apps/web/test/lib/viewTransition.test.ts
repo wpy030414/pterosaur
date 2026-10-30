@@ -48,15 +48,15 @@ function noReducedMotion(): void {
 
 beforeEach(() => {
   noReducedMotion()
-  delete root().dataset.routeVt
   delete root().dataset.routeDir
+  delete root().dataset.routeVt
 })
 
 afterEach(() => {
   delete (document as unknown as { startViewTransition?: unknown })
     .startViewTransition
-  delete root().dataset.routeVt
   delete root().dataset.routeDir
+  delete root().dataset.routeVt
 })
 
 describe('startRouteTransition', () => {
@@ -72,39 +72,41 @@ describe('startRouteTransition', () => {
     await vi.waitFor(() => expect(root().dataset.routeVt).toBeUndefined())
   })
 
-  it('默认（路径变了）：跑转场，且命名标记在拍旧快照之前就绪', async () => {
+  it('默认（路径变了）：不跑转场，但同步提交更新并写入方向标记', () => {
     const { spy } = installFakeVT()
     let applied = false
 
     startRouteTransition(() => (applied = true), 'forward')
 
-    // 标记必须先于 startViewTransition 就绪（拍旧快照时 CSS 需已命名内容区）
-    expect(root().dataset.routeVt).toBe('on')
-    expect(spy).toHaveBeenCalledOnce()
-    await vi.waitFor(() => expect(applied).toBe(true))
-    await vi.waitFor(() => expect(root().dataset.routeVt).toBeUndefined())
+    // 内容区 View Transition 已停用（播放岛会与 top layer 快照冲突，见 lib/viewTransition.ts）
+    expect(spy).not.toHaveBeenCalled()
+    expect(applied).toBe(true)
+    // 方向标记仍写入——它驱动 app.css 的降级进场动画，与是否支持 VT 无关
+    expect(root().dataset.routeDir).toBe('forward')
+    // 旧实现的临时命名标记已不再使用
+    expect(root().dataset.routeVt).toBeUndefined()
   })
 
-  it('连续切换：开新转场前先 skip 掉上一段在飞转场（防旧快照层滞留）', () => {
-    const { list } = installFakeVT()
+  it('后退：方向标记为 back', () => {
+    const { spy } = installFakeVT()
 
-    startRouteTransition(() => {}, 'forward')
-    startRouteTransition(() => {}, 'forward')
-
-    expect(list).toHaveLength(2)
-    expect(list[0].skipTransition).toHaveBeenCalledOnce()
-  })
-
-  it('skip 更新也会掐掉在飞转场（转场中切 tab：旧快照不得盖住新内容）', () => {
-    const { list } = installFakeVT()
-
-    // 先起一段路由转场（如下钻返回），未结束就来一次同页切 tab
     startRouteTransition(() => {}, 'back')
+
+    expect(spy).not.toHaveBeenCalled()
+    expect(root().dataset.routeDir).toBe('back')
+  })
+
+  it('skip（同页切换）：不写方向标记，且不残留上一段的方向', () => {
+    const { spy } = installFakeVT()
+
+    startRouteTransition(() => {}, 'back')
+    expect(root().dataset.routeDir).toBe('back')
+
+    // 随后一次同页变更（如仅改查询串的切 tab）
     startRouteTransition(() => {}, 'forward', { skip: true })
 
-    expect(list).toHaveLength(1)
-    expect(list[0].skipTransition).toHaveBeenCalledOnce()
-    // 不转场路径不再命名内容区
+    expect(spy).not.toHaveBeenCalled()
+    expect(root().dataset.routeDir).toBeUndefined()
     expect(root().dataset.routeVt).toBeUndefined()
   })
 

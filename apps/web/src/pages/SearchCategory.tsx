@@ -301,7 +301,7 @@ function CategoryList({
         ))}
       </div>
     ) : (
-      <Empty text="没有找到相关艺人" />
+      <Empty text="没有找到相关艺术家" />
     )
   }
 

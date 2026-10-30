@@ -91,7 +91,7 @@ interface RawSong {
   album?: { id?: number; name?: string; picUrl?: string; blurPicUrl?: string }
 }
 
-/** 网易云返回的原始艺人结构（部分字段）。 */
+/** 网易云返回的原始艺术家结构（部分字段）。 */
 interface RawArtist {
   id: number
   name: string
@@ -110,6 +110,10 @@ interface RawAlbum {
   size?: number
   trackCount?: number
   publishTime?: number
+  /** 流派标签；上游多为空串 */
+  tags?: string
+  /** 体裁：中文「专辑」、或 "Single" / "EP" 等 */
+  type?: string
   artist?: { id?: number; name: string }
   artists?: { id?: number; name: string }[]
 }
@@ -181,24 +185,24 @@ export function normalizeTrack(raw: RawSong): Track {
     source: 'netease',
     id: String(raw.id),
     title: raw.name ?? '未知曲目',
-    artist: artists.join(' / ') || '未知艺人',
+    artist: artists.join(' / ') || '未知艺术家',
     album: album?.name ?? '',
     // 封面按需放大，网易云支持 ?param=WxH 缩略参数
     cover: coverUrl(coverRaw, BASE_COVER_SIZE),
     duration: Math.round(((raw.dt ?? raw.duration ?? 0) as number) / 1000),
     fee: feeOf(raw.fee),
-    // 供界面跳转艺人页 / 专辑页；缺失时前端降级为纯文本
+    // 供界面跳转艺术家页 / 专辑页；缺失时前端降级为纯文本
     artistRefs: artistRefs.length ? artistRefs : undefined,
     albumId: album && album.id != null ? String(album.id) : undefined,
   }
 }
 
-/** 将网易云原始艺人归一化为共享 Artist。 */
+/** 将网易云原始艺术家归一化为共享 Artist。 */
 export function normalizeArtist(raw: RawArtist): Artist {
   return {
     source: 'netease',
     id: String(raw.id),
-    name: raw.name ?? '未知艺人',
+    name: raw.name ?? '未知艺术家',
     avatar: coverUrl(raw.picUrl, BASE_COVER_SIZE),
     alias: raw.alias?.length ? raw.alias : undefined,
     albumSize: raw.albumSize,
@@ -207,19 +211,41 @@ export function normalizeArtist(raw: RawArtist): Artist {
   }
 }
 
+/** 网易云专辑 `type` → 共享体裁。中文「专辑」与英文 "Album" 都算专辑。 */
+function albumTypeOf(raw?: string): Album['type'] {
+  const t = raw?.trim().toLowerCase()
+  if (!t) return undefined
+  if (t === '专辑' || t === 'album') return 'album'
+  if (t === 'single' || t === '单曲') return 'single'
+  if (t === 'ep') return 'ep'
+  return 'other'
+}
+
 /** 将网易云原始专辑归一化为共享 Album。 */
 export function normalizeAlbum(raw: RawAlbum): Album {
   const list = raw.artists ?? (raw.artist ? [raw.artist] : [])
   const names = list.map((a) => a?.name).filter(Boolean)
-  const primaryId = list.find((a) => a && a.id != null)?.id
+  // 逐个艺术家的引用（合作专辑每个都能点）；仅保留同时具备 id 与名字的条目，与 normalizeTrack 一致
+  const artistRefs = list
+    .filter(
+      (a): a is { id?: number; name: string } => !!a?.name && a?.id != null,
+    )
+    .map((a) => ({ id: String(a.id), name: a.name }))
+  const primaryId = artistRefs[0]?.id
   return {
     source: 'netease',
     id: String(raw.id),
     name: raw.name ?? '未命名专辑',
     cover: coverUrl(raw.picUrl, BASE_COVER_SIZE),
-    artist: names.join(' / ') || '未知艺人',
-    artistId: primaryId != null ? String(primaryId) : undefined,
+    artist: names.join(' / ') || '未知艺术家',
+    artistId: primaryId,
+    artistRefs: artistRefs.length ? artistRefs : undefined,
     year: raw.publishTime ? new Date(raw.publishTime).getFullYear() : undefined,
+    // 流派：上游 `tags` 字段。目前实测恒为空串（网易云不公开专辑流派），
+    // 故仅在非空时填充，界面据「有流派才拼」降级处理。
+    genre: raw.tags?.trim() ? raw.tags.trim() : undefined,
+    // 体裁：上游 type 为中文「专辑」或英文 "Single" / "EP" 等；无法识别时归 other
+    type: albumTypeOf(raw.type),
     trackCount: raw.size ?? raw.trackCount,
   }
 }
@@ -267,7 +293,7 @@ export async function searchSongs(
   return songs.map(normalizeTrack)
 }
 
-/** 搜索艺人（cloudsearch type=100）。 */
+/** 搜索艺术家（cloudsearch type=100）。 */
 export async function searchArtists(
   keywords: string,
   limit = 30,
@@ -341,12 +367,44 @@ export async function toplists(): Promise<Playlist[]> {
   }))
 }
 
-/** 精品歌单。 */
+/**
+ * 网易云官方的「热歌榜」歌单 id（`/api/toplist` 中固定出现，名称「热歌榜」）。
+ *
+ * 上游没有「正在流行中」这种语义的直接接口；榜单是唯一带**实时热度排序**的曲目
+ * 来源，热歌榜即其综合热度榜，最贴近该语义。
+ */
+const HOT_PLAYLIST_ID = '3778678'
+
+/**
+ * 「正在流行中」：热歌榜当天的曲目，按榜单顺序（即热度）取前 `limit` 首。
+ *
+ * 曲目结构与歌单详情相同（标准 `RawSong`），复用同一套归一化。
+ */
+export async function hotSongs(limit = 24): Promise<Track[]> {
+  const res = await api.playlist_detail({ id: HOT_PLAYLIST_ID, s: 8 })
+  const list: RawSong[] = res?.body?.playlist?.tracks ?? []
+  return list
+    .filter((s) => !!s && s.id != null)
+    .slice(0, limit)
+    .map(normalizeTrack)
+}
+
+/**
+ * 精品歌单（「歌单已更新」的数据源）。
+ *
+ * 上游按歌单**更新时间**倒序回「最近更新过曲目的编辑精选歌单」，与分区语义正好对应；
+ * 翻页用 `offset`（每页整 30 条，实测相邻页无重复），首页只取一页、广播页无限续页。
+ */
 export async function topPlaylists(
   limit = 12,
   cat = '全部',
+  page = 1,
 ): Promise<Playlist[]> {
-  const res = await api.top_playlist({ limit, cat })
+  const res = await api.top_playlist({
+    limit,
+    cat,
+    offset: offsetOf(page, limit),
+  })
   const list: RawPlaylist[] = res?.body?.playlists ?? []
   return list.map(normalizePlaylist)
 }
@@ -420,23 +478,97 @@ export async function playlistTracks(
   return { playlist, tracks }
 }
 
-/** 艺人详情：档案 + 热门单曲 + 专辑列表。 */
+/**
+ * 艺术家作品分页拉取的三个上限。
+ *
+ * `artist_album` 单页最多回 200 条；为防止极端艺术家（上千张作品）把请求拖长、打爆上游，
+ * 这里最多翻 10 页，合计上限 2000 张，超出部分不再尝试。
+ * （单个艺术家超过 2000 张作品几乎不可能，故以此封顶。）
+ */
+const ARTIST_ALBUM_PAGE = 200
+const ARTIST_ALBUM_MAX_PAGES = 10
+
+/**
+ * 分页收集作品：`fetchPage` 返回该页列表与「是否还有更多」。
+ *
+ * 停止条件三者取先：本页不足一页（已到末尾）、显式 `more === false`、或已达页数上限。
+ * 单页抛错时保留已取到的部分——作品区短一点好过整页打不开。
+ *
+ * 抽成纯函数是为了单独验证「最多 10 页 / 上限 2000」的规则，不必 mock 网络。
+ */
+export async function collectAlbumPages(
+  fetchPage: (
+    offset: number,
+  ) => Promise<{ list: unknown[]; more?: boolean } | undefined>,
+  opts: { pageSize?: number; maxPages?: number } = {},
+): Promise<unknown[]> {
+  const pageSize = opts.pageSize ?? ARTIST_ALBUM_PAGE
+  const maxPages = opts.maxPages ?? ARTIST_ALBUM_MAX_PAGES
+  const limit = pageSize * maxPages
+  const all: unknown[] = []
+  for (let page = 0; page < maxPages; page++) {
+    let res: { list: unknown[]; more?: boolean } | undefined
+    try {
+      res = await fetchPage(page * pageSize)
+    } catch {
+      break
+    }
+    const list = res?.list ?? []
+    all.push(...list)
+    if (list.length < pageSize) break
+    if (res?.more === false) break
+    if (all.length >= limit) break
+  }
+  return all.slice(0, limit)
+}
+
+/**
+ * 拉取艺术家的全部作品（分页循环）。
+ *
+ * 单页 200、最多 10 页（合计 ≤2000 张）。停止条件与兜底见 {@link collectAlbumPages}。
+ */
+async function fetchArtistAlbums(
+  id: string,
+  cookie?: string,
+): Promise<RawAlbum[]> {
+  const all = await collectAlbumPages(async (offset) => {
+    const res = await api.artist_album({
+      id,
+      limit: ARTIST_ALBUM_PAGE,
+      offset,
+      cookie,
+    })
+    const body = res?.body as
+      | { hotAlbums?: RawAlbum[]; albums?: RawAlbum[]; more?: boolean }
+      | undefined
+    return {
+      list: body?.hotAlbums ?? body?.albums ?? [],
+      more: body?.more,
+    }
+  })
+  return all as RawAlbum[]
+}
+
+/**
+ * 艺术家详情：档案 + 热门单曲（上游固定约 50 首）+ 全部作品。
+ *
+ * 作品按单页 200、最多 10 页分页取全（上限 2000 张），供艺术家页「一次载入完再展示」；
+ * 前端不再二次截断数据，只在滑轨里限制首屏显示条数。
+ */
 export async function artistDetail(
   id: string,
   cookie?: string,
 ): Promise<{ artist: Artist; tracks: Track[]; albums: Album[] }> {
-  const [info, albumRes] = await Promise.all([
+  const [info, rawAlbums] = await Promise.all([
     api.artists({ id, cookie }),
-    api.artist_album({ id, limit: 50, cookie }),
+    fetchArtistAlbums(id, cookie),
   ])
   const artist = normalizeArtist(
-    (info?.body?.artist ?? { id, name: '未知艺人' }) as RawArtist,
+    (info?.body?.artist ?? { id, name: '未知艺术家' }) as RawArtist,
   )
   const tracks: Track[] = ((info?.body?.hotSongs ?? []) as RawSong[]).map(
     normalizeTrack,
   )
-  const rawAlbums: RawAlbum[] =
-    albumRes?.body?.hotAlbums ?? albumRes?.body?.albums ?? []
   return { artist, tracks, albums: rawAlbums.map(normalizeAlbum) }
 }
 
@@ -756,6 +888,7 @@ export const neteaseAdapter: SourceAdapter = {
   topPlaylists,
   newSongs,
   newAlbums,
+  hotSongs,
   playlistCategories,
   artistDetail,
   albumDetail,

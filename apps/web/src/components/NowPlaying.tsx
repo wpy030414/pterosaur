@@ -5,9 +5,9 @@ import {
   Pause,
   SkipBack,
   SkipForward,
-  Heart,
   ListMusic,
   Loader2,
+  Star,
 } from 'lucide-react'
 import { usePlayer, currentPlayMode } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
@@ -73,7 +73,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
   const setExpanded = usePlayer((s) => s.setExpanded)
   const navigate = useViewNavigate()
 
-  /** 跳转到专辑 / 艺人页：先收起沉浸页，否则整屏浮层会盖住目标页面。 */
+  /** 跳转到专辑 / 艺术家页：先收起沉浸页，否则整屏浮层会盖住目标页面。 */
   const openEntity = (to: string) => {
     setExpanded(false)
     void navigate(to)
@@ -191,7 +191,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
     }
   }, [open, current, level])
 
-  // 移动端「专注歌词」：点封面收起（缩小封面 + 隐藏歌名 / 歌手，腾给歌词），再点复原。
+  // 移动端「专注歌词」：点封面收起（缩小封面 + 隐藏歌名 / 艺术家，腾给歌词），再点复原。
   const isMobile = useMediaQuery(MOBILE_QUERY)
   const [lyricFocused, setLyricFocused] = useState(false)
   // 切歌 / 收起沉浸页时复位为初始态
@@ -344,7 +344,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
             active={isFav}
             onClick={() => toggleFavorite(current)}
           >
-            <Heart
+            <Star
               size={20}
               strokeWidth={2}
               fill={isFav ? 'currentColor' : 'none'}
@@ -353,7 +353,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
         </header>
 
         <div className="nowplaying__body">
-          {/* 左：封面。移动端可点按切换「专注歌词」（缩小封面、隐藏歌名 / 歌手，腾给歌词）。 */}
+          {/* 左：封面。移动端可点按切换「专注歌词」（缩小封面、隐藏歌名 / 艺术家，腾给歌词）。 */}
           <div
             className={`nowplaying__art${isMobile ? ' nowplaying__art--tap' : ''}`}
             onClick={isMobile ? () => setLyricFocused((v) => !v) : undefined}

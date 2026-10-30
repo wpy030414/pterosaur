@@ -42,7 +42,7 @@
   height: 100%;
 }
 
-/* 艺人卡片：圆形头像 */
+/* 艺术家卡片：圆形头像 */
 .card__art--circle {
   border-radius: 50%;
 }
@@ -56,7 +56,7 @@
   display: block;
 }
 
-/* 播放按钮：悬浮时浮现 */
+/* 播放按钮：悬浮时浮现。中性色实心圆——深色白底黑图标、浅色黑底白图标 */
 .card__play {
   position: absolute;
   right: 8px;
@@ -67,8 +67,8 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--play-neutral);
+  color: var(--play-neutral-text);
   opacity: 0;
   transform: translateY(8px);
   transition:
@@ -89,7 +89,7 @@
 }
 
 .card__play:hover {
-  background: var(--accent-hover);
+  background: var(--play-neutral-hover);
   transform: scale(1.06);
 }
 
@@ -137,15 +137,16 @@
   background: var(--control-overlay-hover);
 }
 
-/* 已收藏：常显 + 强调色（选择器与 `.card__fav:hover` 同权重、靠后生效，避免被中性 hover 盖掉） */
+/* 已收藏：常显 + 中性令牌底与令牌前景（深色白星 / 浅色黑星），不再用强调红 */
 .card__fav.card__fav--active {
   opacity: 1;
   transform: translateY(0);
-  background: var(--accent);
+  background: var(--bg-elevated);
+  color: var(--star);
 }
 
 .card__fav.card__fav--active:hover {
-  background: var(--accent-hover);
+  background: var(--bg-elevated-2);
 }
 
 .card__body {

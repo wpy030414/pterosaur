@@ -74,7 +74,7 @@ export interface RipMeta {
   source?: MusicSource
   /** 源内合集 id（`favorites` 无）。 */
   sourceId?: string
-  /** 合集创建者（歌单作者 / 专辑艺人由 tracks 承载，磁带为 UP 主）。 */
+  /** 合集创建者（歌单作者 / 专辑艺术家由 tracks 承载，磁带为 UP 主）。 */
   creator?: string
   /** 封面文件信息；未获取到封面时缺省。 */
   cover?: { file: string; url: string }

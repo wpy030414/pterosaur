@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { Play, Shuffle, Heart } from 'lucide-react'
+import { Play, Shuffle, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -29,7 +29,7 @@ interface AlbumDetail {
 }
 
 /**
- * 专辑详情页：封面 + 档案（含可点击的艺人）+ 曲目列表。
+ * 专辑详情页：封面 + 档案（含可点击的艺术家）+ 曲目列表。
  */
 export function AlbumPage() {
   const params = useParams()
@@ -112,15 +112,8 @@ export function AlbumPage() {
     )
   }
 
-  const meta = [
-    album.year ? String(album.year) : '',
-    tracks.length ? `${tracks.length} 首` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-
   return (
-    <div className="detail" aria-busy={loading}>
+    <div className="detail detail--album" aria-busy={loading}>
       <header className="detail__hero">
         <Cover
           src={coverAt(album.cover, COVER_LARGE)}
@@ -130,71 +123,105 @@ export function AlbumPage() {
           className="detail__cover"
         />
         <div className="detail__info">
-          <span className="detail__type">专辑</span>
+          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">{album.name}</h1>
-          <p className="detail__meta">
-            {album.artistId ? (
-              <button
-                type="button"
-                className="detail__artist-link"
-                onClick={() =>
-                  navigate(
-                    `/artist/${album.source}/${album.artistId}?name=${encodeURIComponent(album.artist)}`,
-                  )
-                }
-              >
-                {album.artist}
-              </button>
-            ) : (
-              <span>{album.artist}</span>
-            )}
-            {meta && <span> · {meta}</span>}
+          <p className="detail__artist">
+            {albumArtistLinks(album, navigate) ?? <span>{album.artist}</span>}
           </p>
+          {(album.genre || album.year) && (
+            <p className="detail__year">
+              {[album.genre, album.year ? `${album.year}年` : '']
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
+
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="detail__play"
+              onClick={() => handlePlay(false)}
+              disabled={!tracks.length}
+            >
+              <Play size={18} fill="currentColor" strokeWidth={0} />
+              播放
+            </button>
+            <IconButton
+              label="随机播放"
+              size="lg"
+              onClick={() => handlePlay(true)}
+              disabled={!tracks.length}
+            >
+              <Shuffle size={20} strokeWidth={2} />
+            </IconButton>
+            <IconButton
+              label={isSaved ? '取消收藏' : '收藏到资料库'}
+              size="lg"
+              active={isSaved}
+              onClick={() => toggleSaveAlbum(album)}
+            >
+              <Star
+                size={20}
+                strokeWidth={2}
+                fill={isSaved ? 'currentColor' : 'none'}
+              />
+            </IconButton>
+            <RipButton
+              progress={myRip}
+              disabled={
+                !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
+              }
+              onClick={handleDownloadPlaylist}
+            />
+          </div>
         </div>
       </header>
 
-      <div className="detail__actions">
-        <button
-          type="button"
-          className="detail__play"
-          onClick={() => handlePlay(false)}
-          disabled={!tracks.length}
-        >
-          <Play size={18} fill="currentColor" strokeWidth={0} />
-          播放
-        </button>
-        <IconButton
-          label="随机播放"
-          size="lg"
-          onClick={() => handlePlay(true)}
-          disabled={!tracks.length}
-        >
-          <Shuffle size={20} strokeWidth={2} />
-        </IconButton>
-        <IconButton
-          label={isSaved ? '取消收藏' : '收藏到资料库'}
-          size="lg"
-          active={isSaved}
-          onClick={() => toggleSaveAlbum(album)}
-        >
-          <Heart
-            size={20}
-            strokeWidth={2}
-            fill={isSaved ? 'currentColor' : 'none'}
-          />
-        </IconButton>
-        <RipButton
-          progress={myRip}
-          disabled={
-            !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
-          }
-          onClick={handleDownloadPlaylist}
-        />
-      </div>
-
+      {/* 专辑页整页同一张专辑、同一批艺术家：行内不再重复封面 / 艺术家 / 专辑列 */}
       <div className="detail__list">
-        <TrackList tracks={tracks} emptyText="这张专辑还没有曲目" />
+        <TrackList
+          tracks={tracks}
+          showAlbum={false}
+          showCover={false}
+          showArtist={false}
+          emptyText="这张专辑还没有曲目"
+        />
       </div>
     </div>
   )
+}
+
+/**
+ * 专辑艺术家的可点击链接（合作专辑逐个可点）。
+ *
+ * 优先用 `artistRefs`（每个艺术家都有 id）；旧数据只有 `artistId` 时用整体名串兜底；
+ * 都没有时返回 `null`，由调用方降级为纯文本。
+ */
+function albumArtistLinks(
+  album: Album,
+  navigate: (to: string) => void,
+): React.ReactNode {
+  const refs = album.artistRefs?.length
+    ? album.artistRefs
+    : album.artistId
+      ? [{ id: album.artistId, name: album.artist }]
+      : []
+  if (!refs.length) return null
+  return refs.map((a, i) => (
+    <span key={`${a.id}-${i}`}>
+      {i > 0 && ' / '}
+      <button
+        type="button"
+        className="detail__artist-link"
+        onClick={() =>
+          navigate(
+            `/artist/${album.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
+          )
+        }
+      >
+        {a.name}
+      </button>
+    </span>
+  ))
 }

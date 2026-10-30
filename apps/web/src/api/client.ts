@@ -82,7 +82,7 @@ export const api = {
     get<Track[]>(`${API_BASE}/search`, { keywords, limit, source }),
 
   /**
-   * 多类型搜索：并行返回歌曲 / 艺人 / 专辑 / 歌单；`page` 供滚动续取，`type` 限定只跑一类。
+   * 多类型搜索：并行返回歌曲 / 艺术家 / 专辑 / 歌单；`page` 供滚动续取，`type` 限定只跑一类。
    * 磁带渠道（B 站）的 `playlists` 即**磁带**（`source:'bilibili'` 的 Playlist，见 ADR-044）。
    */
   searchAll: (
@@ -100,7 +100,7 @@ export const api = {
       type,
     }),
 
-  /** 艺人详情：档案 + 热门单曲 + 专辑列表（`name` 供「无按-id 取歌手」能力的源按名搜索）。 */
+  /** 艺术家详情：档案 + 热门单曲 + 专辑列表（`name` 供「无按-id 取艺术家」能力的源按名搜索）。 */
   artist: (source: MusicSource, id: string, name?: string) =>
     get<{ artist: Artist; tracks: Track[]; albums: Album[] }>(
       `${API_BASE}/artist/${source}/${encodeURIComponent(id)}`,
@@ -128,12 +128,21 @@ export const api = {
   toplists: (source: MusicSource, limit = 50) =>
     get<Playlist[]>(`${API_BASE}/discover/toplists`, { limit, source }),
 
-  playlists: (source: MusicSource, limit = 12, cat = '全部') =>
-    get<Playlist[]>(`${API_BASE}/discover/playlists`, { limit, cat, source }),
+  playlists: (source: MusicSource, limit = 12, cat = '全部', page = 1) =>
+    get<Playlist[]>(`${API_BASE}/discover/playlists`, {
+      limit,
+      cat,
+      page,
+      source,
+    }),
 
   /** 「新歌精选」：发现流的一个纵向分区。 */
   newSongs: (source: MusicSource, limit = 20) =>
     get<Track[]>(`${API_BASE}/discover/new-songs`, { limit, source }),
+
+  /** 「正在流行中」：热歌榜曲目，按热度排序（发现流的一个纵向分区）。 */
+  hotSongs: (source: MusicSource, limit = 24) =>
+    get<Track[]>(`${API_BASE}/discover/hot-songs`, { limit, source }),
 
   /** 歌单分类标签（搜索页的流派快捷入口）。 */
   categories: (source: MusicSource) =>

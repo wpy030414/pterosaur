@@ -3,6 +3,7 @@ import {
   normalizeTrack,
   normalizeArtist,
   normalizeAlbum,
+  collectAlbumPages,
   qrKey,
   qrLoginUrl,
   qrCheck,
@@ -67,7 +68,7 @@ describe('normalizeArtist', () => {
   it('归一化头像为 https + 固定镜像主机并保留统计信息', () => {
     const a = normalizeArtist({
       id: 5,
-      name: '某艺人',
+      name: '某艺术家',
       picUrl: 'http://p7.music.126.net/a.jpg',
       albumSize: 3,
       musicSize: 20,
@@ -82,7 +83,7 @@ describe('normalizeArtist', () => {
 })
 
 describe('normalizeAlbum', () => {
-  it('取主艺人 id 与发行年份；封面规范化', () => {
+  it('取主艺术家 id 与发行年份；封面规范化', () => {
     const al = normalizeAlbum({
       id: 7,
       name: '某专辑',
@@ -97,9 +98,121 @@ describe('normalizeAlbum', () => {
     expect(al.id).toBe('7')
     expect(al.artist).toBe('甲 / 乙')
     expect(al.artistId).toBe('3')
+    // 合作专辑：每个艺术家都带 id，供界面逐个跳转（此前只有整体名串，只能跳到第一个）
+    expect(al.artistRefs).toEqual([
+      { id: '3', name: '甲' },
+      { id: '4', name: '乙' },
+    ])
     expect(al.year).toBe(2020)
     expect(al.trackCount).toBe(10)
     expect(al.cover).toBe(`https://${NETEASE_IMAGE_HOST}/b.jpg?param=1200y1200`)
+  })
+
+  it('缺少艺术家 id 时 artistRefs 缺省，artistId 亦缺省', () => {
+    const al = normalizeAlbum({
+      id: 8,
+      name: '无名专辑',
+      artist: { name: '甲' },
+    })
+    expect(al.artist).toBe('甲')
+    expect(al.artistRefs).toBeUndefined()
+    expect(al.artistId).toBeUndefined()
+  })
+
+  it('流派：tags 非空时填充，空串或空白时缺省', () => {
+    const withGenre = normalizeAlbum({
+      id: 9,
+      name: '有流派',
+      artist: { id: 1, name: '甲' },
+      tags: ' 流行 ',
+    })
+    expect(withGenre.genre).toBe('流行')
+
+    // 网易云实测 tags 恒为空串：不得把空串当成流派传给界面
+    const empty = normalizeAlbum({
+      id: 10,
+      name: '无流派',
+      artist: { id: 1, name: '甲' },
+      tags: '   ',
+    })
+    expect(empty.genre).toBeUndefined()
+  })
+
+  it('体裁：中文「专辑」与英文 Single/EP 均正确归类', () => {
+    const mk = (type?: string) =>
+      normalizeAlbum({ id: 1, name: 'x', artist: { id: 1, name: '甲' }, type })
+    expect(mk('专辑')?.type).toBe('album')
+    expect(mk('Album')?.type).toBe('album')
+    expect(mk('Single')?.type).toBe('single')
+    expect(mk('EP')?.type).toBe('ep')
+    // 无法识别的体裁归 other，缺省时保持 undefined
+    expect(mk('现场')?.type).toBe('other')
+    expect(mk()?.type).toBeUndefined()
+  })
+})
+
+/**
+ * 艺术家作品分页：单页 200、最多 10 页、合计上限 2000。
+ * 用纯函数 `collectAlbumPages` 验证规则本身，不 mock 网络。
+ */
+describe('collectAlbumPages', () => {
+  /** 造一个「共 total 张」的假上游。 */
+  const makeSource = (total: number, moreFlag?: boolean) => {
+    const calls: number[] = []
+    const fetchPage = vi.fn(async (offset: number) => {
+      calls.push(offset)
+      const list = Array.from(
+        { length: Math.min(200, Math.max(0, total - offset)) },
+        (_, i) => offset + i,
+      )
+      return { list, more: moreFlag ?? offset + list.length < total }
+    })
+    return { fetchPage, calls }
+  }
+
+  it('作品不足一页：只请求一次', async () => {
+    const { fetchPage } = makeSource(47)
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(47)
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+    expect(fetchPage).toHaveBeenCalledWith(0)
+  })
+
+  it('作品超过一页：按 200 翻页，offset 递增', async () => {
+    const { fetchPage } = makeSource(450)
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(450)
+    expect(fetchPage).toHaveBeenNthCalledWith(1, 0)
+    expect(fetchPage).toHaveBeenNthCalledWith(2, 200)
+    expect(fetchPage).toHaveBeenNthCalledWith(3, 400)
+  })
+
+  it('最多翻 10 页：作品再多也只请求 10 次、最多收 2000 张', async () => {
+    const { fetchPage } = makeSource(5000)
+    const all = await collectAlbumPages(fetchPage)
+    expect(fetchPage).toHaveBeenCalledTimes(10)
+    expect(all).toHaveLength(2000)
+  })
+
+  it('上游 more=false 时提前收手', async () => {
+    const { fetchPage } = makeSource(1000, false)
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(200)
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('某页失败时保留已取到的部分，不抛错', async () => {
+    let n = 0
+    const fetchPage = vi.fn(async (offset: number) => {
+      if (++n === 2) throw new Error('boom')
+      return {
+        list: Array.from({ length: 200 }, (_, i) => offset + i),
+        more: true,
+      }
+    })
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(200)
+    expect(fetchPage).toHaveBeenCalledTimes(2)
   })
 })
 

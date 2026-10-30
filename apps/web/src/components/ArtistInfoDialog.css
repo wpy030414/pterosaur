@@ -1,0 +1,112 @@
+/* 艺术家详情弹窗：遮罩 + 居中面板，正文区独立滚动 */
+.artist-info__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--scrim-strong);
+  backdrop-filter: blur(6px);
+  animation: artist-info-fade var(--dur) var(--ease);
+}
+
+.artist-info {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  /* 高度封顶：简介再长也不把页面撑长，正文自己滚 */
+  max-height: min(72vh, 640px);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  border: 1px solid var(--separator);
+  animation: artist-info-rise var(--dur) var(--ease-ios);
+}
+
+.artist-info__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 12px 24px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.artist-info__title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-info__body {
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.artist-info__row {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.artist-info__label {
+  flex-shrink: 0;
+  width: 44px;
+  color: var(--text-tertiary);
+}
+
+.artist-info__desc {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  /* 保留简介里的换行 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.artist-info__desc--empty {
+  color: var(--text-tertiary);
+}
+
+@keyframes artist-info-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes artist-info-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artist-info__overlay,
+  .artist-info {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .artist-info__overlay {
+    padding: 16px;
+    align-items: flex-end;
+  }
+
+  .artist-info {
+    max-height: 82vh;
+    border-radius: var(--radius-xl);
+  }
+}

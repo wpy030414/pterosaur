@@ -25,7 +25,7 @@ export const CASSETTE_SOURCE: MusicSource = 'bilibili'
  *
  * - `label`：界面文案（分区标题、独立页标题、「查看更多」按钮）。
  * - `subtitle`：分区标题下的次要说明。
- * - `apiType`：查 `/api/search/all?type=` 时用的类型。磁带渠道没有歌曲 / 艺人 / 专辑，
+ * - `apiType`：查 `/api/search/all?type=` 时用的类型。磁带渠道没有歌曲 / 艺术家 / 专辑，
  *   它的「视频」在接口上就是歌单（Playlist），故恒为 `playlists`。
  */
 export const SEARCH_CATEGORY_META: Record<
@@ -38,7 +38,7 @@ export const SEARCH_CATEGORY_META: Record<
 > = {
   songs: { label: '歌曲', subtitle: '单曲结果', apiType: 'songs' },
   cassette: { label: '磁带', subtitle: 'B 站视频合集', apiType: 'playlists' },
-  artists: { label: '艺人', subtitle: '歌手与乐队', apiType: 'artists' },
+  artists: { label: '艺术家', subtitle: '艺术家与乐队', apiType: 'artists' },
   albums: { label: '专辑', subtitle: '唱片专辑', apiType: 'albums' },
   playlists: { label: '歌单', subtitle: '精选歌单', apiType: 'playlists' },
 }

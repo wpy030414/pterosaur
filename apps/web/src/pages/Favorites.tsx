@@ -1,4 +1,4 @@
-import { Play, Shuffle, Heart } from 'lucide-react'
+import { Play, Shuffle, Star } from 'lucide-react'
 import { useLibrary } from '../store/library.js'
 import { usePlayer } from '../store/player.js'
 import { TrackList } from '../components/TrackList.js'
@@ -56,58 +56,51 @@ export function FavoritesPage() {
     })
   }
 
-  const totalDuration = favorites.reduce((sum, t) => sum + (t.duration || 0), 0)
-
   return (
-    <div className="detail">
+    <div className="detail detail--playlist">
       <header className="detail__hero">
         <div className="fav-cover" aria-hidden>
-          <Heart size={72} fill="currentColor" strokeWidth={0} />
+          <Star fill="currentColor" strokeWidth={0} />
         </div>
         <div className="detail__info">
-          <span className="detail__type">歌单</span>
+          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">我喜欢的音乐</h1>
-          <p className="detail__meta">
-            <span>{favorites.length} 首</span>
-            {totalDuration > 0 && (
-              <span> · 约 {Math.round(totalDuration / 60)} 分钟</span>
-            )}
-          </p>
+
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="detail__play"
+              onClick={() => handlePlay(false)}
+              disabled={!favorites.length}
+            >
+              <Play size={18} fill="currentColor" strokeWidth={0} />
+              播放
+            </button>
+            <IconButton
+              label="随机播放"
+              size="lg"
+              onClick={() => handlePlay(true)}
+              disabled={!favorites.length}
+            >
+              <Shuffle size={20} strokeWidth={2} />
+            </IconButton>
+            <RipButton
+              progress={myRip}
+              disabled={
+                !favorites.length || (ripJob !== null && ripJob.key !== ripKey)
+              }
+              onClick={handleDownloadPlaylist}
+            />
+          </div>
         </div>
       </header>
-
-      <div className="detail__actions">
-        <button
-          type="button"
-          className="detail__play"
-          onClick={() => handlePlay(false)}
-          disabled={!favorites.length}
-        >
-          <Play size={18} fill="currentColor" strokeWidth={0} />
-          播放
-        </button>
-        <IconButton
-          label="随机播放"
-          size="lg"
-          onClick={() => handlePlay(true)}
-          disabled={!favorites.length}
-        >
-          <Shuffle size={20} strokeWidth={2} />
-        </IconButton>
-        <RipButton
-          progress={myRip}
-          disabled={
-            !favorites.length || (ripJob !== null && ripJob.key !== ripKey)
-          }
-          onClick={handleDownloadPlaylist}
-        />
-      </div>
 
       <div className="detail__list">
         {favorites.length === 0 ? (
           <Empty
-            text="还没有喜欢的音乐，点击曲目行的红心收藏"
-            icon={<Heart size={32} strokeWidth={1.5} />}
+            text="还没有喜欢的音乐"
+            icon={<Star size={32} strokeWidth={1.5} />}
           />
         ) : (
           <TrackList tracks={favorites} />

@@ -16,7 +16,7 @@ const e2eTrack = (id: string, title: string) => ({
   source: 'netease',
   id,
   title,
-  artist: 'E2E 艺人',
+  artist: 'E2E 艺术家',
   album: 'E2E 专辑',
   cover: 'https://p3.music.126.net/e2e.jpg',
   duration: 180,

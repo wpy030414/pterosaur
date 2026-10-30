@@ -53,7 +53,7 @@ export function canonicalNeteaseImage(url: string): string {
 
 /** 小图边长（px）：列表行、播放条、卡片网格、顶栏头像等。 */
 export const COVER_SMALL = 300
-/** 大图边长（px）：沉浸页封面与背景、专辑/艺人/歌单详情 hero。 */
+/** 大图边长（px）：沉浸页封面与背景、专辑/艺术家/歌单详情 hero。 */
 export const COVER_LARGE = 1200
 /**
  * 翻录（打包下载）专辑封面边长（px）：**尽可能大**——实测（2026-10）网易云图片母带

@@ -206,7 +206,7 @@ test.describe('应用外壳', () => {
       source: 'netease',
       id: `seed-${i + 1}`,
       title: `种子曲目 ${i + 1}`,
-      artist: '艺人',
+      artist: '艺术家',
       album: '专辑',
       cover: '',
       duration: 200,
@@ -469,7 +469,7 @@ test.describe('全屏播放页与歌词', () => {
     await expect(page.locator('.nowplaying')).toHaveCount(0, { timeout: 3000 })
   })
 
-  test('沉浸页的专辑 / 歌手可点击跳转', async ({ page }) => {
+  test('沉浸页的专辑 / 艺术家可点击跳转', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
@@ -478,7 +478,7 @@ test.describe('全屏播放页与歌词', () => {
     await page.locator('.playerbar__cover-btn').click()
     await expect(page.locator('.nowplaying')).toBeVisible({ timeout: 5000 })
 
-    // 歌手名可点 → 跳转艺人页，且沉浸页自动收起
+    // 艺术家名可点 → 跳转艺术家页，且沉浸页自动收起
     const artistLink = page
       .locator('.nowplaying__artist .nowplaying__link')
       .first()
@@ -720,7 +720,7 @@ test.describe('资料库与收藏', () => {
       playlists: [],
       savedPlaylists: [],
       savedArtists: [
-        { source: 'netease', id: 'ar1', name: '测试艺人', avatar: '' },
+        { source: 'netease', id: 'ar1', name: '测试艺术家', avatar: '' },
       ],
       savedAlbums: [
         {
@@ -734,13 +734,13 @@ test.describe('资料库与收藏', () => {
     })
     await page.goto('/library/artists')
 
-    // 艺术家页只放艺人卡
+    // 艺术家页只放艺术家卡
     await expect(page.locator('.library-page__title')).toHaveText('艺术家')
     await expect(
       page.locator('.library-page .card--artist').first(),
-    ).toContainText('测试艺人')
+    ).toContainText('测试艺术家')
 
-    // 悬浮艺人卡片 → 取消收藏：红心转为未收藏态，但卡片**不立即消失**（防误触）
+    // 悬浮艺术家卡片 → 取消收藏：红心转为未收藏态，但卡片**不立即消失**（防误触）
     const artistCard = page.locator('.library-page .card--artist').first()
     await artistCard.hover()
     await artistCard.getByRole('button', { name: '取消收藏' }).click()
@@ -775,8 +775,8 @@ test.describe('资料库与收藏', () => {
     })
   })
 
-  test('收藏艺人后出现在库 · 艺术家页', async ({ page }) => {
-    // 直接从搜索结果的专辑分区进入专辑页，再走其中的艺人链接
+  test('收藏艺术家后出现在库 · 艺术家页', async ({ page }) => {
+    // 直接从搜索结果的专辑分区进入专辑页，再走其中的艺术家链接
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.card--album').first()).toBeVisible({
       timeout: 8000,
@@ -794,7 +794,7 @@ test.describe('资料库与收藏', () => {
     await expect(page.getByRole('button', { name: '取消收藏' })).toBeVisible()
     await waitForLibraryPersisted(page, 'savedArtists')
 
-    // 库 · 艺术家页出现该艺人
+    // 库 · 艺术家页出现该艺术家
     await page.goto('/library/artists')
     await expect(page.locator('.library-page__title')).toHaveText('艺术家', {
       timeout: 8000,
@@ -840,7 +840,7 @@ test.describe('卡片播放按钮', () => {
   })
 })
 
-test.describe('搜索分栏与艺人 / 专辑跳转', () => {
+test.describe('搜索分栏与艺术家 / 专辑跳转', () => {
   test('搜索结果五个分区滑轨同页可见，无 tab（ADR-050）', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
 
@@ -852,7 +852,7 @@ test.describe('搜索分栏与艺人 / 专辑跳转', () => {
       timeout: 15000,
     })
 
-    // 艺人分区：卡片在 Rail 内可见
+    // 艺术家分区：卡片在 Rail 内可见
     await expect(page.locator('.card--artist').first()).toBeVisible({
       timeout: 8000,
     })
@@ -863,7 +863,7 @@ test.describe('搜索分栏与艺人 / 专辑跳转', () => {
     })
   })
 
-  test('从搜索的艺人卡片进入艺人页', async ({ page }) => {
+  test('从搜索的艺术家卡片进入艺术家页', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.card--artist').first()).toBeVisible({
       timeout: 8000,
@@ -1022,13 +1022,13 @@ test.describe('后端 API 契约', () => {
     expect(Array.isArray(body.data.artists)).toBe(true)
     expect(Array.isArray(body.data.albums)).toBe(true)
     expect(Array.isArray(body.data.playlists)).toBe(true)
-    // 曲目应带艺人引用与专辑 id（供界面跳转）
+    // 曲目应带艺术家引用与专辑 id（供界面跳转）
     const song = body.data.songs[0]
     expect(Array.isArray(song.artistRefs)).toBe(true)
     expect(typeof song.artistRefs[0]?.id).toBe('string')
   })
 
-  test('艺人 / 专辑详情接口返回契约', async ({ request }) => {
+  test('艺术家 / 专辑详情接口返回契约', async ({ request }) => {
     const s = await request.get('/api/search/all', {
       params: { keywords: FREE_SONG_KEYWORD, limit: 3 },
     })

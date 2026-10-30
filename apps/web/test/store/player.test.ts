@@ -15,7 +15,7 @@ function track(id: string, title = `曲目${id}`): Track {
     source: 'netease',
     id,
     title,
-    artist: '艺人',
+    artist: '艺术家',
     album: '专辑',
     cover: '',
     duration: 100,

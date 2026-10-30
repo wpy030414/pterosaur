@@ -18,7 +18,7 @@ const track = (over: Partial<Track> = {}): Track => ({
   source: 'netease',
   id: '1',
   title: '曲目',
-  artist: '艺人',
+  artist: '艺术家',
   album: '专辑',
   cover: 'https://p3.music.126.net/x.jpg',
   duration: 200,

@@ -8,7 +8,7 @@ interface CoverProps {
   alt: string
   /** 圆角风格：sm 用于列表行，md 用于卡片，lg 用于播放页 */
   radius?: 'sm' | 'md' | 'lg' | 'none'
-  /** 是否为圆形（艺人头像等） */
+  /** 是否为圆形（艺术家头像等） */
   rounded?: boolean
   className?: string
   size?: number | string

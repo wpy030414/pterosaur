@@ -75,6 +75,22 @@
   --tl-cols: 32px minmax(0, 1fr) 56px 76px;
 }
 
+/* 无封面变体（专辑详情页等）：行更短、标题列贴顶对齐，纯文本标题 */
+.track-list--no-cover,
+.track-list--no-cover .track-list__head,
+.track-list--no-cover .track-row {
+  --tl-cols: 32px minmax(0, 1fr) 56px 76px;
+}
+
+.track-list--no-cover .track-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.track-list--no-cover .col-title {
+  gap: 0;
+}
+
 /* ---------- 列：序号 ---------- */
 .col-index {
   position: relative;
@@ -192,7 +208,7 @@
   color: var(--text-secondary);
 }
 
-/* 行内实体链接（艺人 / 专辑）：点击跳转详情页 */
+/* 行内实体链接（艺术家 / 专辑）：点击跳转详情页 */
 .track-link {
   font: inherit;
   color: inherit;
@@ -250,7 +266,7 @@
   opacity: 1;
 }
 
-/* 已喜欢的红心常驻显示 */
+/* 已喜欢的星标常驻显示 */
 .col-actions .icon-btn--active {
   opacity: 1;
 }

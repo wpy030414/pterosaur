@@ -12,7 +12,7 @@ const album = (id: string): Album => ({
 const artist = (id: string): Artist => ({
   source: 'netease',
   id,
-  name: `艺人${id}`,
+  name: `艺术家${id}`,
   avatar: '',
 })
 const playlist = (id: string): Playlist => ({
@@ -33,7 +33,7 @@ beforeEach(() => {
   })
 })
 
-describe('library store 收藏艺人 / 专辑 / 歌单', () => {
+describe('library store 收藏艺术家 / 专辑 / 歌单', () => {
   it('toggleSaveArtist 收藏后置顶、再次调用取消', () => {
     useLibrary.getState().toggleSaveArtist(artist('1'))
     expect(useLibrary.getState().savedArtists.map((a) => a.id)).toEqual(['1'])

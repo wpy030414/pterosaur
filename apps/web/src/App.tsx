@@ -19,6 +19,8 @@ import { SearchCategoryPage } from './pages/SearchCategory.js'
 import { GenrePage } from './pages/Genre.js'
 import { PlaylistPage } from './pages/Playlist.js'
 import { ArtistPage } from './pages/Artist.js'
+import { ArtistWorksPage } from './pages/ArtistWorks.js'
+import type { WorksKind } from './pages/ArtistWorks.js'
 import { AlbumPage } from './pages/Album.js'
 import { ArtistsPage } from './pages/library/Artists.js'
 import { AlbumsPage } from './pages/library/Albums.js'
@@ -133,6 +135,25 @@ export default function App() {
               <Route path="/genre/:name" element={<GenrePage />} />
               <Route path="/playlist/:source/:id" element={<PlaylistPage />} />
               <Route path="/playlist/:id" element={<PlaylistPage />} />
+              {/* 艺术家的子页：完整歌曲排行 / 全部专辑 / 全部单曲与 EP */}
+              <Route
+                path="/artist/:source/:id/tracks"
+                element={
+                  <ArtistWorksPage kind={'tracks' satisfies WorksKind} />
+                }
+              />
+              <Route
+                path="/artist/:source/:id/albums"
+                element={
+                  <ArtistWorksPage kind={'albums' satisfies WorksKind} />
+                }
+              />
+              <Route
+                path="/artist/:source/:id/singles"
+                element={
+                  <ArtistWorksPage kind={'singles' satisfies WorksKind} />
+                }
+              />
               <Route path="/artist/:source/:id" element={<ArtistPage />} />
               <Route path="/artist/:id" element={<ArtistPage />} />
               <Route path="/album/:source/:id" element={<AlbumPage />} />

@@ -17,6 +17,20 @@
   --danger: #ff453a;
   --danger-soft: rgba(255, 69, 58, 0.14);
 
+  /* ---------- 收藏星标（五角星） ----------
+   * 「喜欢 / 收藏」统一以五角星表达，实心填充走**中性黑白**而非强调红——
+   * 红色保留给危险操作与主播放控制（播放岛），星标则保持克制，并与主题自动反色。
+   * 两者的具体取值在各主题块里定义（深色白星、浅色黑星）。 */
+  --star: #ffffff;
+  --star-muted: rgba(255, 255, 255, 0.45);
+
+  /* ---------- 中性播放按钮（详情页播放 / 卡片封面圆形播放） ----------
+   * 详情页与卡片上的播放按钮不再使用强调红：以主题前景作实心底、以底色作图标色，
+   * 深色下为白底黑字、浅色下为黑底白字，随主题自动反色。 */
+  --play-neutral: #ffffff;
+  --play-neutral-text: #131315;
+  --play-neutral-hover: rgba(255, 255, 255, 0.85);
+
   /* ---------- 尺寸 ---------- */
   --sidebar-width: 260px;
   --playerbar-height: 88px;
@@ -108,6 +122,15 @@
   --scrollbar-thumb: rgba(255, 255, 255, 0.18);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
 
+  /* 收藏星标：深色下以白星为实心 */
+  --star: #f5f5f7;
+  --star-muted: rgba(245, 245, 247, 0.4);
+
+  /* 中性播放：深色下白底黑字 */
+  --play-neutral: #f5f5f7;
+  --play-neutral-text: #131315;
+  --play-neutral-hover: rgba(245, 245, 247, 0.85);
+
   color-scheme: dark;
 }
 
@@ -140,6 +163,15 @@
   --track-row-alt: rgba(0, 0, 0, 0.02);
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.34);
+
+  /* 收藏星标：浅色下以黑星为实心 */
+  --star: #1d1d1f;
+  --star-muted: rgba(29, 29, 31, 0.4);
+
+  /* 中性播放：浅色下黑底白字 */
+  --play-neutral: #1d1d1f;
+  --play-neutral-text: #ffffff;
+  --play-neutral-hover: rgba(29, 29, 31, 0.85);
 
   --cassette-deck: rgba(0, 0, 0, 0.06);
   --cassette-line: rgba(0, 0, 0, 0.22);
@@ -177,6 +209,15 @@
     --track-row-alt: rgba(0, 0, 0, 0.02);
     --scrollbar-thumb: rgba(0, 0, 0, 0.2);
     --scrollbar-thumb-hover: rgba(0, 0, 0, 0.34);
+
+    /* 收藏星标：跟随系统浅色时同样用黑星 */
+    --star: #1d1d1f;
+    --star-muted: rgba(29, 29, 31, 0.4);
+
+    /* 中性播放：跟随系统浅色时黑底白字 */
+    --play-neutral: #1d1d1f;
+    --play-neutral-text: #ffffff;
+    --play-neutral-hover: rgba(29, 29, 31, 0.85);
 
     --cassette-deck: rgba(0, 0, 0, 0.06);
     --cassette-line: rgba(0, 0, 0, 0.22);

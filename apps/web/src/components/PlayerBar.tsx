@@ -7,11 +7,11 @@ import {
   Volume2,
   VolumeX,
   Volume1,
-  Heart,
   ListMusic,
   MoreHorizontal,
   Disc3,
   Loader2,
+  Star,
 } from 'lucide-react'
 import { usePlayer, currentPlayMode } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
@@ -140,7 +140,7 @@ export function PlayerBar() {
             onClick={() => current && toggleFavorite(current)}
             disabled={!current}
           >
-            <Heart
+            <Star
               size={16}
               strokeWidth={2}
               fill={isFav ? 'currentColor' : 'none'}
@@ -148,7 +148,7 @@ export function PlayerBar() {
           </IconButton>
         </div>
 
-        {/* ---------- 中：内容区（封面 / 歌名-歌手 / 菜单 + 无读数进度条） ---------- */}
+        {/* ---------- 中：内容区（封面 / 歌名-艺术家 / 菜单 + 无读数进度条） ---------- */}
         <div className="playerbar__center">
           {current ? (
             <div className="playerbar__row">
@@ -278,7 +278,7 @@ export function PlayerBar() {
               active={isFav}
               onClick={() => toggleFavorite(current)}
             >
-              <Heart
+              <Star
                 size={17}
                 strokeWidth={2}
                 fill={isFav ? 'currentColor' : 'none'}

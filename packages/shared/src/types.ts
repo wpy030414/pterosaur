@@ -64,7 +64,7 @@ export function keyOf(e: { id: string; source?: MusicSource }): string {
 /** 播放循环模式。 */
 export type RepeatMode = 'off' | 'all' | 'one'
 
-/** 曲目内联的艺人引用（含 id，供跳转艺人页）。 */
+/** 曲目内联的艺术家引用（含 id，供跳转艺术家页）。 */
 export interface ArtistRef {
   id: string
   name: string
@@ -78,7 +78,7 @@ export interface Track {
   id: string
   /** 曲名。 */
   title: string
-  /** 主艺人（多艺人以 `/` 连接）。 */
+  /** 主艺术家（多艺术家以 `/` 连接）。 */
   artist: string
   /** 专辑名。 */
   album: string
@@ -92,7 +92,7 @@ export interface Track {
    */
   fee: 'free' | 'vip' | 'unknown'
   /**
-   * 该曲目关联的艺人引用（含 id），供界面逐个跳转艺人页。
+   * 该曲目关联的艺术家引用（含 id），供界面逐个跳转艺术家页。
    * 旧的持久化数据（收藏 / 最近播放 / 队列）可能缺失，缺失时界面降级为纯文本。
    */
   artistRefs?: ArtistRef[]
@@ -100,7 +100,7 @@ export interface Track {
   albumId?: string
 }
 
-/** 艺人模型。 */
+/** 艺术家模型。 */
 export interface Artist {
   /** 所属音源。 */
   source: MusicSource
@@ -126,17 +126,35 @@ export interface Album {
   name: string
   /** 封面地址（已改写为 https）。 */
   cover: string
-  /** 艺人名（多艺人以 `/` 连接）。 */
+  /** 艺术家名（多艺术家以 `/` 连接）。 */
   artist: string
-  /** 主艺人 id，供跳转艺人页。 */
+  /** 主艺术家 id，供跳转艺术家页。 */
   artistId?: string
+  /**
+   * 该专辑关联的艺术家引用（含 id），供界面逐个跳转艺术家页——合作专辑的每个艺术家都可点。
+   * 旧数据可能缺失，缺失时界面降级为单个 `artist` 纯文本（或退回 `artistId`）。
+   */
+  artistRefs?: ArtistRef[]
   /** 发行年份。 */
   year?: number
+  /**
+   * 流派标签（如「流行」「摇滚」）。界面与年份合并显示为「流派 · 年份」。
+   * 并非所有音源都提供：网易云专辑接口的 `tags` 目前恒为空串，故该字段多数情况下缺省，
+   * 界面按「有则拼、无则只显年份」降级。
+   */
+  genre?: string
+  /**
+   * 发行体裁：`album`（专辑）/ `single`（单曲）/ `ep`（EP）/ `other`（其它，如合辑现场）。
+   *
+   * 供艺术家页把作品拆成「专辑」与「单曲与 EP」两个分区。并非所有音源都提供，
+   * 缺省时界面按「未知体裁」处理——归入专辑分区，避免作品凭空消失。
+   */
+  type?: 'album' | 'single' | 'ep' | 'other'
   /** 曲目数量。 */
   trackCount?: number
 }
 
-/** 多类型搜索结果（歌曲 / 艺人 / 专辑 / 歌单）。 */
+/** 多类型搜索结果（歌曲 / 艺术家 / 专辑 / 歌单）。 */
 export interface SearchResults {
   songs: Track[]
   artists: Artist[]
@@ -190,7 +208,7 @@ export interface LocalPlaylist {
 }
 
 /**
- * 资料库的可同步数据（收藏 / 最近 / 自建歌单 / 收藏的歌单 · 磁带 · 艺人 · 专辑）。
+ * 资料库的可同步数据（收藏 / 最近 / 自建歌单 / 收藏的歌单 · 磁带 · 艺术家 · 专辑）。
  * 与前端 `store/library.ts` 的持久化字段一一对应，也是云同步的载荷。
  */
 export interface LibraryData {
@@ -202,7 +220,7 @@ export interface LibraryData {
   playlists: LocalPlaylist[]
   /** 收藏的歌单引用（含**磁带**——同为 `Playlist`，见 ADR-044）。 */
   savedPlaylists: Playlist[]
-  /** 收藏的艺人引用。 */
+  /** 收藏的艺术家引用。 */
   savedArtists: Artist[]
   /** 收藏的专辑引用。 */
   savedAlbums: Album[]
