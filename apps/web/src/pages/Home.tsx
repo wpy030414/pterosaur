@@ -22,11 +22,14 @@ import './pages.css'
  */
 const RECENT_LIMIT = 24
 
+/** 「正在流行中」收录上限：4 行 × 6 列 = 24 首。 */
+const HOT_LIMIT = 24
+
 /**
  * 新发现（首页）。
  *
  * 版面参考 Apple Music 网页版的 `/new`：**纵向堆叠若干横向滚动分区**——
- * 推荐歌单 → 新歌精选 → 本周新发行 → 歌单已更新。这样在窄屏上单类内容不必
+ * 推荐歌单 → 新歌精选 → 本周新发行 → 歌单已更新 → 正在流行中。这样在窄屏上单类内容不必
  * 铺成巨大的网格，纵向只保留章节标题，扫读性最好。
  *
  * 顶部只有问候语：收藏与最近播放不再做捷径磁贴（它们分别由侧边栏「我喜欢的音乐」与
@@ -63,6 +66,13 @@ export function Home() {
     [],
   )
 
+  // 「正在流行中」= 热歌榜（实时热度排序），给足 24 首（4 行 × 6 列）
+  const hotList = useAsync<Track[]>(
+    () => api.hotSongs(source, HOT_LIMIT),
+    [source],
+    [],
+  )
+
   // 精选单曲：取第一个推荐歌单的曲目，作为「新歌精选」缺位时的兜底
   const [featured, setFeatured] = useState<Track[]>([])
   useEffect(() => {
@@ -86,6 +96,9 @@ export function Home() {
 
   /** 「新歌精选」的曲目：优先上游推荐新歌，空则退回精选单曲。 */
   const songs = newSongs.data?.length ? newSongs.data : featured
+
+  /** 「正在流行中」的曲目；取数前不渲染该分区。 */
+  const hot = hotList.data ?? []
 
   return (
     <div className="home">
@@ -157,6 +170,24 @@ export function Home() {
           ))}
         </Rail>
       ) : null}
+
+      {/* ---------- 正在流行中 ---------- */}
+      {hot.length > 0 && (
+        <Rail
+          title="正在流行中"
+          subtitle="当下最热门的歌曲"
+          itemWidth={324}
+          grid
+        >
+          {hot.map((t) => (
+            <SongRow
+              key={keyOf(t)}
+              track={t}
+              onPlay={() => playTracks(hot, hot.indexOf(t))}
+            />
+          ))}
+        </Rail>
+      )}
 
       {/* ---------- 继续收听 ---------- */}
       {recent.length > 0 && (

@@ -135,6 +135,8 @@ export interface SourceAdapter {
   newSongs?(this: void, limit: number, cred?: string): Promise<Track[]>
   /** 「本周新发行」：最近发布的专辑（首页发现流的一个纵向分区）。 */
   newAlbums?(this: void, limit: number, cred?: string): Promise<Album[]>
+  /** 「正在流行中」：热歌榜曲目，按热度排序（首页发现流的一个纵向分区）。 */
+  hotSongs?(this: void, limit: number): Promise<Track[]>
   /** 歌单分类标签（流派快捷入口用），按上游的类别分组返回。 */
   playlistCategories?(
     this: void,

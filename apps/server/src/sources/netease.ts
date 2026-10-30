@@ -360,6 +360,28 @@ export async function toplists(): Promise<Playlist[]> {
   }))
 }
 
+/**
+ * 网易云官方的「热歌榜」歌单 id（`/api/toplist` 中固定出现，名称「热歌榜」）。
+ *
+ * 上游没有「正在流行中」这种语义的直接接口；榜单是唯一带**实时热度排序**的曲目
+ * 来源，热歌榜即其综合热度榜，最贴近该语义。
+ */
+const HOT_PLAYLIST_ID = '3778678'
+
+/**
+ * 「正在流行中」：热歌榜当天的曲目，按榜单顺序（即热度）取前 `limit` 首。
+ *
+ * 曲目结构与歌单详情相同（标准 `RawSong`），复用同一套归一化。
+ */
+export async function hotSongs(limit = 24): Promise<Track[]> {
+  const res = await api.playlist_detail({ id: HOT_PLAYLIST_ID, s: 8 })
+  const list: RawSong[] = res?.body?.playlist?.tracks ?? []
+  return list
+    .filter((s) => !!s && s.id != null)
+    .slice(0, limit)
+    .map(normalizeTrack)
+}
+
 /** 精品歌单。 */
 export async function topPlaylists(
   limit = 12,
@@ -821,6 +843,7 @@ export const neteaseAdapter: SourceAdapter = {
   topPlaylists,
   newSongs,
   newAlbums,
+  hotSongs,
   playlistCategories,
   artistDetail,
   albumDetail,

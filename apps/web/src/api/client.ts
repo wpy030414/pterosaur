@@ -135,6 +135,10 @@ export const api = {
   newSongs: (source: MusicSource, limit = 20) =>
     get<Track[]>(`${API_BASE}/discover/new-songs`, { limit, source }),
 
+  /** 「正在流行中」：热歌榜曲目，按热度排序（发现流的一个纵向分区）。 */
+  hotSongs: (source: MusicSource, limit = 24) =>
+    get<Track[]>(`${API_BASE}/discover/hot-songs`, { limit, source }),
+
   /** 歌单分类标签（搜索页的流派快捷入口）。 */
   categories: (source: MusicSource) =>
     get<PlaylistCategoryGroup[]>(`${API_BASE}/discover/categories`, {

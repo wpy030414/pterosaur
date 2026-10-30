@@ -484,6 +484,23 @@ export function createApp() {
     }
   })
 
+  /** 「正在流行中」：热歌榜曲目（发现流的一个纵向分区）。 */
+  app.get('/api/discover/hot-songs', async (c) => {
+    const source = sourceQuery(c)
+    const adapter = adapterOf(source)
+    if (!adapter?.hotSongs)
+      return c.json(fail('该音源暂不支持热门歌曲'), 501)
+    const limit = Number(c.req.query('limit') ?? 24)
+    try {
+      const list = await cached(`${source}|hot-songs|${limit}`, () =>
+        adapter.hotSongs!(limit),
+      )
+      return c.json(ok<Track[]>(list))
+    } catch (e) {
+      return c.json(fail(`获取热歌失败：${(e as Error).message}`), 502)
+    }
+  })
+
   /** 歌单分类标签（搜索页的流派快捷入口）。 */
   app.get('/api/discover/categories', async (c) => {
     const source = sourceQuery(c)
