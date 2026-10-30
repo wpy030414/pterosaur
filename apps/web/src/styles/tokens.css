@@ -18,7 +18,7 @@
   --danger-soft: rgba(255, 69, 58, 0.14);
 
   /* ---------- 尺寸 ---------- */
-  --sidebar-width: 248px;
+  --sidebar-width: 260px;
   --playerbar-height: 88px;
   --topbar-height: 56px;
   /*
@@ -49,7 +49,7 @@
   /* 外壳面：与卡片 / 面板同层的抬升面 */
   --cassette-surface: var(--bg-elevated-2);
   /* 卷轴窗：内凹（两态都用「压暗」表达凹陷，深色下更重） */
-  --cassette-deck: rgba(0, 0, 0, 0.5);
+  --cassette-deck: rgba(0, 0, 0, 0.42);
   /* 卷轴 / 磁带线的描边色（比 --separator-strong 略重，使两态下卷轴都读得出） */
   --cassette-line: rgba(255, 255, 255, 0.24);
 
@@ -72,16 +72,20 @@
 /* 深色（默认） */
 :root,
 :root[data-theme='dark'] {
-  --bg: #000000;
-  --bg-elevated: #121212;
-  --bg-elevated-2: #1c1c1e;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.1);
+  /*
+   * 深灰基底：纯黑 #000 大面积铺满时会显得空洞发死，且与抬升面落差过大；
+   * 整体上移一档到深灰（#131315 → #26262a），层级仍保持四级递进。
+   */
+  --bg: #131315;
+  --bg-elevated: #1c1c1f;
+  --bg-elevated-2: #26262a;
+  --bg-hover: rgba(255, 255, 255, 0.07);
+  --bg-active: rgba(255, 255, 255, 0.11);
 
-  /* 毛玻璃层 */
-  --glass-sidebar: rgba(20, 20, 22, 0.72);
-  --glass-player: rgba(28, 28, 30, 0.52);
-  --glass-overlay: rgba(18, 18, 20, 0.6);
+  /* 毛玻璃层（同步上移，避免叠加后反而比基底更黑） */
+  --glass-sidebar: rgba(30, 30, 34, 0.72);
+  --glass-player: rgba(38, 38, 42, 0.52);
+  --glass-overlay: rgba(28, 28, 32, 0.6);
 
   --text: #f5f5f7;
   --text-secondary: rgba(245, 245, 247, 0.62);
@@ -92,6 +96,13 @@
 
   /* 仅沉浸播放页保留投影（全仓其余禁用 box-shadow） */
   --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
+
+  /* 遮罩：压暗但不压成死黑（浅色下需更暗才够层次） */
+  --scrim: rgba(0, 0, 0, 0.4);
+  --scrim-strong: rgba(0, 0, 0, 0.5);
+  /* 压在图上的浮动控件底色（封面上的收藏 / 计数徽标等） */
+  --control-overlay: rgba(0, 0, 0, 0.38);
+  --control-overlay-hover: rgba(0, 0, 0, 0.55);
 
   --track-row-alt: rgba(255, 255, 255, 0.025);
   --scrollbar-thumb: rgba(255, 255, 255, 0.18);
@@ -120,6 +131,11 @@
   --separator-strong: rgba(0, 0, 0, 0.16);
 
   --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.18);
+
+  --scrim: rgba(0, 0, 0, 0.4);
+  --scrim-strong: rgba(0, 0, 0, 0.5);
+  --control-overlay: rgba(0, 0, 0, 0.55);
+  --control-overlay-hover: rgba(0, 0, 0, 0.72);
 
   --track-row-alt: rgba(0, 0, 0, 0.02);
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
@@ -152,6 +168,11 @@
     --separator-strong: rgba(0, 0, 0, 0.16);
 
     --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.18);
+
+    --scrim: rgba(0, 0, 0, 0.4);
+    --scrim-strong: rgba(0, 0, 0, 0.5);
+    --control-overlay: rgba(0, 0, 0, 0.55);
+    --control-overlay-hover: rgba(0, 0, 0, 0.72);
 
     --track-row-alt: rgba(0, 0, 0, 0.02);
     --scrollbar-thumb: rgba(0, 0, 0, 0.2);

@@ -10,7 +10,7 @@
 .login-modal__scrim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim-strong);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   animation: fade-in var(--dur) var(--ease);
@@ -120,7 +120,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--control-overlay-hover);
   backdrop-filter: blur(2px);
 }
 

@@ -112,7 +112,7 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--control-overlay);
   color: #fff;
   opacity: 0;
   transform: translateY(8px);
@@ -134,7 +134,7 @@
 }
 
 .card__fav:hover {
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--control-overlay-hover);
 }
 
 /* 已收藏：常显 + 强调色（选择器与 `.card__fav:hover` 同权重、靠后生效，避免被中性 hover 盖掉） */
@@ -208,7 +208,7 @@
   font-weight: 600;
   line-height: 1.5;
   color: #fff;
-  background: rgba(0, 0, 0, 0.62);
+  background: var(--control-overlay-hover);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   /* 纯展示：不吃点击，避免与卡片本体 / 播放按钮争抢 */
