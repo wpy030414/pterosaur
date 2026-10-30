@@ -201,14 +201,22 @@
   /* 右栏内容（标题 / 艺人 / 年份）较矮，顶部对齐避免与大封面错位 */
   align-items: flex-start;
   padding-top: 40px;
+  /* 按钮已移入右栏底部，Hero 自身无需再留操作区高度 */
+  padding-bottom: 20px;
 }
 
 .detail--album .detail__info,
 .detail--playlist .detail__info {
   display: flex;
   flex-direction: column;
-  /* 与放大后的封面等高，使操作按钮能停在封面底边处 */
+  /* 与放大后的封面等高；按钮被 margin-top: auto 推到底边，右栏不再头重脚轻 */
   min-height: 270px;
+}
+
+/* 标题上方的呼吸空行：高度与标题行高一致（26px × 1.25），窄屏随字号一起缩小 */
+.detail__lead-space {
+  height: calc(26px * 1.25);
+  flex-shrink: 0;
 }
 
 .detail--album .detail__name,
@@ -258,9 +266,12 @@
 
 .detail--album .detail__actions,
 .detail--playlist .detail__actions {
-  /* 右栏内容已随封面等高，按钮回到 Hero 下方即可，不再是负边距的叠层 */
-  margin-top: 0;
-  padding-top: 0;
+  /* 位于右栏内部：贴住封面底边 */
+  margin-top: auto;
+  padding-top: 20px;
+  padding-bottom: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* 磁带详情页封面：复用磁带外壳（样式见 Cards.css 的 .cassette-shell），只放大细部倍率 */
@@ -618,6 +629,11 @@
   .detail--playlist .detail__name,
   .detail--playlist .detail__name--editing {
     font-size: 22px;
+  }
+
+  /* 空行随标题字号同比缩小 */
+  .detail__lead-space {
+    height: calc(22px * 1.25);
   }
 
   .detail__artist {

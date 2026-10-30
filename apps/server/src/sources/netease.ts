@@ -103,6 +103,8 @@ interface RawAlbum {
   size?: number
   trackCount?: number
   publishTime?: number
+  /** 流派标签；上游多为空串 */
+  tags?: string
   artist?: { id?: number; name: string }
   artists?: { id?: number; name: string }[]
 }
@@ -220,6 +222,9 @@ export function normalizeAlbum(raw: RawAlbum): Album {
     artistId: primaryId,
     artistRefs: artistRefs.length ? artistRefs : undefined,
     year: raw.publishTime ? new Date(raw.publishTime).getFullYear() : undefined,
+    // 流派：上游 `tags` 字段。目前实测恒为空串（网易云不公开专辑流派），
+    // 故仅在非空时填充，界面据「有流派才拼」降级处理。
+    genre: raw.tags?.trim() ? raw.tags.trim() : undefined,
     trackCount: raw.size ?? raw.trackCount,
   }
 }

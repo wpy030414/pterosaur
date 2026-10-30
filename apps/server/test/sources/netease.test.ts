@@ -113,6 +113,25 @@ describe('normalizeAlbum', () => {
     expect(al.artistRefs).toBeUndefined()
     expect(al.artistId).toBeUndefined()
   })
+
+  it('流派：tags 非空时填充，空串或空白时缺省', () => {
+    const withGenre = normalizeAlbum({
+      id: 9,
+      name: '有流派',
+      artist: { id: 1, name: '甲' },
+      tags: ' 流行 ',
+    })
+    expect(withGenre.genre).toBe('流行')
+
+    // 网易云实测 tags 恒为空串：不得把空串当成流派传给界面
+    const empty = normalizeAlbum({
+      id: 10,
+      name: '无流派',
+      artist: { id: 1, name: '甲' },
+      tags: '   ',
+    })
+    expect(empty.genre).toBeUndefined()
+  })
 })
 
 /**

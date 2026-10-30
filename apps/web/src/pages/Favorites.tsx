@@ -63,36 +63,38 @@ export function FavoritesPage() {
           <Star fill="currentColor" strokeWidth={0} />
         </div>
         <div className="detail__info">
+          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">我喜欢的音乐</h1>
+
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="detail__play"
+              onClick={() => handlePlay(false)}
+              disabled={!favorites.length}
+            >
+              <Play size={18} fill="currentColor" strokeWidth={0} />
+              播放
+            </button>
+            <IconButton
+              label="随机播放"
+              size="lg"
+              onClick={() => handlePlay(true)}
+              disabled={!favorites.length}
+            >
+              <Shuffle size={20} strokeWidth={2} />
+            </IconButton>
+            <RipButton
+              progress={myRip}
+              disabled={
+                !favorites.length || (ripJob !== null && ripJob.key !== ripKey)
+              }
+              onClick={handleDownloadPlaylist}
+            />
+          </div>
         </div>
       </header>
-
-      <div className="detail__actions">
-        <button
-          type="button"
-          className="detail__play"
-          onClick={() => handlePlay(false)}
-          disabled={!favorites.length}
-        >
-          <Play size={18} fill="currentColor" strokeWidth={0} />
-          播放
-        </button>
-        <IconButton
-          label="随机播放"
-          size="lg"
-          onClick={() => handlePlay(true)}
-          disabled={!favorites.length}
-        >
-          <Shuffle size={20} strokeWidth={2} />
-        </IconButton>
-        <RipButton
-          progress={myRip}
-          disabled={
-            !favorites.length || (ripJob !== null && ripJob.key !== ripKey)
-          }
-          onClick={handleDownloadPlaylist}
-        />
-      </div>
 
       <div className="detail__list">
         {favorites.length === 0 ? (

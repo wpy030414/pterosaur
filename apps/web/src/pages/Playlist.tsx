@@ -219,6 +219,8 @@ export function PlaylistPage() {
           />
         )}
         <div className="detail__info">
+          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          <div className="detail__lead-space" aria-hidden />
           {isLocal && renaming ? (
             <input
               ref={renameRef}
@@ -247,54 +249,54 @@ export function PlaylistPage() {
           {!isLocal && playlist.description && (
             <p className="detail__desc">{playlist.description}</p>
           )}
+
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="detail__play"
+              onClick={() => handlePlay(false)}
+              disabled={!tracks.length}
+            >
+              <Play size={18} fill="currentColor" strokeWidth={0} />
+              播放
+            </button>
+            <IconButton
+              label="随机播放"
+              size="lg"
+              onClick={() => handlePlay(true)}
+              disabled={!tracks.length}
+            >
+              <Shuffle size={20} strokeWidth={2} />
+            </IconButton>
+            {!isLocal && (
+              <IconButton
+                label={isSaved ? '取消收藏' : '收藏到资料库'}
+                size="lg"
+                active={isSaved}
+                onClick={() => toggleSavePlaylist(playlist)}
+              >
+                <Star
+                  size={20}
+                  strokeWidth={2}
+                  fill={isSaved ? 'currentColor' : 'none'}
+                />
+              </IconButton>
+            )}
+            {isLocal && (
+              <IconButton label="删除歌单" size="lg" onClick={handleDelete}>
+                <Trash2 size={19} strokeWidth={2} />
+              </IconButton>
+            )}
+            <RipButton
+              progress={myRip}
+              disabled={
+                !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
+              }
+              onClick={handleDownloadPlaylist}
+            />
+          </div>
         </div>
       </header>
-
-      <div className="detail__actions">
-        <button
-          type="button"
-          className="detail__play"
-          onClick={() => handlePlay(false)}
-          disabled={!tracks.length}
-        >
-          <Play size={18} fill="currentColor" strokeWidth={0} />
-          播放
-        </button>
-        <IconButton
-          label="随机播放"
-          size="lg"
-          onClick={() => handlePlay(true)}
-          disabled={!tracks.length}
-        >
-          <Shuffle size={20} strokeWidth={2} />
-        </IconButton>
-        {!isLocal && (
-          <IconButton
-            label={isSaved ? '取消收藏' : '收藏到资料库'}
-            size="lg"
-            active={isSaved}
-            onClick={() => toggleSavePlaylist(playlist)}
-          >
-            <Star
-              size={20}
-              strokeWidth={2}
-              fill={isSaved ? 'currentColor' : 'none'}
-            />
-          </IconButton>
-        )}
-        {isLocal && (
-          <IconButton label="删除歌单" size="lg" onClick={handleDelete}>
-            <Trash2 size={19} strokeWidth={2} />
-          </IconButton>
-        )}
-        <RipButton
-          progress={myRip}
-          disabled={
-            !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
-          }
-          onClick={handleDownloadPlaylist}
-        />
-      </div>
 
       <div className="detail__list">
         <TrackList

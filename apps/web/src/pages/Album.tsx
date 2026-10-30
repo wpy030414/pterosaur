@@ -123,54 +123,62 @@ export function AlbumPage() {
           className="detail__cover"
         />
         <div className="detail__info">
+          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">{album.name}</h1>
           <p className="detail__artist">
             {albumArtistLinks(album, navigate) ?? (
               <span>{album.artist}</span>
             )}
           </p>
-          {album.year && <p className="detail__year">{album.year}年</p>}
+          {(album.genre || album.year) && (
+            <p className="detail__year">
+              {[album.genre, album.year ? `${album.year}年` : '']
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
+
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="detail__play"
+              onClick={() => handlePlay(false)}
+              disabled={!tracks.length}
+            >
+              <Play size={18} fill="currentColor" strokeWidth={0} />
+              播放
+            </button>
+            <IconButton
+              label="随机播放"
+              size="lg"
+              onClick={() => handlePlay(true)}
+              disabled={!tracks.length}
+            >
+              <Shuffle size={20} strokeWidth={2} />
+            </IconButton>
+            <IconButton
+              label={isSaved ? '取消收藏' : '收藏到资料库'}
+              size="lg"
+              active={isSaved}
+              onClick={() => toggleSaveAlbum(album)}
+            >
+              <Star
+                size={20}
+                strokeWidth={2}
+                fill={isSaved ? 'currentColor' : 'none'}
+              />
+            </IconButton>
+            <RipButton
+              progress={myRip}
+              disabled={
+                !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
+              }
+              onClick={handleDownloadPlaylist}
+            />
+          </div>
         </div>
       </header>
-
-      <div className="detail__actions">
-        <button
-          type="button"
-          className="detail__play"
-          onClick={() => handlePlay(false)}
-          disabled={!tracks.length}
-        >
-          <Play size={18} fill="currentColor" strokeWidth={0} />
-          播放
-        </button>
-        <IconButton
-          label="随机播放"
-          size="lg"
-          onClick={() => handlePlay(true)}
-          disabled={!tracks.length}
-        >
-          <Shuffle size={20} strokeWidth={2} />
-        </IconButton>
-        <IconButton
-          label={isSaved ? '取消收藏' : '收藏到资料库'}
-          size="lg"
-          active={isSaved}
-          onClick={() => toggleSaveAlbum(album)}
-        >
-          <Star
-            size={20}
-            strokeWidth={2}
-            fill={isSaved ? 'currentColor' : 'none'}
-          />
-        </IconButton>
-        <RipButton
-          progress={myRip}
-          disabled={
-            !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
-          }
-          onClick={handleDownloadPlaylist}
-        />
-      </div>
 
       {/* 专辑页整页同一张专辑、同一批艺人：行内不再重复封面 / 歌手 / 专辑列 */}
       <div className="detail__list">

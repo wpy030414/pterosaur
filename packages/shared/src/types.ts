@@ -137,6 +137,12 @@ export interface Album {
   artistRefs?: ArtistRef[]
   /** 发行年份。 */
   year?: number
+  /**
+   * 流派标签（如「流行」「摇滚」）。界面与年份合并显示为「流派 · 年份」。
+   * 并非所有音源都提供：网易云专辑接口的 `tags` 目前恒为空串，故该字段多数情况下缺省，
+   * 界面按「有则拼、无则只显年份」降级。
+   */
+  genre?: string
   /** 曲目数量。 */
   trackCount?: number
 }
