@@ -862,3 +862,20 @@
   - ADR-046（累积列表必须去重）的适用范围收窄到独立类别页，但约束不变。
   - E2E：`navigation.spec` 中依赖 tab 的 5 组用例删除，改为「五分区可见 / 更多入口跳转 / 独立页续页 / 换词刷新 / 旧 `?tab=` 被忽略 / 续页无重复 key」；`player.spec` 的 tab 点击改为直接在分区取卡。
 - 何时重新审视：若单类结果经常只有 1–2 条（分区过碎、页面纵向过长），可考虑按「结果非空的分区」动态收紧间距，或把弱类别合并为一条混排滑轨。
+
+## ADR-051：网易云扫码登录脱离 NeteaseCloudMusicApi，自实现网页现行协议
+- 日期：2026-10-30
+- 状态：已采纳
+- 背景：2026-10 起浏览器扫码登录与 `pnpm log-in` 全部失效——扫码后网页一直停在「等待扫码」。逆向官方网页登录弹窗（`ctWebLogin.main.0.3.7.1cebd5b7.js`）与扫码落地页（`st/platform/scanlogin`）后确认：官方协议已换成明文 `POST /api/login/qrcode/unikey`（`type=1`）→ 二维码内容 `st/platform/scanlogin?codekey=…&chainId=…` → `POST /api/login/qrcode/client/login`（`type=1, noCheckToken, ydDeviceToken` + `X-loginMethod: QrCode` / `x-login-chain-id`）。库 4.32.0 的 `login_qr_*` 写死了 eapi 加密、`type=3` 与旧链接 `music.163.com/login?codekey=`——旧链接现 302 到 `/404`，手机 App 认不出，故确认态永不回写（用官方同款明文请求实测同样停在 801，证明问题不在加密）。
+- 考虑过的方案：
+  1. 给库函数传参覆盖（`type`、`crypto`）：库内 `type=3` 与二维码 URL 均写死，不可覆盖。
+  2. 升级库：登录修复取决于上游维护节奏，且其内容接口的部分端点也在漂移（eapi 打到官网域名返回 HTML）。
+  3. 自实现：登录相关端点用明文 `fetch` 直连；内容接口继续用库。
+- 决策：采用 3。`netease.ts` 内新增 `postNeteaseApi` 明文请求工具，`qrKey / qrLoginUrl / qrCreate / qrCheck` 按现行协议自实现；`chainId` 按 key 在有界 Map 中缓存 2 分钟，保证二维码链接与轮询头共用同一条。适配器对外契约（`QrCheckResult` 的 800/801/802/803 语义、Set-Cookie 数组）保持不变，路由与前端零改动。
+- 为什么选这个：改动面最小（只碰适配器登录段）、可读（协议集中在 80 行内，注释指向研究文档）、不依赖库的发布节奏；同时把「上游协议变化」的耦合点收敛到一处。
+- 为什么不选其他：方案 1 不可行；方案 2 把可用性押在第三方发版上，且本次失效并非库的 bug 修复能覆盖（需同时改加密方式与 URL 形态）。
+- 后果：
+  - 登录协议变更需自行跟进，`docs/researches/netease-web-login-protocol.md` 记录证据与未验证项，复现时先读它。
+  - `ydDeviceToken`（浏览器指纹）以空串发送——官方在取不到时同样降级为空，但**真人扫码成功路径尚未在本仓验证**，需人工验收一次。
+  - 成功响应若带风控码（8821/8830/8860 等）目前只透传 `message`，前端按「失败」提示。
+- 何时重新审视：库开始提供 `type=1` 现行协议且经过实测验证时，可回收这段自实现；或网易云再次更换扫码路径时。

@@ -10,8 +10,8 @@
 ## 行为
 
 - 预期行为：
-  - `pnpm log-in` 在终端打印一个二维码（`qrcode` 的 terminal 渲染，半块字符），内容为 `https://music.163.com/login?codekey=<key>`；`key` 由网易云 `login_qr_key` 取得，二维码由本地渲染（`login_qr_create` 不请求上游）。
-  - 扫码状态由本进程**统一轮询**（每 1.5s，调 `login_qr_check`）；终端字样随「等待扫码 → 已扫码待确认 → 成功」变化，并**去重打印**避免刷屏。
+  - `pnpm log-in` 在终端打印一个二维码（`qrcode` 的 terminal 渲染，半块字符），内容为现行扫码落地页 `https://music.163.com/st/platform/scanlogin?codekey=<key>&chainId=<chainId>&hdw_device=web&hdw_appid=web&hitExp=1`；`key` 由明文 `POST /api/login/qrcode/unikey`（`type=1`）取得，二维码由本地渲染（`qrcode` 包，不请求上游）。协议细节见 `docs/researches/netease-web-login-protocol.md`。
+  - 扫码状态由本进程**统一轮询**（每 1.5s，`POST /api/login/qrcode/client/login`，随带 `X-loginMethod: QrCode` 与同一 `chainId` 的 `x-login-chain-id`）；终端字样随「等待扫码 → 已扫码待确认 → 成功」变化，并**去重打印**避免刷屏。
   - 二维码过期（800）时**自动换一张新码**并重置有效期计时；整体超时 5 分钟退出 1，`Ctrl-C` 退出 130。
   - 扫码成功（803）时，把会话 cookie 写入仓库根 `.env` 的 `NETEASE_COOKIE`（并记 `NETEASE_COOKIE_UPDATED_AT`），保留文件其余行与注释；随后退出 0。
   - 服务端启动时先 `loadEnv()` 读取仓库根 `.env`（存在才读，缺失不报错）。
@@ -29,7 +29,7 @@
 - 缺省凭证**只用于内容解析**，绝不参与身份判断——这是与「会话边界」的明确分界（见 ADR-014）。
 - 不弹浏览器、不起本地监听端口；二维码只在终端呈现。
 - 前端零改动，同源铁律不变；凭证不进源码、不进前端产物（`.env` 已被 `.gitignore` 忽略，另提供 `.env.example`）。
-- 复用 `server/netease.ts` 的 `qrKey/qrLoginUrl/qrCheck/cookieHeaderFromSetCookies/loginStatus`；二维码渲染用直接依赖 `qrcode`。
+- 复用 `server/netease.ts` 的 `qrKey/qrLoginUrl/qrCheck/cookieHeaderFromSetCookies/loginStatus`（扫码三件套已按网页现行协议自实现，不经 `NeteaseCloudMusicApi` 的 `login_qr_*`）；二维码渲染用直接依赖 `qrcode`。
 - `.env` 变更需重启服务生效。
 
 ## 边界条件
