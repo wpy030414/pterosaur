@@ -105,6 +105,8 @@ interface RawAlbum {
   publishTime?: number
   /** 流派标签；上游多为空串 */
   tags?: string
+  /** 体裁：中文「专辑」、或 "Single" / "EP" 等 */
+  type?: string
   artist?: { id?: number; name: string }
   artists?: { id?: number; name: string }[]
 }
@@ -202,6 +204,16 @@ export function normalizeArtist(raw: RawArtist): Artist {
   }
 }
 
+/** 网易云专辑 `type` → 共享体裁。中文「专辑」与英文 "Album" 都算专辑。 */
+function albumTypeOf(raw?: string): Album['type'] {
+  const t = raw?.trim().toLowerCase()
+  if (!t) return undefined
+  if (t === '专辑' || t === 'album') return 'album'
+  if (t === 'single' || t === '单曲') return 'single'
+  if (t === 'ep') return 'ep'
+  return 'other'
+}
+
 /** 将网易云原始专辑归一化为共享 Album。 */
 export function normalizeAlbum(raw: RawAlbum): Album {
   const list = raw.artists ?? (raw.artist ? [raw.artist] : [])
@@ -225,6 +237,8 @@ export function normalizeAlbum(raw: RawAlbum): Album {
     // 流派：上游 `tags` 字段。目前实测恒为空串（网易云不公开专辑流派），
     // 故仅在非空时填充，界面据「有流派才拼」降级处理。
     genre: raw.tags?.trim() ? raw.tags.trim() : undefined,
+    // 体裁：上游 type 为中文「专辑」或英文 "Single" / "EP" 等；无法识别时归 other
+    type: albumTypeOf(raw.type),
     trackCount: raw.size ?? raw.trackCount,
   }
 }

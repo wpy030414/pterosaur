@@ -191,7 +191,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
     }
   }, [open, current, level])
 
-  // 移动端「专注歌词」：点封面收起（缩小封面 + 隐藏歌名 / 歌手，腾给歌词），再点复原。
+  // 移动端「专注歌词」：点封面收起（缩小封面 + 隐藏歌名 / 艺术家，腾给歌词），再点复原。
   const isMobile = useMediaQuery(MOBILE_QUERY)
   const [lyricFocused, setLyricFocused] = useState(false)
   // 切歌 / 收起沉浸页时复位为初始态
@@ -353,7 +353,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
         </header>
 
         <div className="nowplaying__body">
-          {/* 左：封面。移动端可点按切换「专注歌词」（缩小封面、隐藏歌名 / 歌手，腾给歌词）。 */}
+          {/* 左：封面。移动端可点按切换「专注歌词」（缩小封面、隐藏歌名 / 艺术家，腾给歌词）。 */}
           <div
             className={`nowplaying__art${isMobile ? ' nowplaying__art--tap' : ''}`}
             onClick={isMobile ? () => setLyricFocused((v) => !v) : undefined}

@@ -143,6 +143,13 @@ export interface Album {
    * 界面按「有则拼、无则只显年份」降级。
    */
   genre?: string
+  /**
+   * 发行体裁：`album`（专辑）/ `single`（单曲）/ `ep`（EP）/ `other`（其它，如合辑现场）。
+   *
+   * 供艺术家页把作品拆成「专辑」与「单曲与 EP」两个分区。并非所有音源都提供，
+   * 缺省时界面按「未知体裁」处理——归入专辑分区，避免作品凭空消失。
+   */
+  type?: 'album' | 'single' | 'ep' | 'other'
   /** 曲目数量。 */
   trackCount?: number
 }

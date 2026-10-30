@@ -38,7 +38,7 @@ export const SEARCH_CATEGORY_META: Record<
 > = {
   songs: { label: '歌曲', subtitle: '单曲结果', apiType: 'songs' },
   cassette: { label: '磁带', subtitle: 'B 站视频合集', apiType: 'playlists' },
-  artists: { label: '艺术家', subtitle: '歌手与乐队', apiType: 'artists' },
+  artists: { label: '艺术家', subtitle: '艺术家与乐队', apiType: 'artists' },
   albums: { label: '专辑', subtitle: '唱片专辑', apiType: 'albums' },
   playlists: { label: '歌单', subtitle: '精选歌单', apiType: 'playlists' },
 }

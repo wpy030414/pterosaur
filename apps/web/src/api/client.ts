@@ -100,7 +100,7 @@ export const api = {
       type,
     }),
 
-  /** 艺术家详情：档案 + 热门单曲 + 专辑列表（`name` 供「无按-id 取歌手」能力的源按名搜索）。 */
+  /** 艺术家详情：档案 + 热门单曲 + 专辑列表（`name` 供「无按-id 取艺术家」能力的源按名搜索）。 */
   artist: (source: MusicSource, id: string, name?: string) =>
     get<{ artist: Artist; tracks: Track[]; albums: Album[] }>(
       `${API_BASE}/artist/${source}/${encodeURIComponent(id)}`,

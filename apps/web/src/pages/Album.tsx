@@ -180,7 +180,7 @@ export function AlbumPage() {
         </div>
       </header>
 
-      {/* 专辑页整页同一张专辑、同一批艺术家：行内不再重复封面 / 歌手 / 专辑列 */}
+      {/* 专辑页整页同一张专辑、同一批艺术家：行内不再重复封面 / 艺术家 / 专辑列 */}
       <div className="detail__list">
         <TrackList
           tracks={tracks}

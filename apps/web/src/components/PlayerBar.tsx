@@ -148,7 +148,7 @@ export function PlayerBar() {
           </IconButton>
         </div>
 
-        {/* ---------- 中：内容区（封面 / 歌名-歌手 / 菜单 + 无读数进度条） ---------- */}
+        {/* ---------- 中：内容区（封面 / 歌名-艺术家 / 菜单 + 无读数进度条） ---------- */}
         <div className="playerbar__center">
           {current ? (
             <div className="playerbar__row">

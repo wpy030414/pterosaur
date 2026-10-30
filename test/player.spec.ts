@@ -469,7 +469,7 @@ test.describe('全屏播放页与歌词', () => {
     await expect(page.locator('.nowplaying')).toHaveCount(0, { timeout: 3000 })
   })
 
-  test('沉浸页的专辑 / 歌手可点击跳转', async ({ page }) => {
+  test('沉浸页的专辑 / 艺术家可点击跳转', async ({ page }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
@@ -478,7 +478,7 @@ test.describe('全屏播放页与歌词', () => {
     await page.locator('.playerbar__cover-btn').click()
     await expect(page.locator('.nowplaying')).toBeVisible({ timeout: 5000 })
 
-    // 歌手名可点 → 跳转艺术家页，且沉浸页自动收起
+    // 艺术家名可点 → 跳转艺术家页，且沉浸页自动收起
     const artistLink = page
       .locator('.nowplaying__artist .nowplaying__link')
       .first()

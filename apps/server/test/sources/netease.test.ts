@@ -132,6 +132,18 @@ describe('normalizeAlbum', () => {
     })
     expect(empty.genre).toBeUndefined()
   })
+
+  it('体裁：中文「专辑」与英文 Single/EP 均正确归类', () => {
+    const mk = (type?: string) =>
+      normalizeAlbum({ id: 1, name: 'x', artist: { id: 1, name: '甲' }, type })
+    expect(mk('专辑')?.type).toBe('album')
+    expect(mk('Album')?.type).toBe('album')
+    expect(mk('Single')?.type).toBe('single')
+    expect(mk('EP')?.type).toBe('ep')
+    // 无法识别的体裁归 other，缺省时保持 undefined
+    expect(mk('现场')?.type).toBe('other')
+    expect(mk()?.type).toBeUndefined()
+  })
 })
 
 /**
