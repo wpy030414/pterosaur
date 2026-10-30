@@ -21,7 +21,7 @@ export const useQueuePanel = create<UiState>()((set) => ({
   setQueueOpen: (v) => set({ queueOpen: v }),
 }))
 
-/** 窄屏侧边栏抽屉（<900px 时替代常驻侧栏，由汉堡按钮触发）。 */
+/** 移动端侧边栏抽屉（≤768px 时替代常驻侧栏，由汉堡按钮触发）。 */
 interface SidebarDrawerState {
   sidebarOpen: boolean
   toggleSidebar: () => void

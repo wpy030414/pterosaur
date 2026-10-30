@@ -132,7 +132,8 @@
 }
 
 /* 窄屏：输入框字号 ≥16px，避免 iOS 聚焦时自动放大页面 */
-@media (max-width: 900px) {
+/* 移动端：输入框字号 ≥16px，避免 iOS 聚焦缩放（权威边界 768px） */
+@media (max-width: 768px) {
   .cp-modal__field input {
     font-size: 16px;
   }

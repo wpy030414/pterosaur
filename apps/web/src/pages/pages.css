@@ -1,6 +1,6 @@
 /* ============================ 首页 ============================ */
 .home {
-  padding: 0 32px var(--page-bottom-inset);
+  padding: 0 var(--page-gutter) var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -27,7 +27,7 @@
 
 /* ============================ 浏览 / 电台 ============================ */
 .browse {
-  padding: 0 32px var(--page-bottom-inset);
+  padding: 0 var(--page-gutter) var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -54,7 +54,7 @@
 /* ============================ 搜索 ============================ */
 /* 搜索页：外层只管横向留白与居中；大搜索框与结果区各自排版 */
 .search-page {
-  padding: 0 32px var(--page-bottom-inset);
+  padding: 0 var(--page-gutter) var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -166,7 +166,7 @@
   display: flex;
   align-items: flex-end;
   gap: 28px;
-  padding: 32px 32px 24px;
+  padding: 32px var(--page-gutter) 24px;
 }
 
 .detail__cover {
@@ -350,7 +350,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 8px 32px 20px;
+  padding: 8px var(--page-gutter) 20px;
 }
 
 .detail__play {
@@ -412,7 +412,7 @@
 
 /* ============================ 库（艺术家 / 专辑 两个子页） ============================ */
 .library-page {
-  padding: 0 32px var(--page-bottom-inset);
+  padding: 0 var(--page-gutter) var(--page-bottom-inset);
   max-width: 1600px;
   /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
   margin-inline: auto;
@@ -593,20 +593,13 @@
   outline-offset: 2px;
 }
 
-/* ============================ 响应式 ============================ */
-@media (max-width: 760px) {
-  .home,
-  .search-page,
-  .library-page {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
+/* ============================ 响应式（权威边界 768px） ============================ */
+@media (max-width: 768px) {
   .detail__hero {
     flex-direction: column;
     align-items: flex-start;
     gap: 18px;
-    padding: 24px 16px 18px;
+    padding: 24px var(--page-gutter) 18px;
   }
 
   .detail__cover {
@@ -662,12 +655,6 @@
     font-size: 28px;
   }
 
-  .detail__actions,
-  .detail__list {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
   .home__greeting,
   .browse__title,
   .search__title,
@@ -693,6 +680,17 @@
     max-width: none;
     margin-inline: 0;
   }
+
+  /* 「我喜欢的音乐」/「最近播放」主视觉封面收窄，与通用详情的 160px 档对齐 */
+  .fav-cover {
+    width: 200px;
+    height: 200px;
+  }
+
+  .recent-cover {
+    width: 160px;
+    height: 160px;
+  }
 }
 
 /* ============================ 我喜欢的音乐封面 ============================ */
@@ -714,13 +712,6 @@
   height: 44%;
 }
 
-@media (max-width: 760px) {
-  .fav-cover {
-    width: 200px;
-    height: 200px;
-  }
-}
-
 /* ============================ 最近播放封面 ============================ */
 .recent-cover {
   display: flex;
@@ -732,11 +723,4 @@
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, #5e5ce6, #8e8aff);
   color: #fff;
-}
-
-@media (max-width: 760px) {
-  .recent-cover {
-    width: 160px;
-    height: 160px;
-  }
 }

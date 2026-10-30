@@ -14,7 +14,7 @@ import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
 import { useSettings } from '../store/settings.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { useMediaQuery } from '../hooks/useMediaQuery.js'
+import { MOBILE_QUERY, useMediaQuery } from '../hooks/useMediaQuery.js'
 import { seekTo } from '../hooks/audioElement.js'
 import { api } from '../api/client.js'
 import { getCachedLyric, putCachedLyric } from '../lib/lyricCache.js'
@@ -48,9 +48,6 @@ type BgState = { stable: string | null; incoming: string | null }
  * reduced-motion 下动画时长被压到 0.01ms，事件时机不可靠（与 usePresence 同款处理）。
  */
 const BG_FADE_SETTLE_MS = 480
-
-/** 移动端断点：与 `NowPlaying.css` 的 `@media (max-width: 860px)` 保持一致。 */
-const MOBILE_QUERY = '(max-width: 860px)'
 
 /**
  * 全屏播放页（Apple Music「正在播放」）。

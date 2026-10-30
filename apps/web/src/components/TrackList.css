@@ -271,8 +271,8 @@
   opacity: 1;
 }
 
-/* ---------- 窄屏：隐藏专辑列 ---------- */
-@media (max-width: 760px) {
+/* ---------- 移动端（≤768px）：隐藏专辑列，行内操作常显 ---------- */
+@media (max-width: 768px) {
   .track-list,
   .track-list__head,
   .track-row {
@@ -285,5 +285,28 @@
 
   .row-action {
     opacity: 1;
+  }
+
+  /*
+   * 卡片（Cards.css）在同一档收缩：它和曲目行是同一套列表语义，移动端都要
+   * 「操作常显 + 更密的网格」——集中在这一处，避免两文件各开一个断点。
+   */
+  .card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px 12px;
+  }
+
+  .card__play {
+    opacity: 1;
+    transform: translateY(0);
+    width: 38px;
+    height: 38px;
+  }
+
+  .card__fav {
+    opacity: 1;
+    transform: translateY(0);
+    width: 36px;
+    height: 36px;
   }
 }

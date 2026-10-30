@@ -17,7 +17,7 @@
   flex-direction: column;
   width: min(560px, 100%);
   /* 高度封顶：简介再长也不把页面撑长，正文自己滚 */
-  max-height: min(72vh, 640px);
+  max-height: min(72vh, 640px); /* 尺寸上限，非布局断点 */
   border-radius: var(--radius-xl);
   background: var(--bg-elevated);
   border: 1px solid var(--separator);
@@ -99,7 +99,7 @@
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .artist-info__overlay {
     padding: 16px;
     align-items: flex-end;

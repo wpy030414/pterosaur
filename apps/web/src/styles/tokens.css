@@ -31,6 +31,14 @@
   --play-neutral-text: #131315;
   --play-neutral-hover: rgba(255, 255, 255, 0.85);
 
+  /* ---------- 布局断点 ----------
+   * 权威边界：**只有 768px 一档**，≤768px 为移动端、>768px 为桌面端，不设其它布局档位。
+   * 组件 CSS 一律写 `@media (max-width: 768px)`（CSS 自定义属性不能用于媒体查询，故此处仅作文档锚点）；
+   * JS 侧用 `hooks/useMediaQuery` 的 `MOBILE_QUERY`，二者必须一致。新增响应式规则请并入既有档位，
+   * 不要按容器特征另开断点（如 640 / 760 / 860 / 900 / 1080）。触屏 / 悬停能力另用 `(hover: none)` 判定，
+   * 不归布局断点管。 */
+  --bp-mobile: 768px;
+
   /* ---------- 尺寸 ---------- */
   --sidebar-width: 260px;
   --playerbar-height: 88px;
@@ -40,6 +48,12 @@
    * 故滚到底时需要额外空间，避免最后一行被胶囊压住。≈ 岛高 + 与岛的间距。
    */
   --page-bottom-inset: 104px;
+  /*
+   * 页面左右内边距（内容槽）：桌面 32px、移动端 16px。原先散落在 app.css / pages.css /
+   * Artist.css / ArtistWorks.css 各自的窄屏块里，现统一由本令牌驱动——这些同名 `16px`
+   * 的移动端覆盖随之删除，页面内边距不再需要单独断点（见 AGENTS：只有 768 一档）。
+   */
+  --page-gutter: 32px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-sm: 6px;
@@ -81,6 +95,18 @@
     'Cascadia Code', Menlo, monospace;
 
   color-scheme: dark;
+}
+
+/*
+ * 移动端令牌档位（权威边界 768px）。
+ * 必须落在本文件——`tokens.css` 由 `global.css` 最先 @import，同优先级的 `:root` 后写者胜，
+ * 若把这条覆盖放进 app.css / pages.css 等后加载样式，基础声明会反过来压掉它。
+ * 组件只引用令牌，不再为内边距 / 间距单独开断点。
+ */
+@media (max-width: 768px) {
+  :root {
+    --page-gutter: 16px;
+  }
 }
 
 /* 深色（默认） */

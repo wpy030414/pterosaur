@@ -32,7 +32,8 @@
   outline-offset: 1px;
 }
 
-@media (max-width: 900px) {
+/* 移动端：侧栏收成抽屉，桌面端不显示入口（权威边界 768px） */
+@media (max-width: 768px) {
   .mobile-menu-btn {
     display: flex;
   }

@@ -53,12 +53,12 @@
 /* ============================ 通用页面骨架 ============================ */
 .page {
   /* 底部留白：内容滚到底时不被悬浮播放岛压住 */
-  padding: 0 32px calc(40px + var(--page-bottom-inset));
+  padding: 0 var(--page-gutter) calc(40px + var(--page-bottom-inset));
   max-width: 1600px;
 }
 
 .page-hero {
-  padding: 24px 32px 8px;
+  padding: 24px var(--page-gutter) 8px;
   max-width: 1600px;
 }
 
@@ -123,20 +123,21 @@
   }
 }
 
-/* ============================ 响应式 ============================ */
-@media (max-width: 900px) {
-  /* 窄屏侧边栏改抽屉（脱离网格流）：只剩主内容区一列 */
+/* ============================ 响应式（权威边界 768px） ============================ */
+/*
+ * 全站只有两档布局：>768px 桌面端（侧栏常驻 + 主内容区两列）、≤768px 移动端（单列 + 抽屉侧栏）。
+ * 新增的窄屏规则一律并入这里或各组件自己的 768 块，不要再引入 640 / 860 / 900 / 1080 等中间档。
+ */
+
+/* 移动端：侧栏改抽屉（脱离网格流），只剩主内容区一列 */
+@media (max-width: 768px) {
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr;
     grid-template-areas: 'main';
   }
 
-  .page,
-  .page-hero {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
+  /* 页面内边距由 --page-gutter 统一下调（令牌覆盖在 tokens.css），这里不再逐页覆盖 */
 }
 
 .error-retry {

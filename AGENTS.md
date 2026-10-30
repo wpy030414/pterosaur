@@ -33,6 +33,7 @@ Pterosaur —— 仿 Apple Music 的网页音乐播放器（React 19 + Vite 前�
   - PWA / 缓存：`vite-plugin-pwa`（配置在 `apps/web/vite.config.ts`，`injectManifest`）把现有手写 SW（`apps/web/src/sw.ts`）作为**唯一** Service Worker 构建为 `sw.js`（IIFE）；`build` 就是单条 `vp build`，**已无第二步 SW 构建**。SW 承担三类互不相交的职责：`/stream/*` 音频与封面图片（`destination === 'image'`，CORS 拉取）写入**同一个** IndexedDB 池（共用 16GB LRU；逻辑在 `lib/mediaCache.ts`，低层封装 `lib/idb.ts`），生产下另经 Workbox 缓存应用外壳、**7 天过期**（`lib/shellCache.ts`）。IDB 库为 v4（`media`/`mediaMeta`/`background` + 独立的 `library` store）。PWA 生命周期操作（注销 / 清 Cache Storage / 硬刷新）在 `lib/pwa.ts`，均由顶栏设置弹窗调用。**登录 / 退出登录会清空全部缓存**（媒体池 + Cache Storage + 内存缓存，见 `lib/clearCaches.ts` 与 ADR-034），但**不动** `background` store（本地设置）。SW 另接受页面 `PREFETCH_AUDIO` 消息**主动**预热音频（预载队列相邻曲目；403 静默、不通知登录，见 ADR-037）。
   - 播放进度 seek 用 `apps/web/src/hooks/audioElement.ts` 的 `seekTo()` 命令式处理，**不要**直接写 store.position（会与音频回写打架）。
   - 样式：设计令牌集中在 `apps/web/src/styles/tokens.css`，组件样式与组件同名 `.css` 并排存放。新增颜色/间距优先用 CSS 变量。
+  - **布局断点只有一档 768px**（≤768 移动端 / >768 桌面端，见 ADR-059）：CSS 一律 `@media (max-width: 768px)`，JS 一律引用 `hooks/useMediaQuery` 的 `MOBILE_QUERY`；不要再写 640/760/860/900/1080 等宽度字面量，也不要把内边距/间距的差异再开成断点——用令牌（如 `--page-gutter`）表达，令牌的移动端档位写在 `tokens.css` 内（它最先加载，同优先级的 `:root` 后写者胜）。`@media (hover: none)` 判定的是输入能力而非布局，可继续按需使用。
   - 测试：单元/组件测试**镜像**在 `apps/web/test/**`（`src/` 下不放测试，`vitest.config.ts` 的 `include` 即此约定）；E2E 在根 `test/`（Playwright，需先 `pnpm build`）。改动核心播放逻辑（队列 / 循环 / 随机）必须补 `apps/web/test/store/player.test.ts` 用例。
   - 提交信息遵循 Conventional Commits：type/scope 用英文，描述用简体中文；作者为 `杏仁鹿 <krkr@xrl.im>`。
 

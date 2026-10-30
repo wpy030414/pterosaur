@@ -174,28 +174,6 @@
   overflow: hidden;
 }
 
-@media (max-width: 640px) {
-  .card-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 16px 12px;
-  }
-
-  /* 触屏设备常驻显示播放按钮 */
-  .card__play {
-    opacity: 1;
-    transform: translateY(0);
-    width: 38px;
-    height: 38px;
-  }
-
-  /* 触屏设备常驻显示收藏按钮 */
-  .card__fav {
-    opacity: 1;
-    transform: translateY(0);
-    width: 36px;
-    height: 36px;
-  }
-}
 
 /* ---------- 封面右上角的「曲目数量」chip（见 CountChip） ---------- */
 .card__count {

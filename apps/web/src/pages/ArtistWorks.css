@@ -2,7 +2,7 @@
 .artist-works {
   max-width: 1600px;
   margin-inline: auto;
-  padding: 0 32px var(--page-bottom-inset);
+  padding: 0 var(--page-gutter) var(--page-bottom-inset);
 }
 
 .artist-works__header {
@@ -38,11 +38,7 @@
   color: var(--text-tertiary);
 }
 
-@media (max-width: 760px) {
-  .artist-works {
-    padding: 0 16px var(--page-bottom-inset);
-  }
-
+@media (max-width: 768px) {
   .artist-works__header {
     padding: 20px 0 16px;
   }

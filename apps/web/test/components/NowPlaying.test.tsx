@@ -7,6 +7,7 @@ import { useSettings } from '../../src/store/settings.js'
 import { api } from '../../src/api/client.js'
 import { clearCoverRegistry } from '../../src/lib/imageCache.js'
 import { clearLyricCache } from '../../src/lib/lyricCache.js'
+import { MOBILE_QUERY } from '../../src/hooks/useMediaQuery.js'
 import type { Track } from '@pterosaur/shared/types'
 
 // 沉浸页会拉歌词与音质：mock 掉 api 客户端，避免真实 fetch
@@ -90,10 +91,10 @@ async function coverArrives() {
   })
 }
 
-/** 覆盖 matchMedia：`mobile` 决定 `(max-width: 860px)` 是否命中（供移动端封面交互用例）。 */
+/** 覆盖 matchMedia：`mobile` 决定移动端查询（`MOBILE_QUERY`，权威边界 768px）是否命中（供移动端封面交互用例）。 */
 function stubMobileMedia(mobile: boolean) {
   window.matchMedia = ((query: string) => ({
-    matches: mobile && query.includes('max-width: 860px'),
+    matches: mobile && query === MOBILE_QUERY,
     media: query,
     onchange: null,
     addListener: vi.fn(),

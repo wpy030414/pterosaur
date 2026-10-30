@@ -411,8 +411,9 @@
   margin-top: 2px;
 }
 
-/* ---------- 窄屏 / 移动端（≤860px）：单列，控制组强制底部，歌词动态撑高 ---------- */
-@media (max-width: 860px) {
+/* ---------- 移动端（≤768px）：单列，控制组强制底部，歌词动态撑高 ---------- */
+/* 移动端：竖排「封面 + 信息 / 歌词 / 控制」，封面可点按进入专注歌词（权威边界 768px） */
+@media (max-width: 768px) {
   .nowplaying__inner {
     display: flex;
     flex-direction: column;
