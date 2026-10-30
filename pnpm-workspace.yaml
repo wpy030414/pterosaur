@@ -5,6 +5,15 @@ packages:
 allowBuilds:
   esbuild: true
 
+# @ffmpeg-installer/* 的二进制走 optionalDependencies 分发、无 postinstall（见
+# apps/server/src/ffmpeg.ts）。显式声明「无需构建脚本」，否则 pnpm 12 会把被忽略的
+# 构建脚本当错误（ERR_PNPM_IGNORED_BUILDS）中断安装。
+ignoredBuiltDependencies:
+  - '@ffmpeg-installer/linux-x64'
+  - '@ffmpeg-installer/win32-x64'
+  - '@ffmpeg-installer/darwin-x64'
+  - '@ffmpeg-installer/darwin-arm64'
+
 minimumReleaseAgeExclude:
   - '@types/node@26.6.4'
 
