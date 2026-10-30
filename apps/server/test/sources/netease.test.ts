@@ -97,9 +97,21 @@ describe('normalizeAlbum', () => {
     expect(al.id).toBe('7')
     expect(al.artist).toBe('甲 / 乙')
     expect(al.artistId).toBe('3')
+    // 合作专辑：每个艺人都带 id，供界面逐个跳转（此前只有整体名串，只能跳到第一个）
+    expect(al.artistRefs).toEqual([
+      { id: '3', name: '甲' },
+      { id: '4', name: '乙' },
+    ])
     expect(al.year).toBe(2020)
     expect(al.trackCount).toBe(10)
     expect(al.cover).toBe(`https://${NETEASE_IMAGE_HOST}/b.jpg?param=1200y1200`)
+  })
+
+  it('缺少艺人 id 时 artistRefs 缺省，artistId 亦缺省', () => {
+    const al = normalizeAlbum({ id: 8, name: '无名专辑', artist: { name: '甲' } })
+    expect(al.artist).toBe('甲')
+    expect(al.artistRefs).toBeUndefined()
+    expect(al.artistId).toBeUndefined()
   })
 })
 

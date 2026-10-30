@@ -204,14 +204,21 @@ export function normalizeArtist(raw: RawArtist): Artist {
 export function normalizeAlbum(raw: RawAlbum): Album {
   const list = raw.artists ?? (raw.artist ? [raw.artist] : [])
   const names = list.map((a) => a?.name).filter(Boolean)
-  const primaryId = list.find((a) => a && a.id != null)?.id
+  // 逐个艺人的引用（合作专辑每个都能点）；仅保留同时具备 id 与名字的条目，与 normalizeTrack 一致
+  const artistRefs = list
+    .filter(
+      (a): a is { id?: number; name: string } => !!a?.name && a?.id != null,
+    )
+    .map((a) => ({ id: String(a.id), name: a.name }))
+  const primaryId = artistRefs[0]?.id
   return {
     source: 'netease',
     id: String(raw.id),
     name: raw.name ?? '未命名专辑',
     cover: coverUrl(raw.picUrl, BASE_COVER_SIZE),
     artist: names.join(' / ') || '未知艺人',
-    artistId: primaryId != null ? String(primaryId) : undefined,
+    artistId: primaryId,
+    artistRefs: artistRefs.length ? artistRefs : undefined,
     year: raw.publishTime ? new Date(raw.publishTime).getFullYear() : undefined,
     trackCount: raw.size ?? raw.trackCount,
   }

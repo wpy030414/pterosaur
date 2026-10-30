@@ -130,6 +130,11 @@ export interface Album {
   artist: string
   /** 主艺人 id，供跳转艺人页。 */
   artistId?: string
+  /**
+   * 该专辑关联的艺人引用（含 id），供界面逐个跳转艺人页——合作专辑的每个艺人都可点。
+   * 旧数据可能缺失，缺失时界面降级为单个 `artist` 纯文本（或退回 `artistId`）。
+   */
+  artistRefs?: ArtistRef[]
   /** 发行年份。 */
   year?: number
   /** 曲目数量。 */
