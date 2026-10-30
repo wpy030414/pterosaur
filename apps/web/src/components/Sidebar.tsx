@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Search,
   LayoutGrid,
@@ -18,6 +19,7 @@ import { SidebarGroup } from './SidebarGroup.js'
 import { SidebarFooter } from './SidebarFooter.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
+import { useMediaQuery, MOBILE_QUERY } from '../hooks/useMediaQuery.js'
 import './Sidebar.css'
 
 interface NavEntry {
@@ -77,6 +79,15 @@ export function Sidebar() {
   const sidebarOpen = useSidebarDrawer((s) => s.sidebarOpen)
   const setSidebarOpen = useSidebarDrawer((s) => s.setSidebarOpen)
   const navigate = useViewNavigate()
+  const { pathname } = useLocation()
+  const isMobile = useMediaQuery(MOBILE_QUERY)
+
+  // 移动端抽屉：地址一变就自动收纳，不必再点遮罩。
+  // 按 pathname 而非点击事件来收，这样导航项、侧栏内「新建歌单」的跳转、
+  // 浏览器前进/后退三条入口都能一并覆盖。
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [pathname, isMobile, setSidebarOpen])
 
   // 点击标题切换：在品牌名与当前 commit 短哈希之间来回
   const [showHash, setShowHash] = useState(false)
