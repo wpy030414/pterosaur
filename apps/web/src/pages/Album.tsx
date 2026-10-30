@@ -112,15 +112,8 @@ export function AlbumPage() {
     )
   }
 
-  const meta = [
-    album.year ? String(album.year) : '',
-    tracks.length ? `${tracks.length} 首` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-
   return (
-    <div className="detail" aria-busy={loading}>
+    <div className="detail detail--album" aria-busy={loading}>
       <header className="detail__hero">
         <Cover
           src={coverAt(album.cover, COVER_LARGE)}
@@ -130,26 +123,13 @@ export function AlbumPage() {
           className="detail__cover"
         />
         <div className="detail__info">
-          <span className="detail__type">专辑</span>
           <h1 className="detail__name">{album.name}</h1>
-          <p className="detail__meta">
-            {album.artistId ? (
-              <button
-                type="button"
-                className="detail__artist-link"
-                onClick={() =>
-                  navigate(
-                    `/artist/${album.source}/${album.artistId}?name=${encodeURIComponent(album.artist)}`,
-                  )
-                }
-              >
-                {album.artist}
-              </button>
-            ) : (
+          <p className="detail__artist">
+            {albumArtistLinks(album, navigate) ?? (
               <span>{album.artist}</span>
             )}
-            {meta && <span> · {meta}</span>}
           </p>
+          {album.year && <p className="detail__year">{album.year}年</p>}
         </div>
       </header>
 
@@ -192,9 +172,50 @@ export function AlbumPage() {
         />
       </div>
 
+      {/* 专辑页整页同一张专辑、同一批艺人：行内不再重复封面 / 歌手 / 专辑列 */}
       <div className="detail__list">
-        <TrackList tracks={tracks} emptyText="这张专辑还没有曲目" />
+        <TrackList
+          tracks={tracks}
+          showAlbum={false}
+          showCover={false}
+          showArtist={false}
+          emptyText="这张专辑还没有曲目"
+        />
       </div>
     </div>
   )
+}
+
+/**
+ * 专辑艺人的可点击链接（合作专辑逐个可点）。
+ *
+ * 优先用 `artistRefs`（每个艺人都有 id）；旧数据只有 `artistId` 时用整体名串兜底；
+ * 都没有时返回 `null`，由调用方降级为纯文本。
+ */
+function albumArtistLinks(
+  album: Album,
+  navigate: (to: string) => void,
+): React.ReactNode {
+  const refs = album.artistRefs?.length
+    ? album.artistRefs
+    : album.artistId
+      ? [{ id: album.artistId, name: album.artist }]
+      : []
+  if (!refs.length) return null
+  return refs.map((a, i) => (
+    <span key={`${a.id}-${i}`}>
+      {i > 0 && ' / '}
+      <button
+        type="button"
+        className="detail__artist-link"
+        onClick={() =>
+          navigate(
+            `/artist/${album.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
+          )
+        }
+      >
+        {a.name}
+      </button>
+    </span>
+  ))
 }

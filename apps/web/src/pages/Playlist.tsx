@@ -26,14 +26,6 @@ import { useRip } from '../store/rip.js'
 import { useSettings } from '../store/settings.js'
 import { isRipping, runRip } from '../lib/rip.js'
 
-/** 格式化播放量。 */
-function fmtCount(n?: number): string {
-  if (!n) return ''
-  if (n >= 1e8) return `${(n / 1e8).toFixed(1)} 亿次播放`
-  if (n >= 1e4) return `${Math.round(n / 1e4)} 万次播放`
-  return `${n} 次播放`
-}
-
 /**
  * 歌单详情页。
  *
@@ -202,10 +194,8 @@ export function PlaylistPage() {
     )
   }
 
-  const totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0)
-
   return (
-    <div className="detail">
+    <div className="detail detail--playlist">
       <header className="detail__hero">
         {isCassette ? (
           <div className="detail__art--cassette">
@@ -229,9 +219,6 @@ export function PlaylistPage() {
           />
         )}
         <div className="detail__info">
-          <span className="detail__type">
-            {isLocal ? '本地歌单' : isCassette ? '磁带' : '歌单'}
-          </span>
           {isLocal && renaming ? (
             <input
               ref={renameRef}
@@ -260,16 +247,6 @@ export function PlaylistPage() {
           {!isLocal && playlist.description && (
             <p className="detail__desc">{playlist.description}</p>
           )}
-          <p className="detail__meta">
-            {playlist.creator && <span>{playlist.creator} · </span>}
-            <span>{tracks.length} 首</span>
-            {totalDuration > 0 && (
-              <span> · 约 {Math.round(totalDuration / 60)} 分钟</span>
-            )}
-            {!isLocal && playlist.playCount
-              ? ` · ${fmtCount(playlist.playCount)}`
-              : ''}
-          </p>
         </div>
       </header>
 

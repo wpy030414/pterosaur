@@ -220,4 +220,28 @@ describe('TrackList', () => {
     expect(screen.getByText('艺人1')).toBeInTheDocument()
     expect(screen.getByText('专辑1')).toBeInTheDocument()
   })
+
+  it('showCover/showArtist/showAlbum 全关时只留歌名（专辑页精简行）', () => {
+    const t = [track('1', '第一首', { album: '某专辑', albumId: '77' })]
+    const { container } = renderList(
+      <TrackList
+        tracks={t}
+        showCover={false}
+        showArtist={false}
+        showAlbum={false}
+      />,
+    )
+    expect(container.querySelector('.track-list')).toHaveClass(
+      'track-list--no-cover',
+      'track-list--no-album',
+    )
+    // 封面：行内不再渲染 <img> 或封面占位
+    expect(screen.getByRole('list').querySelector('.cover')).toBeNull()
+    // 艺人副标题与专辑列均不渲染
+    expect(screen.queryByText('艺人1')).toBeNull()
+    expect(screen.queryByRole('button', { name: '某专辑' })).toBeNull()
+    expect(screen.queryByText('专辑')).toBeNull()
+    // 歌名仍在
+    expect(screen.getByText('第一首')).toBeInTheDocument()
+  })
 })

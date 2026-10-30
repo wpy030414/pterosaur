@@ -19,6 +19,13 @@ interface TrackListProps {
   showIndex?: boolean
   /** 是否显示专辑列（磁带等「无专辑」语境的列表可关掉，标题列随之加宽） */
   showAlbum?: boolean
+  /**
+   * 是否显示行内的大封面（默认显示）。
+   * 专辑详情页等「歌名 / 歌手已在页头交代」的语境可关掉，行更紧凑。
+   */
+  showCover?: boolean
+  /** 是否显示标题下方的副标题（艺人行）。专辑页可关掉（整页同一张专辑、同一批艺人）。 */
+  showArtist?: boolean
   /** 空状态文案 */
   emptyText?: string
   /** 附加类名 */
@@ -40,6 +47,8 @@ export function TrackList({
   showHeader = true,
   showIndex = true,
   showAlbum = true,
+  showCover = true,
+  showArtist = true,
   emptyText = '暂无曲目',
   className,
   onPlayRow,
@@ -120,7 +129,7 @@ export function TrackList({
 
   return (
     <div
-      className={`track-list${showAlbum ? '' : ' track-list--no-album'}${className ? ` ${className}` : ''}`}
+      className={`track-list${showAlbum ? '' : ' track-list--no-album'}${showCover ? '' : ' track-list--no-cover'}${className ? ` ${className}` : ''}`}
       role="list"
     >
       {showHeader && (
@@ -188,36 +197,40 @@ export function TrackList({
             )}
 
             <span className="col-title">
-              <Cover
-                src={coverAt(t.cover, COVER_SMALL)}
-                alt={t.title}
-                radius="sm"
-                size={40}
-              />
+              {showCover && (
+                <Cover
+                  src={coverAt(t.cover, COVER_SMALL)}
+                  alt={t.title}
+                  radius="sm"
+                  size={40}
+                />
+              )}
               <span className="col-title__text">
                 <span className="col-title__name ellipsis">{t.title}</span>
-                <span className="col-title__artist ellipsis">
-                  {t.artistRefs?.length
-                    ? t.artistRefs.map((a, ai) => (
-                        <span key={`${a.id}-${ai}`}>
-                          {ai > 0 && ' / '}
-                          <button
-                            type="button"
-                            className="track-link"
-                            onClick={(e) =>
-                              openEntity(
-                                e,
-                                `/artist/${t.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
-                              )
-                            }
-                            onKeyDown={stopKey}
-                          >
-                            {a.name}
-                          </button>
-                        </span>
-                      ))
-                    : t.artist}
-                </span>
+                {showArtist && (
+                  <span className="col-title__artist ellipsis">
+                    {t.artistRefs?.length
+                      ? t.artistRefs.map((a, ai) => (
+                          <span key={`${a.id}-${ai}`}>
+                            {ai > 0 && ' / '}
+                            <button
+                              type="button"
+                              className="track-link"
+                              onClick={(e) =>
+                                openEntity(
+                                  e,
+                                  `/artist/${t.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
+                                )
+                              }
+                              onKeyDown={stopKey}
+                            >
+                              {a.name}
+                            </button>
+                          </span>
+                        ))
+                      : t.artist}
+                  </span>
+                )}
               </span>
             </span>
 

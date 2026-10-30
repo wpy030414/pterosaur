@@ -175,6 +175,94 @@
   flex-shrink: 0;
 }
 
+/*
+ * 歌单 / 专辑详情页的 Hero 规格（艺人页稍后单独重做，故不沿用）：
+ * 封面 270px，右栏自上而下为「标题 26px / 简介（歌单）或艺人 26px（专辑）/ 年份」，
+ * 操作按钮位于右栏底部。类型标签与元信息行按设计取舍移除，右栏只保留上述层级。
+ */
+.detail--album .detail__cover,
+.detail--playlist .detail__cover {
+  width: 270px;
+  height: 270px;
+}
+
+.detail--album .detail__art--cassette,
+.detail--playlist .detail__art--cassette {
+  width: 270px;
+}
+
+.detail--album .detail__art--cassette .cassette-shell,
+.detail--playlist .detail__art--cassette .cassette-shell {
+  --cs: 1.5;
+}
+
+.detail--album .detail__hero,
+.detail--playlist .detail__hero {
+  /* 右栏内容（标题 / 艺人 / 年份）较矮，顶部对齐避免与大封面错位 */
+  align-items: flex-start;
+  padding-top: 40px;
+}
+
+.detail--album .detail__info,
+.detail--playlist .detail__info {
+  display: flex;
+  flex-direction: column;
+  /* 与放大后的封面等高，使操作按钮能停在封面底边处 */
+  min-height: 270px;
+}
+
+.detail--album .detail__name,
+.detail--playlist .detail__name {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.detail--playlist .detail__name--editing {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+/* 歌单简介：13px 常规 */
+.detail--playlist .detail__desc {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* 专辑：艺人 26px 常规 */
+.detail__artist {
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  line-height: 1.25;
+  margin-top: 6px;
+}
+
+.detail__artist .detail__artist-link {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* 专辑：年份 13px 粗体（含「年」字） */
+.detail__year {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+.detail--album .detail__actions,
+.detail--playlist .detail__actions {
+  /* 右栏内容已随封面等高，按钮回到 Hero 下方即可，不再是负边距的叠层 */
+  margin-top: 0;
+  padding-top: 0;
+}
+
 /* 磁带详情页封面：复用磁带外壳（样式见 Cards.css 的 .cassette-shell），只放大细部倍率 */
 .detail__art--cassette {
   width: 240px;
@@ -512,6 +600,33 @@
   .detail__cover {
     width: 160px;
     height: 160px;
+  }
+
+  /* 歌单 / 专辑：窄屏仍比通用档大一档，但不至于挤掉右栏 */
+  .detail--album .detail__cover,
+  .detail--playlist .detail__cover {
+    width: 200px;
+    height: 200px;
+  }
+
+  .detail--album .detail__info,
+  .detail--playlist .detail__info {
+    min-height: 0;
+  }
+
+  .detail--album .detail__name,
+  .detail--playlist .detail__name,
+  .detail--playlist .detail__name--editing {
+    font-size: 22px;
+  }
+
+  .detail__artist {
+    font-size: 18px;
+  }
+
+  .detail--album .detail__art--cassette,
+  .detail--playlist .detail__art--cassette {
+    width: 200px;
   }
 
   .detail__art--cassette {
