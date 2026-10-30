@@ -56,7 +56,7 @@
   display: block;
 }
 
-/* 播放按钮：悬浮时浮现 */
+/* 播放按钮：悬浮时浮现。中性色实心圆——深色白底黑图标、浅色黑底白图标 */
 .card__play {
   position: absolute;
   right: 8px;
@@ -67,8 +67,8 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--play-neutral);
+  color: var(--play-neutral-text);
   opacity: 0;
   transform: translateY(8px);
   transition:
@@ -89,7 +89,7 @@
 }
 
 .card__play:hover {
-  background: var(--accent-hover);
+  background: var(--play-neutral-hover);
   transform: scale(1.06);
 }
 

@@ -359,8 +359,9 @@
   gap: 8px;
   padding: 10px 24px;
   border-radius: 22px;
-  background: var(--accent);
-  color: #fff;
+  /* 中性色实心：深色白底黑字、浅色黑底白字（不再使用强调红） */
+  background: var(--play-neutral);
+  color: var(--play-neutral-text);
   font-size: 14px;
   font-weight: 600;
   transition:
@@ -369,7 +370,7 @@
 }
 
 .detail__play:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--play-neutral-hover);
   transform: scale(1.03);
 }
 

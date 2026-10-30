@@ -297,6 +297,15 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
     (list) => list.length > 0,
   )
 
+  /*
+   * 加载期只出一个占位，不提前铺开五个分区。
+   *
+   * 五条滑轨各自带 `<Loading>`，若在数据到达前就渲染，页面会出现**五个同时旋转的加载动画**，
+   * 既噪又反复把版面推来推去。改为等音乐与磁带两条请求都落定（成功或失败）后一次性铺开，
+   * 布局只成形一次。分区是否渲染仍由各自的数据决定：空分区自然不出现。
+   */
+  const resultsReady = !isBusy
+
   return (
     <div className="search">
       <header className="search__header">
@@ -304,8 +313,10 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         <h1 className="search__title">{q}</h1>
       </header>
 
+      {!resultsReady && <Loading text={`正在搜索「${q}」…`} />}
+
       {/* 全部分区都没有结果（且不在加载中）才给空态；某个分区空则只是不渲染那一块 */}
-      {!isBusy && !hasAny && (
+      {resultsReady && !hasAny && (
         <Empty
           text={`没有找到与「${q}」相关的内容`}
           icon={<SearchX size={32} strokeWidth={1.5} />}
@@ -313,22 +324,18 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
       )}
 
       {/* ---------- 歌曲（紧凑曲目行，4 行 × N 列网格） ---------- */}
-      {visible('songs') && (musicLoading || songs.length > 0) && (
+      {resultsReady && visible('songs') && (musicError || songs.length > 0) && (
         <Rail
           title="歌曲"
           itemWidth={324}
           grid
           action={
-            !musicLoading && !musicError && hasMore('songs', songs.length) ? (
+            !musicError && hasMore('songs', songs.length) ? (
               <RailMore to={categoryPath('songs', q)} label="歌曲" />
             ) : undefined
           }
         >
-          {musicLoading ? (
-            <div className="rail__placeholder">
-              <Loading text="加载歌曲…" />
-            </div>
-          ) : musicError ? (
+          {musicError ? (
             <div className="rail__placeholder">
               <ErrorState message={musicError} onRetry={musicReload} />
             </div>
@@ -345,133 +352,125 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
       )}
 
       {/* ---------- 艺人 ---------- */}
-      {visible('artists') && (musicLoading || artists.length > 0) && (
-        <Rail
-          title="艺人"
-          action={
-            !musicLoading &&
-            !musicError &&
-            hasMore('artists', artists.length) ? (
-              <RailMore to={categoryPath('artists', q)} label="艺人" />
-            ) : undefined
-          }
-        >
-          {musicLoading ? (
-            <div className="rail__placeholder">
-              <Loading text="加载艺人…" />
-            </div>
-          ) : musicError ? (
-            <div className="rail__placeholder">
-              <ErrorState message={musicError} onRetry={musicReload} />
-            </div>
-          ) : (
-            artists.map((a) => (
-              <ArtistCard
-                key={keyOf(a)}
-                artist={a}
-                onClick={() =>
-                  navigate(
-                    `/artist/${a.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
-                  )
-                }
-              />
-            ))
-          )}
-        </Rail>
-      )}
+      {resultsReady &&
+        visible('artists') &&
+        (musicError || artists.length > 0) && (
+          <Rail
+            title="艺人"
+            action={
+              !musicError && hasMore('artists', artists.length) ? (
+                <RailMore to={categoryPath('artists', q)} label="艺人" />
+              ) : undefined
+            }
+          >
+            {musicError ? (
+              <div className="rail__placeholder">
+                <ErrorState message={musicError} onRetry={musicReload} />
+              </div>
+            ) : (
+              artists.map((a) => (
+                <ArtistCard
+                  key={keyOf(a)}
+                  artist={a}
+                  onClick={() =>
+                    navigate(
+                      `/artist/${a.source}/${a.id}?name=${encodeURIComponent(a.name)}`,
+                    )
+                  }
+                />
+              ))
+            )}
+          </Rail>
+        )}
 
       {/* ---------- 专辑 ---------- */}
-      {visible('albums') && (musicLoading || albums.length > 0) && (
-        <Rail
-          title="专辑"
-          action={
-            !musicLoading && !musicError && hasMore('albums', albums.length) ? (
-              <RailMore to={categoryPath('albums', q)} label="专辑" />
-            ) : undefined
-          }
-        >
-          {musicLoading ? (
-            <div className="rail__placeholder">
-              <Loading text="加载专辑…" />
-            </div>
-          ) : musicError ? (
-            <div className="rail__placeholder">
-              <ErrorState message={musicError} onRetry={musicReload} />
-            </div>
-          ) : (
-            albums.map((album) => (
-              <AlbumCard
-                key={keyOf(album)}
-                album={album}
-                onClick={() => navigate(`/album/${album.source}/${album.id}`)}
-              />
-            ))
-          )}
-        </Rail>
-      )}
+      {resultsReady &&
+        visible('albums') &&
+        (musicError || albums.length > 0) && (
+          <Rail
+            title="专辑"
+            action={
+              !musicError && hasMore('albums', albums.length) ? (
+                <RailMore to={categoryPath('albums', q)} label="专辑" />
+              ) : undefined
+            }
+          >
+            {musicError ? (
+              <div className="rail__placeholder">
+                <ErrorState message={musicError} onRetry={musicReload} />
+              </div>
+            ) : (
+              albums.map((album) => (
+                <AlbumCard
+                  key={keyOf(album)}
+                  album={album}
+                  onClick={() =>
+                    navigate(`/album/${album.source}/${album.id}`)
+                  }
+                />
+              ))
+            )}
+          </Rail>
+        )}
 
       {/* ---------- 歌单 ---------- */}
-      {visible('playlists') && (musicLoading || playlists.length > 0) && (
-        <Rail
-          title="歌单"
-          action={
-            !musicLoading &&
-            !musicError &&
-            hasMore('playlists', playlists.length) ? (
-              <RailMore to={categoryPath('playlists', q)} label="歌单" />
-            ) : undefined
-          }
-        >
-          {musicLoading ? (
-            <div className="rail__placeholder">
-              <Loading text="加载歌单…" />
-            </div>
-          ) : musicError ? (
-            <div className="rail__placeholder">
-              <ErrorState message={musicError} onRetry={musicReload} />
-            </div>
-          ) : (
-            playlists.map((p) => (
-              <PlaylistCard
-                key={keyOf(p)}
-                playlist={p}
-                onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
-              />
-            ))
-          )}
-        </Rail>
-      )}
+      {resultsReady &&
+        visible('playlists') &&
+        (musicError || playlists.length > 0) && (
+          <Rail
+            title="歌单"
+            action={
+              !musicError && hasMore('playlists', playlists.length) ? (
+                <RailMore to={categoryPath('playlists', q)} label="歌单" />
+              ) : undefined
+            }
+          >
+            {musicError ? (
+              <div className="rail__placeholder">
+                <ErrorState message={musicError} onRetry={musicReload} />
+              </div>
+            ) : (
+              playlists.map((p) => (
+                <PlaylistCard
+                  key={keyOf(p)}
+                  playlist={p}
+                  onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
+                />
+              ))
+            )}
+          </Rail>
+        )}
+
       {/* ---------- 磁带（B 站视频合集，4:3 磁带卡） ---------- */}
-      {visible('cassette') && (cassette.loading || cassettes.length > 0) && (
-        <Rail
-          title="磁带"
-          action={
-            !cassette.loading &&
-            !cassette.error &&
-            hasMore('cassette', cassettes.length) ? (
-              <RailMore to={categoryPath('cassette', q)} label="磁带" />
-            ) : undefined
-          }
-        >
-          {cassette.loading ? (
-            <div className="rail__placeholder">
-              <Loading text="加载磁带…" />
-            </div>
-          ) : cassette.error ? (
-            <div className="rail__placeholder">
-              <ErrorState message={cassette.error} onRetry={cassette.reload} />
-            </div>
-          ) : (
-            cassettes.map((c) => (
-              <CassetteCard
-                key={keyOf(c)}
-                cassette={c}
-                onClick={() => navigate(`/playlist/${c.source}/${c.id}`)}
-              />
-            ))
-          )}
-        </Rail>
-      )}
+      {resultsReady &&
+        visible('cassette') &&
+        (cassette.error || cassettes.length > 0) && (
+          <Rail
+            title="磁带"
+            action={
+              !cassette.error && hasMore('cassette', cassettes.length) ? (
+                <RailMore to={categoryPath('cassette', q)} label="磁带" />
+              ) : undefined
+            }
+          >
+            {cassette.error ? (
+              <div className="rail__placeholder">
+                <ErrorState
+                  message={cassette.error}
+                  onRetry={cassette.reload}
+                />
+              </div>
+            ) : (
+              cassettes.map((c) => (
+                <CassetteCard
+                  key={keyOf(c)}
+                  cassette={c}
+                  onClick={() => navigate(`/playlist/${c.source}/${c.id}`)}
+                />
+              ))
+            )}
+          </Rail>
+        )}
     </div>
   )
 }
