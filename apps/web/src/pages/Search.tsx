@@ -404,9 +404,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
                 <AlbumCard
                   key={keyOf(album)}
                   album={album}
-                  onClick={() =>
-                    navigate(`/album/${album.source}/${album.id}`)
-                  }
+                  onClick={() => navigate(`/album/${album.source}/${album.id}`)}
                 />
               ))
             )}

@@ -3,6 +3,7 @@ import {
   normalizeTrack,
   normalizeArtist,
   normalizeAlbum,
+  collectAlbumPages,
   qrKey,
   qrLoginUrl,
   qrCheck,
@@ -108,7 +109,11 @@ describe('normalizeAlbum', () => {
   })
 
   it('缺少艺术家 id 时 artistRefs 缺省，artistId 亦缺省', () => {
-    const al = normalizeAlbum({ id: 8, name: '无名专辑', artist: { name: '甲' } })
+    const al = normalizeAlbum({
+      id: 8,
+      name: '无名专辑',
+      artist: { name: '甲' },
+    })
     expect(al.artist).toBe('甲')
     expect(al.artistRefs).toBeUndefined()
     expect(al.artistId).toBeUndefined()
@@ -143,6 +148,71 @@ describe('normalizeAlbum', () => {
     // 无法识别的体裁归 other，缺省时保持 undefined
     expect(mk('现场')?.type).toBe('other')
     expect(mk()?.type).toBeUndefined()
+  })
+})
+
+/**
+ * 艺术家作品分页：单页 200、最多 10 页、合计上限 2000。
+ * 用纯函数 `collectAlbumPages` 验证规则本身，不 mock 网络。
+ */
+describe('collectAlbumPages', () => {
+  /** 造一个「共 total 张」的假上游。 */
+  const makeSource = (total: number, moreFlag?: boolean) => {
+    const calls: number[] = []
+    const fetchPage = vi.fn(async (offset: number) => {
+      calls.push(offset)
+      const list = Array.from(
+        { length: Math.min(200, Math.max(0, total - offset)) },
+        (_, i) => offset + i,
+      )
+      return { list, more: moreFlag ?? offset + list.length < total }
+    })
+    return { fetchPage, calls }
+  }
+
+  it('作品不足一页：只请求一次', async () => {
+    const { fetchPage } = makeSource(47)
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(47)
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+    expect(fetchPage).toHaveBeenCalledWith(0)
+  })
+
+  it('作品超过一页：按 200 翻页，offset 递增', async () => {
+    const { fetchPage } = makeSource(450)
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(450)
+    expect(fetchPage).toHaveBeenNthCalledWith(1, 0)
+    expect(fetchPage).toHaveBeenNthCalledWith(2, 200)
+    expect(fetchPage).toHaveBeenNthCalledWith(3, 400)
+  })
+
+  it('最多翻 10 页：作品再多也只请求 10 次、最多收 2000 张', async () => {
+    const { fetchPage } = makeSource(5000)
+    const all = await collectAlbumPages(fetchPage)
+    expect(fetchPage).toHaveBeenCalledTimes(10)
+    expect(all).toHaveLength(2000)
+  })
+
+  it('上游 more=false 时提前收手', async () => {
+    const { fetchPage } = makeSource(1000, false)
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(200)
+    expect(fetchPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('某页失败时保留已取到的部分，不抛错', async () => {
+    let n = 0
+    const fetchPage = vi.fn(async (offset: number) => {
+      if (++n === 2) throw new Error('boom')
+      return {
+        list: Array.from({ length: 200 }, (_, i) => offset + i),
+        more: true,
+      }
+    })
+    const all = await collectAlbumPages(fetchPage)
+    expect(all).toHaveLength(200)
+    expect(fetchPage).toHaveBeenCalledTimes(2)
   })
 })
 

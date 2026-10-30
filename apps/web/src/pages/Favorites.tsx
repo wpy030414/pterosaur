@@ -98,7 +98,10 @@ export function FavoritesPage() {
 
       <div className="detail__list">
         {favorites.length === 0 ? (
-          <Empty text="还没有喜欢的音乐" icon={<Star size={32} strokeWidth={1.5} />} />
+          <Empty
+            text="还没有喜欢的音乐"
+            icon={<Star size={32} strokeWidth={1.5} />}
+          />
         ) : (
           <TrackList tracks={favorites} />
         )}

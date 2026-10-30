@@ -439,14 +439,90 @@ export async function playlistTracks(
   return { playlist, tracks }
 }
 
-/** 艺术家详情：档案 + 热门单曲 + 专辑列表。 */
+/**
+ * 艺术家作品分页拉取的三个上限。
+ *
+ * `artist_album` 单页最多回 200 条；为防止极端艺术家（上千张作品）把请求拖长、打爆上游，
+ * 这里最多翻 10 页，合计上限 2000 张，超出部分不再尝试。
+ * （单个艺术家超过 2000 张作品几乎不可能，故以此封顶。）
+ */
+const ARTIST_ALBUM_PAGE = 200
+const ARTIST_ALBUM_MAX_PAGES = 10
+
+/**
+ * 分页收集作品：`fetchPage` 返回该页列表与「是否还有更多」。
+ *
+ * 停止条件三者取先：本页不足一页（已到末尾）、显式 `more === false`、或已达页数上限。
+ * 单页抛错时保留已取到的部分——作品区短一点好过整页打不开。
+ *
+ * 抽成纯函数是为了单独验证「最多 10 页 / 上限 2000」的规则，不必 mock 网络。
+ */
+export async function collectAlbumPages(
+  fetchPage: (
+    offset: number,
+  ) => Promise<{ list: unknown[]; more?: boolean } | undefined>,
+  opts: { pageSize?: number; maxPages?: number } = {},
+): Promise<unknown[]> {
+  const pageSize = opts.pageSize ?? ARTIST_ALBUM_PAGE
+  const maxPages = opts.maxPages ?? ARTIST_ALBUM_MAX_PAGES
+  const limit = pageSize * maxPages
+  const all: unknown[] = []
+  for (let page = 0; page < maxPages; page++) {
+    let res: { list: unknown[]; more?: boolean } | undefined
+    try {
+      res = await fetchPage(page * pageSize)
+    } catch {
+      break
+    }
+    const list = res?.list ?? []
+    all.push(...list)
+    if (list.length < pageSize) break
+    if (res?.more === false) break
+    if (all.length >= limit) break
+  }
+  return all.slice(0, limit)
+}
+
+/**
+ * 拉取艺术家的全部作品（分页循环）。
+ *
+ * 单页 200、最多 10 页（合计 ≤2000 张）。停止条件与兜底见 {@link collectAlbumPages}。
+ */
+async function fetchArtistAlbums(
+  id: string,
+  cookie?: string,
+): Promise<RawAlbum[]> {
+  const all = await collectAlbumPages(async (offset) => {
+    const res = await api.artist_album({
+      id,
+      limit: ARTIST_ALBUM_PAGE,
+      offset,
+      cookie,
+    })
+    const body = res?.body as
+      | { hotAlbums?: RawAlbum[]; albums?: RawAlbum[]; more?: boolean }
+      | undefined
+    return {
+      list: body?.hotAlbums ?? body?.albums ?? [],
+      more: body?.more,
+    }
+  })
+  return all as RawAlbum[]
+}
+
+/**
+ * 艺术家详情：档案 + 热门单曲（上游固定约 50 首）+ 全部作品。
+ *
+ * 作品按单页 200、最多 10 页分页取全（上限 2000 张），供艺术家页「一次载入完再展示」；
+ * 前端不再二次截断数据，只在滑轨里限制首屏显示条数。
+ */
 export async function artistDetail(
   id: string,
   cookie?: string,
 ): Promise<{ artist: Artist; tracks: Track[]; albums: Album[] }> {
-  const [info, albumRes] = await Promise.all([
+  const [info, rawAlbums] = await Promise.all([
     api.artists({ id, cookie }),
-    api.artist_album({ id, limit: 50, cookie }),
+    fetchArtistAlbums(id, cookie),
   ])
   const artist = normalizeArtist(
     (info?.body?.artist ?? { id, name: '未知艺术家' }) as RawArtist,
@@ -454,8 +530,6 @@ export async function artistDetail(
   const tracks: Track[] = ((info?.body?.hotSongs ?? []) as RawSong[]).map(
     normalizeTrack,
   )
-  const rawAlbums: RawAlbum[] =
-    albumRes?.body?.hotAlbums ?? albumRes?.body?.albums ?? []
   return { artist, tracks, albums: rawAlbums.map(normalizeAlbum) }
 }
 

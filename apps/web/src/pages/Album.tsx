@@ -127,9 +127,7 @@ export function AlbumPage() {
           <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">{album.name}</h1>
           <p className="detail__artist">
-            {albumArtistLinks(album, navigate) ?? (
-              <span>{album.artist}</span>
-            )}
+            {albumArtistLinks(album, navigate) ?? <span>{album.artist}</span>}
           </p>
           {(album.genre || album.year) && (
             <p className="detail__year">

@@ -1,0 +1,186 @@
+/**
+ * 艺术家详情页（版式对齐 Apple Music 艺术家页）。
+ *
+ * 结构：通栏大图（底部渐隐）→ 居中姓名 → 三个操作 → 歌曲排行 / 专辑 / 单曲与 EP 三条滑轨。
+ * 大图用 `object-position: center 20%` 偏上取景——人像类头像的脸通常在上半部，
+ * 居中裁切容易把脸切掉。
+ */
+.artist-page {
+  max-width: 1600px;
+  margin-inline: auto;
+  padding-bottom: var(--page-bottom-inset);
+}
+
+/* ---------- 通栏大图 ---------- */
+.artist-hero {
+  position: relative;
+  height: clamp(280px, 42vw, 520px);
+  overflow: hidden;
+}
+
+.artist-hero__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  display: block;
+}
+
+/* 无头像时的中性底，不至于露出空白 */
+.artist-hero__img--blank {
+  background: var(--bg-elevated-2);
+}
+
+/*
+ * 渐隐层：**一元一次线性**从透明过渡到页面底色。
+ *
+ * 之前用多段压暗（透明 → 浅黑 → 深黑 → 底色）做文字对比度，但浅色主题下页面底色是白的，
+ * 这条曲线会在中间出现一段明显的黑色带（白→黑→白），观感上像图片中间糊了一块黑。
+ * 现在只保留两个色标：顶部透明、底部 `--bg`，中间严格线性。
+ *
+ * 文字可读性不再依赖压暗层，而由姓名自身的白色 + 黑色描边阴影保证（见 .artist-head__name），
+ * 因此深浅主题都能保持「从底色线性过渡到图片」的干净观感。
+ */
+.artist-hero__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 100%);
+  pointer-events: none;
+}
+
+/* ---------- 姓名 + 操作 ---------- */
+.artist-head {
+  /* 上移，让姓名压在渐隐过渡带上 */
+  margin-top: clamp(-96px, -8vw, -56px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.artist-head__name {
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  /*
+   * 姓名落在渐隐过渡带的下段，那里已相当接近页面底色，故直接用主题前景色：
+   * 深色主题白字、浅色主题近黑，不需要描边或阴影做智能兜底。
+   */
+  color: var(--text);
+  word-break: break-word;
+}
+
+.artist-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* 「详情」「收藏」：与播放同形的圆形图标按钮，不带文字。
+ * 用主题的中性抬升面 + 主题前景，深色浅色各自成立（与详情页其它按钮一致）。 */
+.artist-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-elevated-2);
+  color: var(--text);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.artist-action:hover {
+  background: var(--bg-active);
+  transform: scale(1.06);
+}
+
+.artist-action:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* 已收藏：实心星标，前景走收藏令牌 */
+.artist-action--active {
+  color: var(--star);
+}
+
+/* 主播放：比两侧按钮更大的圆形实心按钮 */
+.artist-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--play-neutral);
+  color: var(--play-neutral-text);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.artist-play:hover:not(:disabled) {
+  background: var(--play-neutral-hover);
+  transform: scale(1.06);
+}
+
+.artist-play:disabled {
+  background: var(--bg-active);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+/* 播放图标视觉居中：三角形重心偏右，补偿 2px */
+.artist-play svg {
+  margin-left: 2px;
+}
+
+/* ---------- 分区 ---------- */
+.artist-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 32px 32px 0;
+}
+
+@media (max-width: 760px) {
+  .artist-hero {
+    height: 300px;
+  }
+
+  .artist-head {
+    margin-top: -64px;
+    gap: 16px;
+    padding: 0 16px;
+  }
+
+  .artist-head__name {
+    font-size: 30px;
+  }
+
+  .artist-head__actions {
+    gap: 10px;
+  }
+
+  .artist-action {
+    width: 36px;
+    height: 36px;
+  }
+
+  .artist-play {
+    width: 46px;
+    height: 46px;
+  }
+
+  .artist-sections {
+    padding: 24px 16px 0;
+  }
+}

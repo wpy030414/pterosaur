@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, Ref } from 'react'
 import './IconButton.css'
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -8,6 +8,8 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg'
   /** 是否为「激活」态（如随机/循环开启） */
   active?: boolean
+  /** 供调用方在需要时接管焦点（如弹窗打开时聚焦关闭按钮） */
+  ref?: Ref<HTMLButtonElement>
 }
 
 /**
