@@ -128,7 +128,8 @@ export interface SourceAdapter {
   topPlaylists?(
     this: void,
     limit: number,
-    cat?: string,
+    cat: string | undefined,
+    page: number,
     cred?: string,
   ): Promise<Playlist[]>
   /** 「新歌精选」：上游推荐的新歌（首页发现流的一个纵向分区）。 */

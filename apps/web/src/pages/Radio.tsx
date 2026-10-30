@@ -1,53 +1,81 @@
-import { useEffect, useState } from 'react'
-import { Radio as RadioIcon, Shuffle } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client.js'
-import { usePlayer } from '../store/player.js'
-import { useLibrary } from '../store/library.js'
+import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
-import type { Playlist, Track } from '@pterosaur/shared/types'
-import { DEFAULT_SOURCE } from '@pterosaur/shared/types'
-import { TrackList } from '../components/TrackList.js'
-import { ErrorState } from '../components/States.js'
+import type { MusicSource, Playlist } from '@pterosaur/shared/types'
+import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
+import { dedupeByKey } from '../lib/dedupe.js'
+import { PlaylistCard } from '../components/PlaylistCard.js'
+import { Loading, ErrorState } from '../components/States.js'
+
+/** 每批拉取的歌单数（上游精品歌单本就按 30 条一页返回）。 */
+const PAGE_SIZE = 30
 
 /**
- * 电台页：以「随机探索」为核心。
+ * 广播页：**没有止境的滚动**。
  *
- * 点击「开始随机播放」会从一个热门歌单抽取曲目、开启随机模式并立即播放，
- * 模拟电台「不知道下一首是什么」的体验；同时提供最近播放作为快速入口。
- * 曲库跟随**活动账号**；无排行榜能力的源退回「热门歌单」。
+ * 语义借用「广播」——不用选、一直往下就能听下去：这里把新发现页「歌单已更新」的
+ * 全部内容摊开，底部哨兵自动续页，直到上游回不满一页为止（新发现页的「更多」即跳来这里）。
+ *
+ * 数据源与新发现页的「歌单已更新」是同一个接口（精品歌单，按更新时间倒序），
+ * 只是那里只放一页横向滑轨、这里纵向无限翻。
  */
 export function Radio() {
-  const playTracks = usePlayer((s) => s.playTracks)
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
-  const shuffle = usePlayer((s) => s.shuffle)
-  const recent = useLibrary((s) => s.recent)
+  const navigate = useViewNavigate()
   const status = useAuth((s) => s.status)
   const source = activeMusicSource(status) ?? DEFAULT_SOURCE
 
-  const [pool, setPool] = useState<Track[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  return (
+    <div className="browse">
+      <header className="browse__header">
+        <h1 className="browse__title">广播</h1>
+      </header>
+      {/* 源一变就用 key 重挂，累积列表与分页游标自然归零 */}
+      <UpdatedPlaylists key={source} source={source} navigate={navigate} />
+    </div>
+  )
+}
 
-  // 预载一个「电台曲库」：优先排行榜（热歌/飙升），无排行榜的源退回热门歌单
-  useEffect(() => {
+/**
+ * 歌单已更新（无限续页）。
+ *
+ * 首屏经 `useAsync` 取第 1 页，之后由底部哨兵触发 `loadMore` 逐页追加，
+ * 跨页去重（见 ADR-046）；上游回不满一页即视为到头，不再观察哨兵。
+ */
+function UpdatedPlaylists({
+  source,
+  navigate,
+}: {
+  source: MusicSource
+  navigate: ReturnType<typeof useViewNavigate>
+}) {
+  const [items, setItems] = useState<Playlist[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [appending, setAppending] = useState(false)
+
+  const pageRef = useRef(1)
+  const moreRef = useRef(false)
+  /** 单飞锁：哨兵连续触发时 state 仍是旧值，用 ref 同步锁防重复取同一页。 */
+  const inflightRef = useRef(false)
+  const [canLoadMore, setCanLoadMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  /** 首屏（或重试）：重置累积列表与分页游标。 */
+  const loadFirst = useCallback(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    const pick = async (): Promise<Playlist> => {
-      let target: Playlist | undefined
-      try {
-        const lists = await api.toplists(source)
-        target = lists.find((l) => /热歌|飙升/.test(l.name)) ?? lists[0]
-      } catch {
-        target = (await api.recommend(source, 1))[0]
-      }
-      if (!target) throw new Error('没有可用的电台源')
-      return target
-    }
-    pick()
-      .then((target) => api.playlist(target.source, target.id))
-      .then(({ tracks }) => {
-        if (!cancelled) setPool(tracks.slice(0, 50))
+    pageRef.current = 1
+    moreRef.current = false
+    inflightRef.current = false
+    api
+      .playlists(source, PAGE_SIZE, '全部', 1)
+      .then((list) => {
+        if (cancelled) return
+        setItems(dedupeByKey(list, keyOf))
+        moreRef.current = list.length >= PAGE_SIZE
+        setCanLoadMore(moreRef.current)
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message)
@@ -60,58 +88,72 @@ export function Radio() {
     }
   }, [source])
 
-  const startRadio = () => {
-    if (!pool?.length) return
-    if (!shuffle) toggleShuffle()
-    const start = Math.floor(Math.random() * pool.length)
-    playTracks(pool, start)
-  }
+  useEffect(() => loadFirst(), [loadFirst])
+
+  const loadMore = useCallback(async () => {
+    if (!moreRef.current || inflightRef.current) return
+    inflightRef.current = true
+    setAppending(true)
+    const next = pageRef.current + 1
+    try {
+      const list = await api.playlists(source, PAGE_SIZE, '全部', next)
+      setItems((prev) => dedupeByKey([...prev, ...list], keyOf))
+      moreRef.current = list.length >= PAGE_SIZE
+      pageRef.current = next
+    } catch {
+      // 续取失败：停在当前结果，不继续观察哨兵（可刷新重来）
+      moreRef.current = false
+    } finally {
+      inflightRef.current = false
+      setAppending(false)
+      setCanLoadMore(moreRef.current)
+    }
+  }, [source])
+
+  // 滚动哨兵：进入视口即续取下一页
+  useEffect(() => {
+    if (!canLoadMore) return
+    const el = sentinelRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const root = document.querySelector('.app-content')
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMore()
+      },
+      { root, rootMargin: '300px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [canLoadMore, loadMore])
+
+  if (loading) return <Loading text="加载歌单…" />
+  if (error) return <ErrorState message={error} onRetry={loadFirst} />
 
   return (
-    <div className="browse">
-      <header className="browse__header">
-        <h1 className="browse__title">电台</h1>
-      </header>
-
-      <section className="radio-hero">
-        <div className="radio-hero__icon">
-          <RadioIcon size={30} strokeWidth={1.8} />
+    <section className="section">
+      {items.length ? (
+        <div className="card-grid">
+          {items.map((p) => (
+            <PlaylistCard
+              key={keyOf(p)}
+              playlist={p}
+              onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
+            />
+          ))}
         </div>
-        <div className="radio-hero__text">
-          <h2>Pterosaur 电台</h2>
-          <p>从热门曲目中随机播放，永远不知道下一首是什么。</p>
-        </div>
-        <button
-          type="button"
-          className="detail__play"
-          onClick={startRadio}
-          disabled={loading || !pool?.length}
-        >
-          <Shuffle size={18} strokeWidth={2.2} />
-          {loading ? '准备中…' : '开始随机播放'}
-        </button>
-      </section>
-
-      {error && <ErrorState message={error} />}
-
-      {pool && (
-        <section className="section">
-          <div className="section-head">
-            <h2 className="section-title">电台曲库</h2>
-            <span className="section-subtitle">{pool.length} 首候选曲目</span>
-          </div>
-          <TrackList tracks={pool} />
-        </section>
+      ) : (
+        <p className="section__end">暂时没有可播放的歌单</p>
       )}
 
-      {recent.length > 0 && (
-        <section className="section">
-          <div className="section-head">
-            <h2 className="section-title">最近播放</h2>
-          </div>
-          <TrackList tracks={recent.slice(0, 6)} showHeader={false} />
-        </section>
-      )}
-    </div>
+      <div className="section__more">
+        {canLoadMore && (
+          <div ref={sentinelRef} className="section__sentinel" aria-hidden />
+        )}
+        {appending && <Loading text="加载中…" />}
+        {!canLoadMore && pageRef.current > 1 && (
+          <p className="section__end">没有更多了</p>
+        )}
+      </div>
+    </section>
   )
 }

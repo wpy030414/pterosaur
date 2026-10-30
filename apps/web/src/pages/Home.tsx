@@ -10,6 +10,7 @@ import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { AlbumCard } from '../components/EntityCards.js'
 import { Rail } from '../components/Rail.js'
+import { RailMore } from '../components/RailMore.js'
 import { SongRow } from '../components/SongRow.js'
 import { Loading, ErrorState } from '../components/States.js'
 import './pages.css'
@@ -160,7 +161,11 @@ export function Home() {
 
       {/* ---------- 歌单已更新 ---------- */}
       {updated.data?.length ? (
-        <Rail title="歌单已更新" subtitle="编辑精选，持续更新">
+        <Rail
+          title="歌单已更新"
+          subtitle="编辑精选，持续更新"
+          action={<RailMore to="/radio" label="歌单已更新" />}
+        >
           {updated.data.map((p) => (
             <PlaylistCard
               key={keyOf(p)}

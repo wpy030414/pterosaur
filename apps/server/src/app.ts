@@ -454,11 +454,12 @@ export function createApp() {
       return c.json(fail('该音源暂不支持精品歌单'), 501)
     const cat = c.req.query('cat') ?? '全部'
     const limit = Number(c.req.query('limit') ?? 12)
+    const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1)
     const cred = credentialOf(c, adapter)
     try {
       const list = await cached(
-        `${source}|top-playlists|${limit}|${cat}|${credentialKey(cred)}`,
-        () => adapter.topPlaylists!(limit, cat, cred),
+        `${source}|top-playlists|${limit}|${cat}|${page}|${credentialKey(cred)}`,
+        () => adapter.topPlaylists!(limit, cat, page, cred),
       )
       return c.json(ok<Playlist[]>(list))
     } catch (e) {
@@ -488,8 +489,7 @@ export function createApp() {
   app.get('/api/discover/hot-songs', async (c) => {
     const source = sourceQuery(c)
     const adapter = adapterOf(source)
-    if (!adapter?.hotSongs)
-      return c.json(fail('该音源暂不支持热门歌曲'), 501)
+    if (!adapter?.hotSongs) return c.json(fail('该音源暂不支持热门歌曲'), 501)
     const limit = Number(c.req.query('limit') ?? 24)
     try {
       const list = await cached(`${source}|hot-songs|${limit}`, () =>

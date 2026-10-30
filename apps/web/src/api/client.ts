@@ -128,8 +128,13 @@ export const api = {
   toplists: (source: MusicSource, limit = 50) =>
     get<Playlist[]>(`${API_BASE}/discover/toplists`, { limit, source }),
 
-  playlists: (source: MusicSource, limit = 12, cat = '全部') =>
-    get<Playlist[]>(`${API_BASE}/discover/playlists`, { limit, cat, source }),
+  playlists: (source: MusicSource, limit = 12, cat = '全部', page = 1) =>
+    get<Playlist[]>(`${API_BASE}/discover/playlists`, {
+      limit,
+      cat,
+      page,
+      source,
+    }),
 
   /** 「新歌精选」：发现流的一个纵向分区。 */
   newSongs: (source: MusicSource, limit = 20) =>

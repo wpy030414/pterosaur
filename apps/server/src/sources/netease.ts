@@ -382,12 +382,22 @@ export async function hotSongs(limit = 24): Promise<Track[]> {
     .map(normalizeTrack)
 }
 
-/** 精品歌单。 */
+/**
+ * 精品歌单（「歌单已更新」的数据源）。
+ *
+ * 上游按歌单**更新时间**倒序回「最近更新过曲目的编辑精选歌单」，与分区语义正好对应；
+ * 翻页用 `offset`（每页整 30 条，实测相邻页无重复），首页只取一页、广播页无限续页。
+ */
 export async function topPlaylists(
   limit = 12,
   cat = '全部',
+  page = 1,
 ): Promise<Playlist[]> {
-  const res = await api.top_playlist({ limit, cat })
+  const res = await api.top_playlist({
+    limit,
+    cat,
+    offset: offsetOf(page, limit),
+  })
   const list: RawPlaylist[] = res?.body?.playlists ?? []
   return list.map(normalizePlaylist)
 }
