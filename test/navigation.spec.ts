@@ -99,7 +99,7 @@ test('搜索结果：五个分区滑轨同页可见，且没有 tab', async ({ p
     await page.locator('section.rail .rail__title').allTextContents()
   ).map((t) => t.trim())
   expect(order).toEqual([...RAIL_TITLES])
-  // 分区内容的形态：歌曲是紧凑曲目行，磁带是 4:3 磁带卡，其余是普通卡片
+  // 分区内容的形态：歌曲是紧凑曲目行，磁带是 16:9 磁带卡，其余是普通卡片
   await expect(railOf(page, '歌曲').locator('.song-row').first()).toBeVisible({
     timeout: 20_000,
   })

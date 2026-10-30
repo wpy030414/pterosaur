@@ -439,7 +439,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
           </Rail>
         )}
 
-      {/* ---------- 磁带（B 站视频合集，4:3 磁带卡） ---------- */}
+      {/* ---------- 磁带（B 站视频合集，16:9 磁带卡） ---------- */}
       {resultsReady &&
         visible('cassette') &&
         (cassette.error || cassettes.length > 0) && (

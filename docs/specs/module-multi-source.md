@@ -52,7 +52,7 @@
 - [x] `apps/server/src/sources/netease.test.ts`：归一化产出 `source === 'netease'`。
 - [x] `apps/server/src/sources/bilibili.test.ts`：标题去 `<em>` / HTML 实体、时长解析、封面主机规范化、按档挑码率、归一化字段。
 - [x] `apps/server/src/app.test.ts`：按源凭证隔离；`/stream/:source/:id` 分派 + 2 段别名 + 未知源 404；`/auth/bilibili/status` `loginable:true`；`/stream/bilibili/:id` 403；`/api/search/all?source=bilibili` 标 `songs` 与 `playlists`（磁带）；登出与会话自愈；`audioContentTypeFromUrl` 后缀映射。
-- [x] **磁带（ADR-044）**：`apps/server/src/sources/bilibili.test.ts` 的 `buildCassette` / `searchCassettes`（逐条补分P 数、单条失败降级 `trackCount` 留空、并发上限）/ `playlistTracks`；`apps/web/test/components/{Cards,CassetteCard}.test.tsx` 的数量 chip（> 1 才显示）、磁带卡交互与**磁带外壳结构**（卷轴带 `.cassette-shell__deck` / 磁带线 `.cassette-shell__tape` / 双卷轴 `.cassette-reel` ×2）；`app.test.ts` 的 `/api/search/all?type=playlists`（只跑磁带搜索）与 `/api/playlist/bilibili/:id`。
+- [x] **磁带（ADR-044）**：`apps/server/src/sources/bilibili.test.ts` 的 `buildCassette` / `searchCassettes`（逐条补分P 数、单条失败降级 `trackCount` 留空、并发上限）/ `playlistTracks`；`apps/web/test/components/{Cards,CassetteCard}.test.tsx` 的数量 chip（> 1 才显示）、磁带卡交互与**16:9 封面结构**（封面与播放按钮直接挂在 `.card__art--cassette` 下，不再有磁带外壳）；`app.test.ts` 的 `/api/search/all?type=playlists`（只跑磁带搜索）与 `/api/playlist/bilibili/:id`。
 - [x] **搜索累积列表去重（ADR-046）**：`apps/web/test/lib/dedupe.test.ts`（按 `keyOf` 去重、含「模拟上游跨页重复」）；E2E `test/navigation.spec.ts`「磁带 tab 翻页后切到其他 tab：不得有磁带卡混进来」+ 无重复 key 警告。
 - [x] **同页变更不跑转场（ADR-045）**：`apps/web/test/lib/viewTransition.test.ts`（`opts.skip` 不转场但仍提交 / 命名标记先于拍快照 / 连点与 skip 均先掐掉在飞转场）；E2E「磁带下钻返回的转场未结束时切 tab：不残留旧快照层」。
 - [x] `apps/web/src/lib/mediaCache.test.ts`：`audioKey` 键形；`imageKey` 不含源。

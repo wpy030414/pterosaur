@@ -27,17 +27,17 @@ describe('CassetteCard', () => {
     playPlaylist.mockClear()
   })
 
-  it('以磁带外壳 + 4:3 视频窗 + 卷轴带渲染（磁带象征）', () => {
+  it('封面直接以 16:9 视频比例展示，不套外壳（ADR-044）', () => {
     const { container } = render(
       <CassetteCard cassette={cassette(3)} onClick={() => {}} />,
     )
-    expect(container.querySelector('.card--cassette')).toBeTruthy()
-    expect(container.querySelector('.card__art--cassette')).toBeTruthy()
-    expect(container.querySelector('.cassette-shell__window')).toBeTruthy()
-    // 磁带象征：卷轴带 + 两枚卷轴 + 两者间的一段磁带
-    expect(container.querySelector('.cassette-shell__deck')).toBeTruthy()
-    expect(container.querySelector('.cassette-shell__tape')).toBeTruthy()
-    expect(container.querySelectorAll('.cassette-reel')).toHaveLength(2)
+    const art = container.querySelector('.card__art--cassette') as Element
+    expect(art).toBeTruthy()
+    // 16:9 是封面位自身的比例；封面与播放按钮直接挂在它下面，中间不再有磁带外壳
+    expect(art.children).toHaveLength(2)
+    expect(art.querySelector('.card__cover')).toBeTruthy()
+    expect(art.querySelector('.card__play')).toBeTruthy()
+    expect(container.querySelector('[class*=cassette-shell]')).toBeNull()
   })
 
   it('空磁带（trackCount=0）：播放按钮置灰', () => {

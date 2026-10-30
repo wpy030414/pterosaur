@@ -73,13 +73,6 @@
   --dur-page-in: 360ms;
   --ease-page: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* ---------- 磁带（见 CassetteShell；沿用应用的中性面板语言，不引入拟物配色） ---------- */
-  /* 外壳面：与卡片 / 面板同层的抬升面 */
-  --cassette-surface: var(--bg-elevated-2);
-  /* 卷轴窗：内凹（两态都用「压暗」表达凹陷，深色下更重） */
-  --cassette-deck: rgba(0, 0, 0, 0.42);
-  /* 卷轴 / 磁带线的描边色（比 --separator-strong 略重，使两态下卷轴都读得出） */
-  --cassette-line: rgba(255, 255, 255, 0.24);
 
   /* ---------- 字体 ----------
    * 全站苹方：`PingFangSC-Regular` 是 `fonts.css` 里自 CDN 按需加载的苹方分片字形
@@ -213,9 +206,6 @@
   --play-neutral-text: #ffffff;
   --play-neutral-hover: rgba(29, 29, 31, 0.85);
 
-  --cassette-deck: rgba(0, 0, 0, 0.06);
-  --cassette-line: rgba(0, 0, 0, 0.22);
-
   color-scheme: light;
 }
 
@@ -265,9 +255,6 @@
     --play-neutral: #1d1d1f;
     --play-neutral-text: #ffffff;
     --play-neutral-hover: rgba(29, 29, 31, 0.85);
-
-    --cassette-deck: rgba(0, 0, 0, 0.06);
-    --cassette-line: rgba(0, 0, 0, 0.22);
 
     color-scheme: light;
   }

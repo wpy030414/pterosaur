@@ -321,7 +321,7 @@ function CategoryList({
     )
   }
 
-  // 歌单与磁带共用 Playlist 形状；磁带用 4:3 磁带卡
+  // 歌单与磁带共用 Playlist 形状；磁带用 16:9 磁带卡
   if (!items.playlists.length) {
     return (
       <Empty

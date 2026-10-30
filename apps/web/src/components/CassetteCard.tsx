@@ -3,7 +3,6 @@ import type { Playlist } from '@pterosaur/shared/types'
 import { usePlayCollection } from '../hooks/usePlayCollection.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
-import { CassetteShell } from './CassetteShell.js'
 import './Cards.css'
 
 interface CassetteCardProps {
@@ -14,7 +13,7 @@ interface CassetteCardProps {
 }
 
 /**
- * 磁带卡片：**4:3 视频封面 + 磁带边框** + 标题（预览卡不显示 UP 主副标题）。
+ * 磁带卡片：**16:9 视频封面** + 标题（预览卡不显示 UP 主副标题）。
  *
  * - 点击卡片本体：进入磁带详情页（`/playlist/bilibili/:bvid`）挑分P；
  * - 悬浮浮现的播放按钮：立即播放整盘磁带（全部分P，不进入详情页）；
@@ -39,28 +38,26 @@ export function CassetteCard({ cassette, onClick }: CassetteCardProps) {
         }
       }}
     >
+      {/* 封面直接按 16:9 视频比例铺满；chip 与播放按钮以它为定位参照 */}
       <div className="card__art card__art--cassette">
-        {/* chip 与播放按钮定位在**标签窗**（4:3 视频）内，不压到磁带外框上 */}
-        <CassetteShell>
-          <Cover
-            src={coverAt(cassette.cover, COVER_SMALL)}
-            alt={cassette.name}
-            radius="sm"
-            className="card__cover"
-          />
-          <button
-            type="button"
-            className="card__play"
-            aria-label="播放"
-            disabled={cassette.trackCount === 0}
-            onClick={(e) => {
-              e.stopPropagation()
-              void playPlaylist(cassette.source, cassette.id)
-            }}
-          >
-            <Play size={20} fill="currentColor" strokeWidth={0} />
-          </button>
-        </CassetteShell>
+        <Cover
+          src={coverAt(cassette.cover, COVER_SMALL)}
+          alt={cassette.name}
+          radius="sm"
+          className="card__cover"
+        />
+        <button
+          type="button"
+          className="card__play"
+          aria-label="播放"
+          disabled={cassette.trackCount === 0}
+          onClick={(e) => {
+            e.stopPropagation()
+            void playPlaylist(cassette.source, cassette.id)
+          }}
+        >
+          <Play size={20} fill="currentColor" strokeWidth={0} />
+        </button>
       </div>
       <div className="card__body">
         <div className="card__title ellipsis">{cassette.name}</div>

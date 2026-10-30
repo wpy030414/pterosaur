@@ -18,11 +18,11 @@ import {
 import { TrackList } from '../components/TrackList.js'
 import { coverAt, COVER_LARGE } from '@pterosaur/shared/image'
 import { Cover } from '../components/Cover.js'
-import { CassetteShell } from '../components/CassetteShell.js'
 import { IconButton } from '../components/IconButton.js'
 import { RipButton } from '../components/RipButton.js'
 import { Loading, ErrorState } from '../components/States.js'
 import { useRip } from '../store/rip.js'
+import './pages.css'
 import { useSettings } from '../store/settings.js'
 import { isRipping, runRip } from '../lib/rip.js'
 
@@ -32,8 +32,9 @@ import { isRipping, runRip } from '../lib/rip.js'
  * 同时支持三种集合：
  * - 本地自建歌单（id 以 `pl-` 开头，来自 library store）；
  * - 网易云歌单（数字 id，通过 API 拉取）；
- * - **磁带**（`source` 为磁带渠道，如 B 站——`Playlist` 即磁带，见 ADR-044）：套用「4:3 封面 +
- *   磁带边框」与「磁带」类型标签，其余（播放 / 随机 / 收藏到资料库 / 翻录 / 分P 列表）全部复用。
+ * - **磁带**（`source` 为磁带渠道，如 B 站——`Playlist` 即磁带，见 ADR-044）：版式仿照艺术家页——
+ *   封面通栏铺满（16:9 视频封面），底部渐隐到页面底色，信息与操作在下方**左对齐**常规排布；
+ *   其余（播放 / 随机 / 收藏到资料库 / 翻录 / 分P 列表）全部复用。
  */
 export function PlaylistPage() {
   const params = useParams()
@@ -194,30 +195,89 @@ export function PlaylistPage() {
     )
   }
 
-  return (
-    <div className="detail detail--playlist">
-      <header className="detail__hero">
-        {isCassette ? (
-          <div className="detail__art--cassette">
-            <CassetteShell>
-              <Cover
-                src={coverAt(playlist.cover, COVER_LARGE)}
-                alt={playlist.name}
-                seed={keyOf(playlist)}
-                radius="sm"
-                className="card__cover"
-              />
-            </CassetteShell>
-          </div>
-        ) : (
+  if (isCassette) {
+    return (
+      <div className="detail detail--playlist detail--cassette">
+        {/* ---------- 通栏封面 + 渐隐到页面底色（版式对齐艺术家页） ---------- */}
+        <div className="cassette-hero">
           <Cover
             src={coverAt(playlist.cover, COVER_LARGE)}
             alt={playlist.name}
             seed={keyOf(playlist)}
-            radius="lg"
-            className="detail__cover"
+            radius="none"
+            className="cassette-hero__img"
           />
-        )}
+          <div className="cassette-hero__scrim" aria-hidden />
+        </div>
+
+        {/* ---------- 信息 + 操作：下方左对齐，压在渐隐过渡带上 ---------- */}
+        <header className="cassette-head">
+          <h1 className="cassette-head__name">{playlist.name}</h1>
+          {playlist.description && (
+            <p className="cassette-head__desc">{playlist.description}</p>
+          )}
+          <div className="detail__actions">
+            <button
+              type="button"
+              className="detail__play"
+              onClick={() => handlePlay(false)}
+              disabled={!tracks.length}
+            >
+              <Play size={18} fill="currentColor" strokeWidth={0} />
+              播放
+            </button>
+            <IconButton
+              label="随机播放"
+              size="lg"
+              onClick={() => handlePlay(true)}
+              disabled={!tracks.length}
+            >
+              <Shuffle size={20} strokeWidth={2} />
+            </IconButton>
+            <IconButton
+              label={isSaved ? '取消收藏' : '收藏到资料库'}
+              size="lg"
+              active={isSaved}
+              onClick={() => toggleSavePlaylist(playlist)}
+            >
+              <Star
+                size={20}
+                strokeWidth={2}
+                fill={isSaved ? 'currentColor' : 'none'}
+              />
+            </IconButton>
+            <RipButton
+              progress={myRip}
+              disabled={
+                !tracks.length || (ripJob !== null && ripJob.key !== ripKey)
+              }
+              onClick={handleDownloadPlaylist}
+            />
+          </div>
+        </header>
+
+        <div className="cassette-list">
+          <TrackList
+            tracks={tracks}
+            emptyText="这盘磁带还没有曲目"
+            showAlbum={false}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="detail detail--playlist">
+      <header className="detail__hero">
+        {/* 磁带在下方单独分支（通栏封面版式）；这里只渲染歌单 / 专辑的方形封面 */}
+        <Cover
+          src={coverAt(playlist.cover, COVER_LARGE)}
+          alt={playlist.name}
+          seed={keyOf(playlist)}
+          radius="lg"
+          className="detail__cover"
+        />
         <div className="detail__info">
           {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
           <div className="detail__lead-space" aria-hidden />
@@ -301,8 +361,7 @@ export function PlaylistPage() {
       <div className="detail__list">
         <TrackList
           tracks={tracks}
-          emptyText={isCassette ? '这盘磁带还没有曲目' : '这个歌单还没有曲目'}
-          showAlbum={!isCassette}
+          emptyText="这个歌单还没有曲目"
         />
       </div>
     </div>

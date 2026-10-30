@@ -186,16 +186,6 @@
   height: 270px;
 }
 
-.detail--album .detail__art--cassette,
-.detail--playlist .detail__art--cassette {
-  width: 270px;
-}
-
-.detail--album .detail__art--cassette .cassette-shell,
-.detail--playlist .detail__art--cassette .cassette-shell {
-  --cs: 1.5;
-}
-
 .detail--album .detail__hero,
 .detail--playlist .detail__hero {
   /* 右栏内容（标题 / 艺术家 / 年份）较矮，顶部对齐避免与大封面错位 */
@@ -272,16 +262,6 @@
   padding-bottom: 0;
   padding-left: 0;
   padding-right: 0;
-}
-
-/* 磁带详情页封面：复用磁带外壳（样式见 Cards.css 的 .cassette-shell），只放大细部倍率 */
-.detail__art--cassette {
-  width: 240px;
-  flex-shrink: 0;
-}
-
-.detail__art--cassette .cassette-shell {
-  --cs: 1.35;
 }
 
 .detail__info {
@@ -384,6 +364,87 @@
 
 .detail__list {
   padding: 0 20px 20px;
+}
+
+/*
+ * ============================ 磁带详情（版式对齐艺术家页） ============================
+ * 磁带封面是 16:9 视频封面，与歌单 / 专辑的方形封面不同：不走左右两栏的 `.detail__hero`
+ * （方形封面 270px 与横封面 152px 并列时，右栏会悬空一截，按钮被 `margin-top: auto`
+ * 推到远低于封面底边的位置——这正是原先「排布乱掉」的原因）。
+ *
+ * 改为纵向：**通栏封面**（16:9，铺满内容区整宽）→ 底部线性渐隐到 `--bg`
+ * → 信息与操作左对齐、压在渐隐过渡带上 → 曲目列表。
+ */
+.detail--cassette {
+  padding-bottom: var(--page-bottom-inset);
+}
+
+/* 通栏封面：铺满内容区整宽（与艺术家页大图同理，不受 1600px 槽宽约束） */
+.cassette-hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+/* 封面铺满通栏区：圆角随 Cover 的 radius="none" 归零 */
+.cassette-hero .cover {
+  width: 100%;
+  height: 100%;
+}
+
+/* 渐隐层：与艺术家页同一套做法——两色标线性过渡（透明 → 页面底色），
+ * 不堆叠压暗，浅色主题下不会出现「白→黑→白」的脏带。 */
+.cassette-hero__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 100%);
+  pointer-events: none;
+}
+
+/* 信息 + 操作：左对齐，上移压住渐隐过渡带的下段 */
+.cassette-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: -72px;
+  padding: 0 var(--page-gutter);
+}
+
+.cassette-head__name {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0;
+  /* 落在渐隐带下段，接近页面底色，直接用主题前景色即可读 */
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* 简介：与歌单页同一规格（13px 常规 / 次要色），左对齐、限宽避免超长行 */
+.cassette-head__desc {
+  max-width: 72ch;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+/* 操作行：与其它详情页共用 `.detail__actions`，这里只去掉两栏版式的贴底偏移 */
+.cassette-head .detail__actions {
+  margin: 0;
+  padding: 0;
+}
+
+/* 曲目列表：与其它详情页同槽（左右 20px + 底部留白，见 .detail__list） */
+.cassette-list {
+  padding: 20px 20px 20px;
 }
 
 /* 详情页内的分区块（如艺术家页的专辑网格） */
@@ -634,21 +695,22 @@
     font-size: 18px;
   }
 
-  .detail--album .detail__art--cassette,
-  .detail--playlist .detail__art--cassette {
-    width: 200px;
-  }
-
-  .detail__art--cassette {
-    width: 180px;
-  }
-
-  .detail__art--cassette .cassette-shell {
-    --cs: 1.1;
-  }
-
   .detail__name {
     font-size: 28px;
+  }
+
+  /* 磁带：通栏封面在移动端已占满屏宽，渐隐带与标题无须再上移那么多 */
+  .cassette-head {
+    margin-top: -48px;
+    gap: 12px;
+  }
+
+  .cassette-head__name {
+    font-size: 24px;
+  }
+
+  .cassette-list {
+    padding-top: 12px;
   }
 
   .detail__name--editing {

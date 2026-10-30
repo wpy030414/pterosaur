@@ -716,15 +716,15 @@
 ## ADR-044：搜索「MV」渠道更名「磁带」——类歌单化、磁带卡与数量 chip
 
 - 日期：2026-10-07
-- 状态：已采纳（**部分修订 / 更名** ADR-033 / ADR-035；**复用** ADR-042 结构化缓存）
-- 背景：B 站此前作为独立「MV 渠道」（ADR-033）：搜索页「MV」tab 把每个视频当作**一条 Track** 平铺进 `TrackList`，点行才展开其分P 播放。问题：(1) 视频——尤其多分P 的「选集」——本质是**合集**，用平铺曲目行表达不贴切；(2) 无法像歌单那样收藏到侧边栏。需求：改造成**磁带**语义——每条结果「类歌单」，可**整盘播放**、可**进详情页选分P**、以 **4:3 视频封面 + 磁带象征边框**展示、**收藏即一种特殊歌单**（与其它歌单并列出现在侧边栏）；并给**磁带与歌单**封面加「歌曲数量」chip（**> 1 才显示**）。
+- 状态：已采纳（**部分修订 / 更名** ADR-033 / ADR-035；**复用** ADR-042 结构化缓存；**第 6 条已被后续修订**——磁带外壳于 2026-10-30 移除，封面改为直接按 16:9 展示）
+- 背景：B 站此前作为独立「MV 渠道」（ADR-033）：搜索页「MV」tab 把每个视频当作**一条 Track** 平铺进 `TrackList`，点行才展开其分P 播放。问题：(1) 视频——尤其多分P 的「选集」——本质是**合集**，用平铺曲目行表达不贴切；(2) 无法像歌单那样收藏到侧边栏。需求：改造成**磁带**语义——每条结果「类歌单」，可**整盘播放**、可**进详情页选分P**、以 **视频封面 + 磁带象征边框**展示（比例与边框随后修订，见第 6 条）、**收藏即一种特殊歌单**（与其它歌单并列出现在侧边栏）；并给**磁带与歌单**封面加「歌曲数量」chip（**> 1 才显示**）。
 - 决策：
   1. **磁带 = 一个 `Playlist`（`source:'bilibili'`，`id=bvid`）**：`name`=视频标题、`cover`=视频封面、`creator`=UP 主、`trackCount`=分P 数、`description`/`playCount` 取自 `view`。这一选择让「收藏」与「详情页」**几乎零成本复用** `savedPlaylists` / `Sidebar` / 云同步（`LibraryData`）/ `/playlist/:source/:id` + `PlaylistPage` / `usePlayCollection`。
   2. **走适配器既有的 `searchPlaylists` 槽位**：磁带渠道的「搜歌单」即搜磁带——导出函数仍叫 `searchCassettes`、登记为 `searchPlaylists: searchCassettes`。**不改** `SourceAdapter` 接口、`/api/search/all` 分发、客户端契约与 `capabilities` 形状（仅 B 站 `capabilities.playlists` 由 false 翻 true）。
   3. **分P 数逐条补查**：`search/all/v2` 的 video 组**不返回**分P 数，故对每条结果补查一次 `x/web-interface/view` 取 `pages.length`。带**并发上限 4** 与**单条 5s 超时**；**单条失败 / 超时降级为 `trackCount` 留空**（`undefined`，**绝不写 0**——否则会误触发 `PlaylistCard` 的 `trackCount===0` 置灰）。`view` 另走进程内 memo（LRU `max:200`、TTL 2h、键 `sha1(cookie)|bvid`），故「补查 → 点进详情 / 展开分P」不重复打上游；整批结果再由 `/api/search/all` 缓存 2h（ADR-042）。
   4. **新增适配器 `playlistTracks`**：一次 `view` 返回 `{ playlist: buildCassette(d), tracks: buildParts(d) }`；失败**上抛**（路由 502、页面错误态 + 重试，与网易云歌单一致）。`parts` 内部改用同一 `fetchView`（行为不变：失败返 `[]`）。
   5. **前端**：搜索 tab `'mv'→'cassette'`、文案 `'MV'→'磁带'`、常量 `MV_SOURCE→CASSETTE_SOURCE`；磁带结果渲染 `CassetteCard`（`.card--cassette`），点本体进详情页、点播放按钮整盘播放。`PlaylistPage` 在 `source` 属磁带渠道时套用同一磁带样式与「磁带」类型标签、`showAlbum=false`。`?tab=mv` 旧深链别名映射到 `cassette`。
-  6. **磁带外壳是共享组件 `components/CassetteShell.tsx`**：卡片与详情页 hero 共用同一份 DOM / CSS，保证两处观感一致。**沿用应用既有的中性面板语言**（不引入拟物塑料 / 金属配色，与 Apple Music 式基调一致）：外壳面＝一层抬升面（`--cassette-surface` = `--bg-elevated-2`）+ 1px `--separator` 描边 + `--radius-md`；内部＝**4:3 视频窗**（`children`，即封面 / chip / 播放按钮，`--radius-sm` + 投影）+ **卷轴带**（内凹深色带 `--cassette-deck` + 1px 描边 + 两枚卷轴 + 其间一段磁带线 `--cassette-line`）。卷轴＝两道同心细线（外圈 / 内毂，**不画轴心圆点**），全用分隔线色。磁带身份靠「视窗在上、双卷轴在下」的**版式**，而非贴图细节。
+  6. ~~**磁带外壳是共享组件 `components/CassetteShell.tsx`**~~（**已废止**，见下方「修订」）：卡片与详情页 hero 共用同一份 DOM / CSS，保证两处观感一致。**沿用应用既有的中性面板语言**（不引入拟物塑料 / 金属配色，与 Apple Music 式基调一致）：外壳面＝一层抬升面（`--cassette-surface` = `--bg-elevated-2`）+ 1px `--separator` 描边 + `--radius-md`；内部＝**4:3 视频窗**（`children`，即封面 / chip / 播放按钮，`--radius-sm` + 投影）+ **卷轴带**（内凹深色带 `--cassette-deck` + 1px 描边 + 两枚卷轴 + 其间一段磁带线 `--cassette-line`）。卷轴＝两道同心细线（外圈 / 内毂，**不画轴心圆点**），全用分隔线色。磁带身份靠「视窗在上、双卷轴在下」的**版式**，而非贴图细节。
      细部尺寸（内衬 / 卷轴带高 / 卷轴直径 / 磁带线内缩）统一以 `--cs` 为倍率（`.cassette-shell` 默认 `1`，`.detail__art--cassette` 设 `1.35` / 移动端 `1.1`），使同一份规则在 ~150px 卡片与 ~240px hero 下观感一致。**以封面为主**：卷轴带刻意做矮、卷轴做小，只作「这是磁带」的提示，不与封面抢戏。
      演进：初版为「外框 + 顶部两枚小圆」的示意画法 → 用户反馈「不够仿真」→ 改为一版**拟真拟物**（深色塑料壳 + 螺丝 + 纸质标签 + 齿纹）→ 用户反馈「与应用整体美术风格不符」→ 定为**当前的扁平令牌版**（磁带语义 + 应用语言）。
   7. **数量 chip**（`components/CountChip.tsx`）：`PlaylistCard` 与 `CassetteCard` 封面右上角**共用**，**仅当数量已知且 > 1** 时显示（1 / 0 / 未知都不显示），纯展示（`pointer-events:none`）。
@@ -737,6 +737,12 @@
   - 旧客户端（SW 外壳 7 天缓存）仍按「MV tab + `searchSongs`」工作；拉到「收藏的磁带」会走 `/api/playlist/bilibili/:id` → 501 → 既有错误态（不崩）。`savedPlaylists` 无 schema 变化，`keyOf`（`bilibili:BV…`）一致。
   - 视频失效 / 删除：详情页 502 → 错误态 + 重试（不再像旧 `parts` 那样静默返空）。
   - 磁带外壳（卷轴带 / 卷轴 / 磁带线）为纯 CSS 装饰：单测只断言**结构**（`.cassette-shell__deck` / `.cassette-shell__tape` / `.cassette-reel ×2`，见 `CassetteCard.test.tsx`），观感需**人工视觉迭代**（明暗两态、移动端（≤768px）下与常显播放按钮不打架）。改细部尺寸请同时改 `--cs` 倍率与各细部，保持卡片 / hero 比例一致；配色一律走 `--cassette-*` 令牌，**不要**为磁带引入专门的拟物色值，否则会脱离应用基调。
+      **修订（2026-10-30）：移除磁带外壳，封面改按 16:9 直接展示。** 来源：用户反馈——B 站封面本身是 16:9 视频封面，再套一层 4:3 视窗 + 卷轴带既有黑边（比例被裁 / 留白），又多一层与封面无关的装饰。改为：
+     - **卡片比例 16:9**（按上游封面真实比例铺满，不裁不留白）：`.card__art--cassette` 为 `aspect-ratio: 16 / 9`。
+     - **详情页改纵向通栏版式**（第二次修订：第一版仍沿用歌单的两栏 `.detail__hero`，方形封面 270px 与 16:9 横封面 152px 并排时右栏悬空、按钮被 `margin-top: auto` 推到远低于封面底边，排布失衡）：**仿照艺术家页**——`.cassette-hero` 通栏封面（16:9，**铺满内容区整宽**，与艺术家页大图同理，不受 `.detail` 的 1600px 槽宽约束）+ `.cassette-hero__scrim` 底部线性渐隐到 `--bg`（两色标，不堆叠压暗）；`.cassette-head` 上移压住过渡带、**左对齐**排标题与 `.detail__actions`；`.cassette-list` 占满同一槽宽。`Playlist.tsx` 为磁带单开一个分支（本地 / 网易云歌单仍走原两栏 Hero），并自行 `import './pages.css'`（该页此前依赖其它页面捎带样式）。
+     - **删除组件与令牌**：`components/CassetteShell.tsx` 删除；`Cards.css` 的 `.cassette-shell` / `.cassette-shell__*` / `.cassette-reel` 与 `--cs` 倍率一并移除；`tokens.css` 的 `--cassette-surface` / `--cassette-deck` / `--cassette-line`（含浅色与系统浅色两处重定义）删除。
+     - **结构**：卡片里封面与播放按钮直接挂在 `.card__art--cassette` 下（该元素作 `position: relative` 定位参照），数量 chip / 播放按钮不再「内缩到视窗里」；详情页不再有 `.detail__art--cassette` 封面位。
+     - **磁带的身份标识**只剩「16:9 横封面 + 磁带类型标签 + 类歌单交互」，不再有视觉外壳。若日后需要再次强化磁带语义，**不要**恢复拟物外壳，优先考虑在卡片上加轻量的类型标记。
 - 何时重新审视：若磁带搜索的上游成本 / 风控成为问题；若 B 站提供批量取分P 数的接口（可去掉逐条补查）。
 
 ## ADR-045：同页变更不跑内容区转场——修「切 tab 后上一屏残影」
