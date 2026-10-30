@@ -32,7 +32,7 @@
 
 ## 约束
 
-- 前端永不直连上游域名；音频地址一律 https；封面按源规范化（`canonicalNeteaseImage` / `canonicalBiliImage`，稳定 URL 作缓存键，对齐 ADR-020）。
+- 前端永不直连上游域名；音频地址一律 https；封面按源规范化（`canonicalNeteaseImage` / `canonicalBiliImage`，稳定 URL 作缓存键，对齐 ADR-020；网易云查询串只留尺寸 `param`，见 ADR-058）。
 - `shared/` 不得引入 Node/DOM 专有 API（前后端共用）。
 - 后端默认无状态（例外见 ADR-014 / ADR-016）。
 - B 站使用**非官方接口**：上游一变即需适配；失败须优雅降级为 403 /「暂不可播放」，不得崩。

@@ -301,7 +301,7 @@
 - 状态：已采纳
 - 背景：前端所有图片缓存都以 **URL 字符串**为键（SW 媒体池 `imageKey`、页面就绪登记表 `lib/imageCache.ts`、浏览器 HTTP 缓存）。实测验证（脚本对照同端点两次调用、搜索 vs 详情、同批响应）：网易云对**同一封面**会在 `p1`–`pN.music.126.net` 间**随机轮换主机名**，另有 http/https 混用——同端点两次调用即得 `p4`→`p3`，一批响应里 p1/p3/p4 并存；而**路径（`{hash}/{id}.jpg`）才是封面的稳定身份**。结果：同一封面被拆成多条缓存、命中率大幅下降，切歌 / 翻页时重复下载。曾考虑按「图片类型（歌曲/专辑/歌单/艺人）+ ID」作缓存键。
 - 考虑过的方案：① 缓存键改「类型 + ID」；② 后端把封面代理为同源 URL（如 `/img/album/{id}`）；③ 保持以 URL 为键，但**先规范化**（https + 固定镜像主机 + 唯一 `param` 尺寸）。
-- 决策：③。新增 `packages/shared/src/image.ts` 的 `canonicalNeteaseImage(url)`（仅匹配 `p\d+.music.126.net`，裸域与其它 CDN 原样放行；`param` 多个只留最后一个），并落到三处：server `netease.ts` 以 `coverUrl(raw, size)` 统一产出封面 / 头像（覆盖已有 `param`，消灭双参数碎片）；web `mediaCache.imageKey` 与 `imageCache` 就绪登记表均以规范化 URL 为键（旧持久化数据中的轮换前 host 与新数据互相命中）；NowPlaying 背景比较同样规范化。
+- 决策：③。新增 `packages/shared/src/image.ts` 的 `canonicalNeteaseImage(url)`（仅匹配 `p\d+.music.126.net`，裸域与其它 CDN 原样放行；`param` 多个只留最后一个，其余查询参数见 ADR-058 白名单），并落到三处：server `netease.ts` 以 `coverUrl(raw, size)` 统一产出封面 / 头像（覆盖已有 `param`，消灭双参数碎片）；web `mediaCache.imageKey` 与 `imageCache` 就绪登记表均以规范化 URL 为键（旧持久化数据中的轮换前 host 与新数据互相命中）；NowPlaying 背景比较同样规范化。
 - 为什么选这个：URL 规范化后即是「封面身份 + 尺寸」的稳定字符串，SW / 登记表 / HTTP 缓存 / 持久化数据**全端零结构改动**就完成去重；且**曲目封面即专辑封面**——同专辑 N 首曲共享一条缓存，这正是按路径（而非曲目 ID）去重的收益。
 - 为什么不选其他：① 按曲目 ID 会把同一专辑封面重复存 N 份（键粒度错了；若一律升格为专辑 ID，则艺人头像 / 歌单封面又需各自类型分支），且 SW 无法从图片 URL 反查「类型 + ID」，需在页面维护映射表、复杂且有失败面；② 封面流量全部过自家服务器，带宽与延迟成本高，也违背「图片直连 CDN + SW CORS 拉取缓存」的既有设计（ADR-013）。
 - 后果 / 已知边界：
@@ -978,3 +978,18 @@
   7. maskable 单出一份 `pwa-512x512-maskable.png`：白底铺满、图形缩到 78% 居中，落在 Android maskable 的 0.8 安全区内。**不能与 512 共用**——Apple 音符标是满出血图形，直接当 maskable 被裁成圆形时音符会切到边缘。
 - 为什么选这个：中性强调色让封面 / 专辑主色成为页面上唯一的彩色，视觉焦点回归内容；且中性令牌天然满足两态对比度，不必为浅色单独发明一套彩色。实心按钮反色与既有 `--play-neutral` / `--star` 同一套思路，语义一致。
 - 后果 / 已知边界：强调色与正文前景同色，部分「文字用强调色」处（当前播放行标题、页签选中、链接 hover）不再靠色相区分，改由字重 / 下划线 / 背景承担——已在需要处保留或补足。自定义背景取色仍会带来彩色强调（用户主动选择，不属默认外观）。图标 PNG 由源 SVG 离线导出（预乘 alpha 缩放）后提交进仓库，不走 assets-generator；若日后重新生成，需按第 7 条另出 maskable 一份。
+
+## ADR-058：网易云封面查询串白名单——只留 `param`，丢弃图片处理参数
+
+- 日期：2026-10-30
+- 状态：已采纳
+- 背景：用户报告「部分歌单载入时封面裂开」，浏览器控制台可见 `p3.music.126.net/...jpg?imageView=1&thumbnail=800y800&enlarge=1%7CimageView%3D1&watermark=...&param=1200x1200` 返回 **400**（响应体为阿里云 OSS 的 `{"Code":"InvalidArgument"}`）。curl 实测二分（同一封面、逐参数枚举）：裸路径 200（原图）；`?param=1200x1200` 200；`?imageView=1` 200；`?enlarge=1` 200；`?imageView=1&enlarge=1` 200；但 `?imageView=1&enlarge=2`、`?imageView=1&enlarge=1|thumbnail:800y800` 等**只要 `enlarge` 有实际加工效果即 400**，与参数顺序、重复次数、是否带 `watermark`/`type`/`image` 无关（四键 16 组合全枚举，仅含 `imageView` + 有效 `enlarge` 的 4 组为 400）。规律：**`imageView` 与有效果的 `enlarge` 并存 ⇒ CDN 400**。歌单封面（用户自定义 / 活动生成）恰恰会被上游套上这串水印处理参数，而专辑 / 艺人封面通常是干净的 `?param=`，故表现为「部分歌单」中招。
+- 考虑过的方案：① 只在检测到 `imageView` + 有效 `enlarge` 时删掉其一（最小改动，但语义脆弱，上游换字段组合即复发）；② 后端新增同源图片代理（带宽 / 延迟成本，且违背「图片直连 CDN + SW CORS 拉取」的既有设计，见 ADR-013）；③ 在 `canonicalNeteaseImage` 内做**查询串白名单**：只保留 `param`，其余处理参数一律丢弃。
+- 决策：③。`packages/shared/src/image.ts` 的 `canonicalNeteaseImage` 在规范化主机后清空查询串，仅回填最后一个 `param`。前后端两侧（server `coverUrl`、web `coverAt` 与 `mediaCache.imageKey`）都走这一个函数，一处改动全覆盖。
+- 为什么选这个：裸路径实测返回的即**原图**（同一图 `param=300x300` 24KB / `1200x1200` 339KB / `3000x3000` 377KB，均 200），丢弃处理参数**不损失画质**——尺寸本来就由 `param` 精确控制，`imageView`/`thumbnail`/`enlarge`/`watermark` 反倒是冗余且相互冲突的加工链。另一个收益：查询串收敛为「唯一 `param`」后，「同一封面因水印参数不同」不再被拆成多条缓存键，是对 ADR-020「封面身份 = 路径 + 尺寸」的自然延伸。
+- 后果 / 已知边界：
+  - 若上游日后出现**签名 / 时效参数**（如 `s=`、`expires=`），白名单会把它一并丢掉导致 403——此时需把该参数加入白名单并在 ADR 中登记（这是本条**必须回头审视**的触发条件）。
+  - 交互式变体（`imageView` 裁切、`watermark` 加角标）统一失效：本项目从不依赖这些效果，若将来需要加角标，应在自有图层做而非依赖 CDN。
+  - 存量缓存键不变：`param` 尺寸语义未改，已缓存封面继续命中；带水印参数写进 library 的旧 URL 无需迁移，读取时即被规范化。
+  - 回归样本（实测 400 的完整参数串）已固定在 `packages/shared/test/image.test.ts`，覆盖规范化结果、无残留触发字段、不同水印串收敛为同一键、`coverAt` 产出可直接请求四项。
+- 何时重新审视：上游 URL 出现签名 / 时效参数；或网易云图片服务变更查询串语义。

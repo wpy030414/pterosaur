@@ -11,6 +11,13 @@
  * 的封面重复存 N 份；改为把 URL **规范化**成固定形式（https + 固定镜像主机 + 唯一的
  * `param` 尺寸参数），使「同一封面 + 同一尺寸」在**所有缓存层**都得到同一字符串，
  * 同专辑的全部曲目也天然共享一条缓存。
+ *
+ * 查询串白名单（2026-10 补测，见 ADR-058）：部分歌单封面（用户自定义 / 活动生成）的
+ * 地址上带着 `imageView=1&thumbnail=800y800&enlarge=...&watermark=...` 整串**图片处理
+ * 参数**，其中 `imageView` 与有效果的 `enlarge`（如 `enlarge=2`、`enlarge=1|thumbnail:...`）
+ * 并存时，CDN 直接回 `400 InvalidArgument`——封面整片裂开；而同一路径的裸地址正常返回
+ * 原图。故规范化时只保留 `param`（尺寸），其余处理参数一律丢弃：尺寸由 `param` 精确
+ * 控制、不损失画质，也顺带消掉「同一封面因水印参数不同被拆成多条缓存」的碎片。
  */
 
 /** 规范化后固定使用的镜像主机（p1–pN 互为镜像、内容一致，任选其一）。 */
@@ -26,7 +33,9 @@ function isNeteaseImageHost(hostname: string): boolean {
  *
  * - `http:` → `https:`；
  * - `p\d+.music.126.net` → 固定镜像主机；
- * - `param`（缩放尺寸）参数去重，只保留**最后一个**；
+ * - 查询串**白名单**：只保留 `param`（缩放尺寸，多个只取**最后一个**），丢弃 `imageView` /
+ *   `thumbnail` / `enlarge` / `watermark` / `type` / `image` / `dx` / `dy` 等图片处理参数
+ *   （`imageView` 与有效果的 `enlarge` 并存会让 CDN 回 400，见文件头与 ADR-058）；
  * - 非网易云地址原样返回（不猜测其 CDN 行为）。
  */
 export function canonicalNeteaseImage(url: string): string {
@@ -41,11 +50,8 @@ export function canonicalNeteaseImage(url: string): string {
   if (u.protocol !== 'https:') u.protocol = 'https:'
   if (u.hostname !== NETEASE_IMAGE_HOST) u.hostname = NETEASE_IMAGE_HOST
   const params = u.searchParams.getAll('param')
-  if (params.length > 0) {
-    const last = params[params.length - 1]
-    u.searchParams.delete('param')
-    u.searchParams.set('param', last)
-  }
+  u.search = ''
+  if (params.length > 0) u.searchParams.set('param', params[params.length - 1])
   return u.href
 }
 
