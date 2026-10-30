@@ -38,7 +38,7 @@ Pterosaur —— 仿 Apple Music 的网页音乐播放器（React 19 + Vite 前�
 
 ## 目录速查
 
-- `apps/server/` — Hono 后端（`@pterosaur/server`）：`src/index.ts` 入口与静态托管，`src/app.ts` 路由，`src/sources/*` 音源适配器（`netease` / `bilibili`）与注册表，`src/syncStore.ts` / `syncDb.ts` / `syncEvents.ts` 云同步（嵌入式 SQLite + SSE），`src/rip.ts` / `src/imapi.ts` / `src/ffmpeg.ts` / `src/audioFetch.ts` 翻录直刻（任务引擎 / IMAPI2 封装（含 `imapiFake` 模拟缝）/ 静态 ffmpeg / 取流共用），`src/cli/ripProbe.ts` 直刻环境体检（`pnpm rip:probe`），`vite.config.ts` 为 vp pack（tsdown）构建配置。
+- `apps/server/` — Hono 后端（`@pterosaur/server`）：`src/index.ts` 入口与静态托管，`src/app.ts` 路由，`src/sources/*` 音源适配器（`netease` / `bilibili`）与注册表（`neteaseDevice.ts` 为网易云设备身份提供者——headless 取 `ydDeviceToken` 过扫码 8821 风控，`playwright-core` 为可选依赖，见 ADR-052），`src/syncStore.ts` / `syncDb.ts` / `syncEvents.ts` 云同步（嵌入式 SQLite + SSE），`src/rip.ts` / `src/imapi.ts` / `src/ffmpeg.ts` / `src/audioFetch.ts` 翻录直刻（任务引擎 / IMAPI2 封装（含 `imapiFake` 模拟缝）/ 静态 ffmpeg / 取流共用），`src/cli/ripProbe.ts` 直刻环境体检（`pnpm rip:probe`），`vite.config.ts` 为 vp pack（tsdown）构建配置。
 - `apps/web/` — React 19 前端：`src/` 下为 SPA 源码，`vite.config.ts` 为 Vite 构建配置。
 - `packages/shared/` — 前后端共享（`@pterosaur/shared`）：`src/types.ts` 数据模型与工具，`src/lyric.ts` LRC 歌词解析，`src/image.ts` 网易云封面 URL 规范化，`src/rip.ts` 翻录共享定义（meta.json schema 与构建器、命名工具、音频 CD 容量判定、回环判定、直刻协议类型）。
 - `apps/web/src/api/` — 前端 API 客户端（`client.ts`）。

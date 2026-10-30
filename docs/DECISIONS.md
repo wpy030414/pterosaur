@@ -865,7 +865,7 @@
 
 ## ADR-051：网易云扫码登录脱离 NeteaseCloudMusicApi，自实现网页现行协议
 - 日期：2026-10-30
-- 状态：已采纳
+- 状态：已采纳（`ydDeviceToken` 以空串发送的部分**已被 ADR-052 取代**——空串会命中 8821 设备风控，现由设备身份提供者补齐）
 - 背景：2026-10 起浏览器扫码登录与 `pnpm log-in` 全部失效——扫码后网页一直停在「等待扫码」。逆向官方网页登录弹窗（`ctWebLogin.main.0.3.7.1cebd5b7.js`）与扫码落地页（`st/platform/scanlogin`）后确认：官方协议已换成明文 `POST /api/login/qrcode/unikey`（`type=1`）→ 二维码内容 `st/platform/scanlogin?codekey=…&chainId=…` → `POST /api/login/qrcode/client/login`（`type=1, noCheckToken, ydDeviceToken` + `X-loginMethod: QrCode` / `x-login-chain-id`）。库 4.32.0 的 `login_qr_*` 写死了 eapi 加密、`type=3` 与旧链接 `music.163.com/login?codekey=`——旧链接现 302 到 `/404`，手机 App 认不出，故确认态永不回写（用官方同款明文请求实测同样停在 801，证明问题不在加密）。
 - 考虑过的方案：
   1. 给库函数传参覆盖（`type`、`crypto`）：库内 `type=3` 与二维码 URL 均写死，不可覆盖。
@@ -879,3 +879,36 @@
   - `ydDeviceToken`（浏览器指纹）以空串发送——官方在取不到时同样降级为空，但**真人扫码成功路径尚未在本仓验证**，需人工验收一次。
   - 成功响应若带风控码（8821/8830/8860 等）目前只透传 `message`，前端按「失败」提示。
 - 何时重新审视：库开始提供 `type=1` 现行协议且经过实测验证时，可回收这段自实现；或网易云再次更换扫码路径时。
+
+## ADR-052：扫码登录引入「设备身份提供者」，headless 取 ydDeviceToken 过 8821 风控
+- 日期：2026-10-30
+- 状态：已采纳
+- 背景：ADR-051 落地后真人验收发现新断点——轮询推进到 802（手机已确认授权）后被 `8821`（「请切换其他登录方式或升级新版本再试」）拦截，明文与 weapi 两条路一致。逆向+对照实验定位（`docs/researches/netease-web-login-protocol.md` §4）：轮询参数 `ydDeviceToken` 为空是根因。官方网页由 `st.music.163.com/device/signature/create/deviceid.js` 注入的 `createNEFingerprint({appId:"9d0ef7e0…"})` 取 32 字符 token（SDK 内部上报 `fp-upload.dun.163.com/v2/js/d`，24h 一次），watchman 反爬同时种下 `WM_TID`/`WM_NIKE`/`WM_NI`/`sDeviceId` cookie。实验矩阵：带 headless 浏览器取的 token + WM cookie → 803（`MUSIC_U` 正常下发、`account/get` 闭环成立）；不带 → 802 后 8821。
+- 考虑过的方案：
+  1. 纯协议复刻：逆向 NEFingerprint 的 `d` 字段加密与上百项指纹采集，Node 内伪造。工程量巨大且 headless 特征伪造反而更易被识别。
+  2. headless 托管：playwright 驱动系统浏览器，让官方 SDK 自己跑——不碰加密，指纹为真实浏览器指纹（实验证明无 stealth 伪装也通过）。
+  3. 放弃扫码、只留手工粘贴 cookie。体验倒退。
+- 决策：采用 2。新增 `apps/server/src/sources/neteaseDevice.ts`：`playwright-core`（`optionalDependencies`，构建 `neverBundle`）按 msedge → chrome → 默认 chromium 通道链起 headless，开网易云首页等 `createNEFingerprint` 注入后 `getToken()`，连同白名单 cookie 一起作「设备身份」缓存（TTL 20h 对齐官方 24h；失败负缓存 60s；并发共享 inflight；浏览器进程 finally 关闭防泄漏）。`netease.ts` 的 `qrKey`（`ensure`，6s 上限；`index.ts` 启动另有预热）与 `qrCheck`（每次轮询）携带 token 与 WM cookie，`chainId` 改用真实 `sDeviceId`；命中 8821 时作废身份并后台重取（下次登录自愈）。适配器对外契约不变，前端零改动。
+- 为什么选这个：唯一「用真指纹过真风控」的路线且改动收敛在一个新文件；可选依赖 + 全链路降级（无 playwright/无浏览器/上游改版 → 空身份 → 行为等同 ADR-051，不会更糟）。
+- 为什么不选其他：方案 1 的投入产出比极差且稳定性最差；方案 3 牺牲核心体验。
+- 后果：
+  - 部署机需有系统浏览器（Windows/macOS 天然满足；Linux 服务器需自装，缺失时登录回落 8821 并由 `message` 透传提示）。
+  - headless 设备特征理论上可被易盾收紧识别（当前实测通过）；届时回落到 8821 而非崩溃，可再评估 stealth 或协议复刻。
+  - token 跨扫码会话的复用上限未完全验证（官方 24h 缓存暗示可复用；若实际一次性，每次登录起一次 headless，约 3–5s，行为退化但不失败）。
+- 何时重新审视：易盾开始拒绝 headless 指纹（8821 复发且新 token 无效）、或官方网页改用新的设备校验参数时。
+
+## ADR-053：逆向网易易盾 NEFingerprint，`ydDeviceToken` 改为可纯 Node 生成
+- 日期：2026-10-30
+- 状态：**调研完成，待落地**（现行运行时仍走 ADR-052 的 headless 方案）
+- 背景：ADR-052 用 headless 浏览器取 `ydDeviceToken` 解决了 8821，但引入了 playwright 可选依赖与「部署机必须有系统浏览器」的前提，Linux 服务器与容器环境均不适配。决定尝试把 token 的生成彻底搬回 Node。
+- 调研过程与结论（详见 `docs/researches/netease-yidun-fingerprint.md`）：
+  1. 用 hook XHR/fetch 的调用栈定位到 `deviceid.js`（340KB 混淆），按其偏移破读。
+  2. 解混淆（obfuscator.io 字符串数组，偏移 292 + 自定义小写在前 base64 + UTF-8），还原 1439 条字符串、3953 处调用。
+  3. 读懂 `Mb` 加密：TLV 明文 + CRC32 校验尾 → 补位 → 64B 分块 CBC（`Lb` 表驱动 4 轮 + 双 S 盒 `hb` + 加/异或 prev）→ 随机 salt（种子与随机字节异或，salt 由嵌入密文头的 4 字节决定）→ 自定义字母表 base64。
+  4. Node 移植并验证：CRC32 对上标准值；`Mb()` 输出长度与线上捕获完全一致（2652）；纯 Node 打 `fp-upload` 返回 `code:200` + `dt`。
+  5. **服务器不校验指纹内容**：改 IP、换 Linux UA、清空 canvas/webgl/全部高熵 hash，一律照发 token。
+  6. 真人扫码（零浏览器、零 WM cookie、`unknown-<随机>` chainId）：**全程无 8821**，停在 802 仅因当日账号登录频控，非协议问题。
+- 决策方向：运行时改为**双通道**——纯 Node 复刻为主路径，headless 保留为降级兜底。落地前置：需在频控解除后补一次真人验证确认 803，以及决定复用现有 `neteaseDevice.ts` 的缓存/自愈框架还是重写。
+- 为什么值得做：去掉 playwright 依赖与浏览器前提，登录启动即就绪（省 3–5s）、Linux/容器可用、失败面更小。
+- 风险：复刻依赖 4 组常量（S 盒 / `Lb` 轮表 / `zb` 种子 / base64 字母表）与一份 TLV 模板，上游改版即失效——必须保留 headless 兜底，并在文档固化常量来源便于比对。
+- 何时重新审视：上游加密常量或 TLV 结构变化（token 生成失败 / `fp-upload` 拒绝）时，回到研究文档按附录脚本重新抓取比对。

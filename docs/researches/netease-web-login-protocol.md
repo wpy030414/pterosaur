@@ -2,7 +2,7 @@
 
 目标：说清当前 `https://music.163.com` **网页端**登录协议，判断仓库现有实现（NeteaseCloudMusicApi@4.32.0 的 `login_qr_*`）为何失效、能否继续用库、以及要怎么改。
 
-> 证据范围：线上 JS bundle（`ctWebLogin.main.0.3.7.1cebd5b7.js`、`st/platform/scanlogin` 的 `main.8b0ebd48.js` + chunk 64）静态阅读，加上 Node `fetch` 主动探针实测（未真人扫码）。凡「未验证」处已标注。
+> 证据范围：线上 JS bundle（`ctWebLogin.main.0.3.7.1cebd5b7.js`、`st/platform/scanlogin` 的 `main.8b0ebd48.js` + chunk 64）静态阅读，加上 Node `fetch` 主动探针实测。2026-10-30 起补充**真人扫码**验证（8821 根因与设备身份方案，见 §5）。
 
 ## 1. 现有实现为什么「登不上」
 
@@ -51,7 +51,7 @@ Content-Type: application/x-www-form-urlencoded
 key=<unikey>&type=1&noCheckToken=true&ydDeviceToken=<指纹 token，可为空>
 ```
 
-- `ydDeviceToken` 来自浏览器侧 `createNEFingerprint`（`NEFingerprint` + appId `9d0ef7e0905d422cba1ecf7e73d77e67`）。取不到时官方代码 `catch` 成空串继续，所以 Node 侧传空即可（当前 801 阶段已验证不报错；成功阶段的接受度**未验证**）。
+- `ydDeviceToken` 来自浏览器侧 `createNEFingerprint`（`NEFingerprint` + appId `9d0ef7e0905d422cba1ecf7e73d77e67`）。官方代码取不到时 `catch` 成空串继续，但**空串会在手机确认后命中 8821 设备风控**（真人扫码实测，见 §4）——服务端必须尽力提供。
 - 状态码：`801` 等待扫码、`802` 已扫码待确认、`803` 成功（与旧契约一致）；`800` 过期。
 - 成功时 `Set-Cookie` 里应有 `MUSIC_U` / `__csrf` 等，和旧实现的下发逻辑兼容。
 
@@ -69,15 +69,47 @@ key=<unikey>&type=1&noCheckToken=true&ydDeviceToken=<指纹 token，可为空>
    - `qrKey()`：`POST /api/login/qrcode/unikey` `type=1`，返回 `unikey`；同时生成并缓存 `chainId`（按 key 存），后续轮询带着。
    - `qrLoginUrl(key)`：返回上面的 `st/platform/scanlogin?...` 完整 URL（终端渲染用）。
    - `qrCreate(key)`：本地 `qrcode` 生成 data URI（已有依赖），不再走库的 `login_qr_create`（它拼的还是旧 `/login?codekey=`）。
-   - `qrCheck(key)`：`POST /api/login/qrcode/client/login`，带 `type=1&noCheckToken=true&ydDeviceToken=` 与 `X-loginMethod: QrCode`、`x-login-chain-id: <chainId>`，返回 `{ code, cookies, message }`；`cookies` 取自响应 `set-cookie`。
+   - `qrCheck(key)`：`POST /api/login/qrcode/client/login`，带 `type=1&noCheckToken=true&ydDeviceToken=<设备身份 token，见 §4>` 与 `X-loginMethod: QrCode`、`x-login-chain-id: <chainId>`，返回 `{ code, cookies, message }`；`cookies` 取自响应 `set-cookie`。
    - `loginStatus()`：可继续用库，或改直连 `GET /api/w/nuser/account/get`（已实测明文可用，能直接消除库的 eapi 变量）。
 2. 路由 / 前端：契约不变（`/api/auth/:source/qr`、`/qr/check`、code 语义不变），**前端零改动**；`LoginModal.tsx` 无需动。
 3. 测试：`apps/server/test/**` 里若有 mock 库函数的用例，需要改成 mock `fetch`；补一条「轮询 803 时下发 MUSIC_U」的用例。
 4. 文档：`docs/specs/module-default-credential.md` 中「key 由 `login_qr_key` 取得 / 内容为 `/login?codekey=`」两句需更新；ADR 新增一篇说明为什么要脱离库的登录实现。
 
-## 4. 仍然未验证
+## 4. 8821 设备风控与「设备身份」（2026-10-30 真人扫码验证）
 
-- 真人扫码后，App 是否会把 `802/803` 回写到 unikey 会话（需要一次真实扫码）。
-- `ydDeviceToken` 为空时，成功响应是否会带 `8821/8830/8860` 之类风控码（官方代码里有对应处理分支）。
-- `chainId` 在轮询头里缺省时是否仍能成功（保守起见先带上）。
-- 手机 App 对 `st/platform/scanlogin` 页面是否有版本要求。
+> 本节 §4.3 的 headless 方案后续已被深入：易盾 `NEFingerprint` 的加密算法已完整逆向，`ydDeviceToken` 可**纯 Node 生成**，且实测不带 WM cookie 也无 8821。详见 `netease-yidun-fingerprint.md` 与 ADR-053。
+
+ADR-051 落地后真人验收发现：明文与 weapi 两条轮询路径都在 **802（手机已确认授权）之后**收到 `8821`（「请切换其他登录方式或升级新版本再试」）——手机端其实扫了也确认了，是**服务端设备风控**拒绝向这个会话回写 803。
+
+### 4.1 根因
+
+轮询参数里的 `ydDeviceToken` 不可为空。官方网页登录 bundle（`ctWebLogin.main.*.js`）的 `getYdDeviceToken()`：
+
+```js
+var o = "9d0ef7e0905d422cba1ecf7e73d77e67"
+createNEFingerprint({ appId: o, timeout: 6e3 }).getToken().then(e => e.token)
+```
+
+- `createNEFingerprint` 由 `https://st.music.163.com/device/signature/create/deviceid.js`（约 340KB，混淆）注入全局；
+- SDK 内部向 `POST https://fp-upload.dun.163.com/v2/js/d` 上报加密指纹（`{"p":<appId>,"v":"2.0.1","vk":<版本hash>,"n":<随机>,"d":<密文>}`），响应 `{"data":{"tid":<32字符token>}}` 即 token；**24h 才上报一次**（localStorage 缓存 `864e5`）；
+- 同时网易易盾 watchman（`ac.dun.163.com/v2/config/js` → `acstatic-dun.126.net/2.7.5_*/watchman.min.js` → `POST ac.dun.163.com/v3/d`，body 为 `d=v4/…` 密文）会种下 `WM_TID` / `WM_NIKE` / `WM_NI` / `sDeviceId` 等 cookie，官方浏览器轮询时一并携带。
+
+### 4.2 实验矩阵（真人扫码，同 IP 同日）
+
+| 轮询携带 | unikey/轮询 cookie | 结果 |
+|---|---|---|
+| `ydDeviceToken=""` | 模拟常规 cookie（无 WM_*） | 801 → 802 → **8821** |
+| headless 浏览器取的 token（`getToken()` 32 字符） | headless 会话的 WM_* + `sDeviceId` + NMTID 等 | 801 → 802 → **803**（Set-Cookie 下发 `MUSIC_U`/`__csrf`/`MUSIC_A_T`/`MUSIC_R_T`；随后 `/api/w/nuser/account/get` 返回 200 + 昵称，闭环成立） |
+
+结论：**token 是必要条件**（WM cookie 未单独做剔除实验，保守起见一并带）。**headless（playwright + 系统 Edge，无 stealth 伪装）取的 token 上游照单全收**——无需逆向 `d` 字段加密。
+
+### 4.3 落地（ADR-052）
+
+`apps/server/src/sources/neteaseDevice.ts`：playwright-core（optionalDependencies，`neverBundle`）驱动系统浏览器（msedge → chrome → 默认 chromium）开网易云首页，等 `createNEFingerprint` 注入后调 `getToken()`，连同白名单 cookie 一起缓存（TTL 20h；失败负缓存 60s；inflight 去重）。`netease.ts` 的 `qrKey`（ensure，6s 上限）与 `qrCheck`（每次轮询）携带；8821 时作废重取自愈。
+
+## 5. 仍然未验证
+
+- token 的**跨扫码复用**上限：官方 24h 缓存暗示可复用，本仓按 20h 缓存；若上游实际一次性，则每次登录都会起一次 headless（行为退化但不失败）。
+- headless 设备特征的**长期容忍度**：易盾可随时收紧对无头环境的识别（当前实测通过）。
+- `WM cookie` 单独缺失是否触发 8821（未做剔除实验；当前实现一并携带）。
+- 手机 App 对 `st/platform/scanlogin` 页面是否有版本要求（旧版 App 未测）。
