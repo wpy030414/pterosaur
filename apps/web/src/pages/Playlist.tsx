@@ -360,11 +360,7 @@ export function PlaylistPage() {
       </header>
 
       <div className="detail__list">
-        <TrackList
-          tracks={tracks}
-          emptyText="这个歌单还没有曲目"
-          showSummary
-        />
+        <TrackList tracks={tracks} emptyText="这个歌单还没有曲目" showSummary />
       </div>
     </div>
   )

@@ -174,7 +174,6 @@
   overflow: hidden;
 }
 
-
 /* ---------- 封面右上角的「曲目数量」chip（见 CountChip） ---------- */
 .card__count {
   position: absolute;

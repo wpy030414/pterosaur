@@ -85,7 +85,9 @@ describe('neteaseDevice 设备身份', () => {
     expect(identity.token).toBe('tok-32-chars-aaaaaaaaaaaaaaaaa')
     expect(identity.sDeviceId).toBe('YD-real')
     // 白名单内的按序拼接，百度统计被滤掉
-    expect(identity.cookieHeader).toBe('WM_TID=tid1; WM_NIKE=nik1; sDeviceId=YD-real; NMTID=nm1')
+    expect(identity.cookieHeader).toBe(
+      'WM_TID=tid1; WM_NIKE=nik1; sDeviceId=YD-real; NMTID=nm1',
+    )
     // 优先走系统 Edge 通道
     expect(pw.channels[0]).toBe('msedge')
   })
@@ -104,7 +106,10 @@ describe('neteaseDevice 设备身份', () => {
     const identity = await m.ensureNeteaseDeviceIdentity(500)
     expect(identity.token).toBe('')
     expect(identity.cookieHeader).toBe('')
-    expect(m.getCachedNeteaseDeviceIdentity()).toEqual({ token: '', cookieHeader: '' })
+    expect(m.getCachedNeteaseDeviceIdentity()).toEqual({
+      token: '',
+      cookieHeader: '',
+    })
 
     // 负缓存期内 refresh 直接跳过（不重试起浏览器）
     pw.launchError = null

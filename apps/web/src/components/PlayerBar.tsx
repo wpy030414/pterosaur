@@ -57,10 +57,14 @@ export function PlayerBar() {
 
   // 拖拽进度：本地即时反馈，松手才真正 seek（避免频繁请求音频）
   // scrub 记录拖拽中的实时值，让左端读数跟着指尖走；同时记住所属曲目，换曲即失效
-  const [scrub, setScrub] = useState<{ key: string; value: number } | null>(null)
+  const [scrub, setScrub] = useState<{ key: string; value: number } | null>(
+    null,
+  )
   const currentKey = current ? keyOf(current) : null
   const scrubValue =
-    scrub && currentKey !== null && scrub.key === currentKey ? scrub.value : null
+    scrub && currentKey !== null && scrub.key === currentKey
+      ? scrub.value
+      : null
 
   const handleScrub = useCallback(
     (v: number) => {

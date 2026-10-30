@@ -16,7 +16,7 @@ void sweepStaleBurnDirs()
 
 // 预热网易云设备身份（headless 取 ydDeviceToken + WM cookie，扫码登录过 8821 风控用；
 // 见 sources/neteaseDevice.ts）。best-effort：失败留 60s 负缓存，登录时会再兜底。
-void refreshNeteaseDeviceIdentity()
+refreshNeteaseDeviceIdentity()
 
 const isProd = process.env.NODE_ENV === 'production'
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8788)

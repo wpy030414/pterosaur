@@ -737,12 +737,12 @@
   - 旧客户端（SW 外壳 7 天缓存）仍按「MV tab + `searchSongs`」工作；拉到「收藏的磁带」会走 `/api/playlist/bilibili/:id` → 501 → 既有错误态（不崩）。`savedPlaylists` 无 schema 变化，`keyOf`（`bilibili:BV…`）一致。
   - 视频失效 / 删除：详情页 502 → 错误态 + 重试（不再像旧 `parts` 那样静默返空）。
   - 磁带外壳（卷轴带 / 卷轴 / 磁带线）为纯 CSS 装饰：单测只断言**结构**（`.cassette-shell__deck` / `.cassette-shell__tape` / `.cassette-reel ×2`，见 `CassetteCard.test.tsx`），观感需**人工视觉迭代**（明暗两态、移动端（≤768px）下与常显播放按钮不打架）。改细部尺寸请同时改 `--cs` 倍率与各细部，保持卡片 / hero 比例一致；配色一律走 `--cassette-*` 令牌，**不要**为磁带引入专门的拟物色值，否则会脱离应用基调。
-      **修订（2026-10-30）：移除磁带外壳，封面改按 16:9 直接展示。** 来源：用户反馈——B 站封面本身是 16:9 视频封面，再套一层 4:3 视窗 + 卷轴带既有黑边（比例被裁 / 留白），又多一层与封面无关的装饰。改为：
-     - **卡片比例 16:9**（按上游封面真实比例铺满，不裁不留白）：`.card__art--cassette` 为 `aspect-ratio: 16 / 9`。
-     - **详情页改纵向通栏版式**（第二次修订：第一版仍沿用歌单的两栏 `.detail__hero`，方形封面 270px 与 16:9 横封面 152px 并排时右栏悬空、按钮被 `margin-top: auto` 推到远低于封面底边，排布失衡）：**仿照艺术家页**——`.cassette-hero` 通栏封面（16:9，**铺满内容区整宽**，与艺术家页大图同理，不受 `.detail` 的 1600px 槽宽约束）+ `.cassette-hero__scrim` 底部线性渐隐到 `--bg`（两色标，不堆叠压暗）；`.cassette-head` 上移压住过渡带、**左对齐**排标题与 `.detail__actions`；`.cassette-list` 占满同一槽宽。`Playlist.tsx` 为磁带单开一个分支（本地 / 网易云歌单仍走原两栏 Hero），并自行 `import './pages.css'`（该页此前依赖其它页面捎带样式）。
-     - **删除组件与令牌**：`components/CassetteShell.tsx` 删除；`Cards.css` 的 `.cassette-shell` / `.cassette-shell__*` / `.cassette-reel` 与 `--cs` 倍率一并移除；`tokens.css` 的 `--cassette-surface` / `--cassette-deck` / `--cassette-line`（含浅色与系统浅色两处重定义）删除。
-     - **结构**：卡片里封面与播放按钮直接挂在 `.card__art--cassette` 下（该元素作 `position: relative` 定位参照），数量 chip / 播放按钮不再「内缩到视窗里」；详情页不再有 `.detail__art--cassette` 封面位。
-     - **磁带的身份标识**只剩「16:9 横封面 + 磁带类型标签 + 类歌单交互」，不再有视觉外壳。若日后需要再次强化磁带语义，**不要**恢复拟物外壳，优先考虑在卡片上加轻量的类型标记。
+    **修订（2026-10-30）：移除磁带外壳，封面改按 16:9 直接展示。** 来源：用户反馈——B 站封面本身是 16:9 视频封面，再套一层 4:3 视窗 + 卷轴带既有黑边（比例被裁 / 留白），又多一层与封面无关的装饰。改为：
+    - **卡片比例 16:9**（按上游封面真实比例铺满，不裁不留白）：`.card__art--cassette` 为 `aspect-ratio: 16 / 9`。
+    - **详情页改纵向通栏版式**（第二次修订：第一版仍沿用歌单的两栏 `.detail__hero`，方形封面 270px 与 16:9 横封面 152px 并排时右栏悬空、按钮被 `margin-top: auto` 推到远低于封面底边，排布失衡）：**仿照艺术家页**——`.cassette-hero` 通栏封面（16:9，**铺满内容区整宽**，与艺术家页大图同理，不受 `.detail` 的 1600px 槽宽约束）+ `.cassette-hero__scrim` 底部线性渐隐到 `--bg`（两色标，不堆叠压暗）；`.cassette-head` 上移压住过渡带、**左对齐**排标题与 `.detail__actions`；`.cassette-list` 占满同一槽宽。`Playlist.tsx` 为磁带单开一个分支（本地 / 网易云歌单仍走原两栏 Hero），并自行 `import './pages.css'`（该页此前依赖其它页面捎带样式）。
+    - **删除组件与令牌**：`components/CassetteShell.tsx` 删除；`Cards.css` 的 `.cassette-shell` / `.cassette-shell__*` / `.cassette-reel` 与 `--cs` 倍率一并移除；`tokens.css` 的 `--cassette-surface` / `--cassette-deck` / `--cassette-line`（含浅色与系统浅色两处重定义）删除。
+    - **结构**：卡片里封面与播放按钮直接挂在 `.card__art--cassette` 下（该元素作 `position: relative` 定位参照），数量 chip / 播放按钮不再「内缩到视窗里」；详情页不再有 `.detail__art--cassette` 封面位。
+    - **磁带的身份标识**只剩「16:9 横封面 + 磁带类型标签 + 类歌单交互」，不再有视觉外壳。若日后需要再次强化磁带语义，**不要**恢复拟物外壳，优先考虑在卡片上加轻量的类型标记。
 - 何时重新审视：若磁带搜索的上游成本 / 风控成为问题；若 B 站提供批量取分P 数的接口（可去掉逐条补查）。
 
 ## ADR-045：同页变更不跑内容区转场——修「切 tab 后上一屏残影」

@@ -6,13 +6,13 @@
 
 ## 1. 现有实现为什么「登不上」
 
-| 项 | 库（4.32.0）现做法 | 官方网页现做法 |
-|---|---|---|
-| 取 key 路径 | `POST /eapi/login/qrcode/unikey`（`interface.music.163.com`） | `POST /api/login/qrcode/unikey`（`music.163.com`，明文 JSON） |
-| 扫码类型 | `type=3` | `type=1` |
-| 二维码内容 | `https://music.163.com/login?codekey=<key>` | `https://music.163.com/st/platform/scanlogin?codekey=<key>&chainId=<chainId>&hdw_device=web&hdw_appid=web&hitExp=1` |
-| 轮询 | `POST /eapi/login/qrcode/client/login`（`type=3`） | `POST /api/login/qrcode/client/login`（`type=1, noCheckToken, ydDeviceToken`；header `X-loginMethod: QrCode`、`x-login-chain-id`） |
-| 登录态 | `login_status`（weapi `/api/w/nuser/account/get`） | `GET /api/w/nuser/account/get`（`noCheckToken`） |
+| 项          | 库（4.32.0）现做法                                            | 官方网页现做法                                                                                                                     |
+| ----------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 取 key 路径 | `POST /eapi/login/qrcode/unikey`（`interface.music.163.com`） | `POST /api/login/qrcode/unikey`（`music.163.com`，明文 JSON）                                                                      |
+| 扫码类型    | `type=3`                                                      | `type=1`                                                                                                                           |
+| 二维码内容  | `https://music.163.com/login?codekey=<key>`                   | `https://music.163.com/st/platform/scanlogin?codekey=<key>&chainId=<chainId>&hdw_device=web&hdw_appid=web&hitExp=1`                |
+| 轮询        | `POST /eapi/login/qrcode/client/login`（`type=3`）            | `POST /api/login/qrcode/client/login`（`type=1, noCheckToken, ydDeviceToken`；header `X-loginMethod: QrCode`、`x-login-chain-id`） |
+| 登录态      | `login_status`（weapi `/api/w/nuser/account/get`）            | `GET /api/w/nuser/account/get`（`noCheckToken`）                                                                                   |
 
 **根因（推断，证据强）**：扫码用的 App 识别的二维码内容变了。旧链接 `music.163.com/login?codekey=` 在新版网页上已被重定向/废弃（`/login/loadLoginScript` → 302 到 `/404`），App 认不出它就不再回写确认态，于是网页端轮询永远停在 `801`。这个和库 / eapi 加密无关——用官方完全相同的 `/api` 明文请求轮询，结果同样是 `801`（已实测）。
 
@@ -86,8 +86,10 @@ ADR-051 落地后真人验收发现：明文与 weapi 两条轮询路径都在 *
 轮询参数里的 `ydDeviceToken` 不可为空。官方网页登录 bundle（`ctWebLogin.main.*.js`）的 `getYdDeviceToken()`：
 
 ```js
-var o = "9d0ef7e0905d422cba1ecf7e73d77e67"
-createNEFingerprint({ appId: o, timeout: 6e3 }).getToken().then(e => e.token)
+var o = '9d0ef7e0905d422cba1ecf7e73d77e67'
+createNEFingerprint({ appId: o, timeout: 6e3 })
+  .getToken()
+  .then((e) => e.token)
 ```
 
 - `createNEFingerprint` 由 `https://st.music.163.com/device/signature/create/deviceid.js`（约 340KB，混淆）注入全局；
@@ -96,9 +98,9 @@ createNEFingerprint({ appId: o, timeout: 6e3 }).getToken().then(e => e.token)
 
 ### 4.2 实验矩阵（真人扫码，同 IP 同日）
 
-| 轮询携带 | unikey/轮询 cookie | 结果 |
-|---|---|---|
-| `ydDeviceToken=""` | 模拟常规 cookie（无 WM_*） | 801 → 802 → **8821** |
+| 轮询携带                                          | unikey/轮询 cookie                            | 结果                                                                                                                                         |
+| ------------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ydDeviceToken=""`                                | 模拟常规 cookie（无 WM_*）                    | 801 → 802 → **8821**                                                                                                                         |
 | headless 浏览器取的 token（`getToken()` 32 字符） | headless 会话的 WM_* + `sDeviceId` + NMTID 等 | 801 → 802 → **803**（Set-Cookie 下发 `MUSIC_U`/`__csrf`/`MUSIC_A_T`/`MUSIC_R_T`；随后 `/api/w/nuser/account/get` 返回 200 + 昵称，闭环成立） |
 
 结论：**token 是必要条件**（WM cookie 未单独做剔除实验，保守起见一并带）。**headless（playwright + 系统 Edge，无 stealth 伪装）取的 token 上游照单全收**——无需逆向 `d` 字段加密。

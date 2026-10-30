@@ -60,7 +60,17 @@
  *
  * 新增页面：根节点套上 `.page` 即可继承留白，**不要再自己写**底部留白。
  */
-.route-stage > :where(.page, .home, .browse, .search-page, .library-page, .artist-page, .artist-works, .detail) {
+.route-stage
+  > :where(
+    .page,
+    .home,
+    .browse,
+    .search-page,
+    .library-page,
+    .artist-page,
+    .artist-works,
+    .detail
+  ) {
   padding-bottom: var(--page-bottom-inset);
 }
 

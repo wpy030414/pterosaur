@@ -124,10 +124,12 @@ export async function ensureNeteaseDeviceIdentity(
     timer.unref?.()
   })
   try {
-    return (await Promise.race([refreshInflight(), timeout])) ?? {
-      token: '',
-      cookieHeader: '',
-    }
+    return (
+      (await Promise.race([refreshInflight(), timeout])) ?? {
+        token: '',
+        cookieHeader: '',
+      }
+    )
   } finally {
     clearTimeout(timer)
   }
@@ -154,7 +156,9 @@ async function tryWithChannel(
   pw: PlaywrightModule,
   channel: string | undefined,
 ): Promise<NeteaseDeviceIdentity | null> {
-  let browser: Awaited<ReturnType<PlaywrightModule['chromium']['launch']>> | null = null
+  let browser: Awaited<
+    ReturnType<PlaywrightModule['chromium']['launch']>
+  > | null = null
   try {
     browser = await pw.chromium.launch({ headless: true, channel })
     const ctx = await browser.newContext({

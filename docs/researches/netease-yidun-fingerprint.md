@@ -10,10 +10,10 @@
 
 网易云网页里跑着**两个**易盾组件，名字都带 watchman，容易混：
 
-| 组件 | 载体 | 职责 | 产出 | 登录是否必需 |
-|---|---|---|---|---|
-| **NEWatchman**（反爬） | `acstatic-dun.126.net/<ver>/watchman.min.js` | 环境探测 + `POST ac.dun.163.com/v3/d` 上报 | cookie `WM_TID` / `WM_NIKE` / `WM_NI` | **否**（实测不带也能过，见 §6） |
-| **NEFingerprint**（指纹） | `st.music.163.com/device/signature/create/deviceid.js`（340KB，混淆） | 采集 86 项指纹 → 加密 → `POST fp-upload.dun.163.com/v2/js/d` | `dt` = **`ydDeviceToken`**（32 字符） | **是**（空则 802→8821） |
+| 组件                      | 载体                                                                  | 职责                                                         | 产出                                  | 登录是否必需                    |
+| ------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------- | ------------------------------- |
+| **NEWatchman**（反爬）    | `acstatic-dun.126.net/<ver>/watchman.min.js`                          | 环境探测 + `POST ac.dun.163.com/v3/d` 上报                   | cookie `WM_TID` / `WM_NIKE` / `WM_NI` | **否**（实测不带也能过，见 §6） |
+| **NEFingerprint**（指纹） | `st.music.163.com/device/signature/create/deviceid.js`（340KB，混淆） | 采集 86 项指纹 → 加密 → `POST fp-upload.dun.163.com/v2/js/d` | `dt` = **`ydDeviceToken`**（32 字符） | **是**（空则 802→8821）         |
 
 登录轮询要的 `ydDeviceToken` 来自**后者**。`createNEFingerprint({appId:"9d0ef7e0905d422cba1ecf7e73d77e67"})` 由 `deviceid.js` 注入 `window`，官方登录 bundle 的 `getYdDeviceToken()` 只是包了一层 Promise。
 
@@ -58,20 +58,31 @@ function Uw(t, r) {
 解码器只需按语义重写（照抄易错，`for(...)` 里塞了逗号表达式）：
 
 ```js
-const ALPHA = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/='
+const ALPHA =
+  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/='
 function decode(idx) {
   const t = Zw[idx - 292]
   const bytes = []
-  let acc = 0, bits = 0
+  let acc = 0,
+    bits = 0
   for (const ch of t) {
     const v = ALPHA.indexOf(ch)
-    if (v < 0 || v === 64) continue      // 表外字符与 '=' 填充跳过
+    if (v < 0 || v === 64) continue // 表外字符与 '=' 填充跳过
     acc = (acc << 6) | v
     bits += 6
-    if (bits >= 8) { bits -= 8; bytes.push((acc >> bits) & 0xff) }
+    if (bits >= 8) {
+      bits -= 8
+      bytes.push((acc >> bits) & 0xff)
+    }
   }
-  return decodeURIComponent(Buffer.from(bytes).toString('latin1')
-    .replace(/[\s\S]/g, (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')))
+  return decodeURIComponent(
+    Buffer.from(bytes)
+      .toString('latin1')
+      .replace(
+        /[\s\S]/g,
+        (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0'),
+      ),
+  )
 }
 ```
 
@@ -110,66 +121,66 @@ Content-Type: application/json
 
 采集项由 5 个包装器编码，都是 TLV，只有 value 编码不同：
 
-| 包装器 | value 编码 | 典型项 |
-|---|---|---|
+| 包装器          | value 编码                                  | 典型项                |
+| --------------- | ------------------------------------------- | --------------------- |
 | `hx(fn,id,len)` | 字符串 → `ib()`（UTF-8 字节），截断到 `len` | UA、语言、canvas 色值 |
-| `lx(fn,id,len)` | 数值 → `eb()`（4 字节大端），截断 | 时长、计数 |
-| `sx(fn,id,len)` | 布尔 → `eb(1|2)` | 各类特性探测 |
-| `wx(fn,id,len)` | 数值 → 左补 0 的 hex 串 → `nb()` | 定时/性能类 |
-| `px(fn,id,len)` | 数组 → 每项 `eb()` 后按 `len` 截断拼接 | 屏幕尺寸等 |
+| `lx(fn,id,len)` | 数值 → `eb()`（4 字节大端），截断           | 时长、计数            |
+| `sx(fn,id,len)` | 布尔 → `eb(1                                | 2)`                   | 各类特性探测 |
+| `wx(fn,id,len)` | 数值 → 左补 0 的 hex 串 → `nb()`            | 定时/性能类           |
+| `px(fn,id,len)` | 数组 → 每项 `eb()` 后按 `len` 截断拼接      | 屏幕尺寸等            |
 
 `ix(v, len)` = `v.slice(-len)`（**从尾部**截取），`eb(n)` = 32 位拆 4 字节大端，`nb(hex)` = hex 转字节。
 
 完整 id 清单（实测快照，值已截断）：
 
-| id | len | 含义（推断） | 值样例 |
-|---:|---:|---|---|
-| 2 | 32 | appId | `9d0ef7e0…7e67` |
-| 3 | 0 | trackId（首次空，之后是上次的 `tid`） | — |
-| 4 | 5 | sdkVersion | `2.0.1` |
-| 5 | 32 | nonce（uuid32 无横线） | `aa13f171…` |
-| 6 | 13 | timestamp（ms） | `1793335404755` |
-| 200/233 | 133/125 | userAgent / appVersion | `Mozilla/5.0 (Windows…` |
-| 201/234 | 5 | language | `zh-CN` |
-| 202…211 | 1 | 各类布尔探测（webdriver / phantomjs / selenium 等） | `01`/`02` |
-| 213 | 5 | platform | `Win32` |
-| 214 | 7 | deviceMemory 类 | `unknown` |
-| 216/217/240/273/281/900/902/904 | 16 | 各类 hash（canvas/webgl/audio/font） | `0d30d272…` |
-| 239 | 10 | compatMode | `CSS1Compat` |
-| 241/242/260/271/272/278/502/508/713 | 2-10 | 屏幕/视口尺寸类（大端数值） | `050002d0…` |
-| 252 | 31 | 音频设备枚举 | `48000,2,1,0,2,explicit,speakers` |
-| 253/262/510 | 7-13 | WebRTC 泄漏的本地/公网 IP | `0.0.0.0` / `124.73.205.80` |
-| 255 | 5 | 字符编码 | `UTF-8` |
-| 265 | 26 | mediaDevices 枚举 | `audioinput__,audiooutput__` |
-| 268 | 261 | canvas 色值采样 | `255_255_255,240_240_240,…` |
-| 270/283 | 24/219 | plugins MIME / 详情 | `application/pdf,text/pdf` |
-| 279/500/503/505 | 3-19 | 各类计时（`Math.PI**random` 空转 5e6 次等） | `22221` / `2222…` |
-| 284 | 149 | uaData（架构 + brands + 版本） | `x86,Not:A-Brand_8,Chromium_156,…` |
-| 509 | 13 | window toString | `object Window` |
-| 513 | 15 | document.title 的 UTF-8 字节 | `网易云音乐` |
-| 515/516 | 4 | collectDuration / visitDuration（ms，大端） | `00000234` |
-| 700 | 22 | location.href | `https://music.163.com/` |
-| 800/802/803/804 | 8 | 4 项 CRC32 片段（hex 字符串） | `5bf1626b` |
-| 901 | 100 | WebGL renderer（ANGLE 串） | `Google Inc. (AMD):ANGLE (…)` |
+|                                  id |     len | 含义（推断）                                        | 值样例                             |
+| ----------------------------------: | ------: | --------------------------------------------------- | ---------------------------------- |
+|                                   2 |      32 | appId                                               | `9d0ef7e0…7e67`                    |
+|                                   3 |       0 | trackId（首次空，之后是上次的 `tid`）               | —                                  |
+|                                   4 |       5 | sdkVersion                                          | `2.0.1`                            |
+|                                   5 |      32 | nonce（uuid32 无横线）                              | `aa13f171…`                        |
+|                                   6 |      13 | timestamp（ms）                                     | `1793335404755`                    |
+|                             200/233 | 133/125 | userAgent / appVersion                              | `Mozilla/5.0 (Windows…`            |
+|                             201/234 |       5 | language                                            | `zh-CN`                            |
+|                             202…211 |       1 | 各类布尔探测（webdriver / phantomjs / selenium 等） | `01`/`02`                          |
+|                                 213 |       5 | platform                                            | `Win32`                            |
+|                                 214 |       7 | deviceMemory 类                                     | `unknown`                          |
+|     216/217/240/273/281/900/902/904 |      16 | 各类 hash（canvas/webgl/audio/font）                | `0d30d272…`                        |
+|                                 239 |      10 | compatMode                                          | `CSS1Compat`                       |
+| 241/242/260/271/272/278/502/508/713 |    2-10 | 屏幕/视口尺寸类（大端数值）                         | `050002d0…`                        |
+|                                 252 |      31 | 音频设备枚举                                        | `48000,2,1,0,2,explicit,speakers`  |
+|                         253/262/510 |    7-13 | WebRTC 泄漏的本地/公网 IP                           | `0.0.0.0` / `124.73.205.80`        |
+|                                 255 |       5 | 字符编码                                            | `UTF-8`                            |
+|                                 265 |      26 | mediaDevices 枚举                                   | `audioinput__,audiooutput__`       |
+|                                 268 |     261 | canvas 色值采样                                     | `255_255_255,240_240_240,…`        |
+|                             270/283 |  24/219 | plugins MIME / 详情                                 | `application/pdf,text/pdf`         |
+|                     279/500/503/505 |    3-19 | 各类计时（`Math.PI**random` 空转 5e6 次等）         | `22221` / `2222…`                  |
+|                                 284 |     149 | uaData（架构 + brands + 版本）                      | `x86,Not:A-Brand_8,Chromium_156,…` |
+|                                 509 |      13 | window toString                                     | `object Window`                    |
+|                                 513 |      15 | document.title 的 UTF-8 字节                        | `网易云音乐`                       |
+|                             515/516 |       4 | collectDuration / visitDuration（ms，大端）         | `00000234`                         |
+|                                 700 |      22 | location.href                                       | `https://music.163.com/`           |
+|                     800/802/803/804 |       8 | 4 项 CRC32 片段（hex 字符串）                       | `5bf1626b`                         |
+|                                 901 |     100 | WebGL renderer（ANGLE 串）                          | `Google Inc. (AMD):ANGLE (…)`      |
 
 ### 5.2 加密算法
 
 ```js
 function Mb(r) {
-  const [f, s] = zb()          // f = 64B salt（循环），s = 4B 随机种子
-  const v = ib(fb(r))          // CRC32(r) → 8 位 hex → 字节
-  const data = r.concat(v)     // 明文 + 校验尾
+  const [f, s] = zb() // f = 64B salt（循环），s = 4B 随机种子
+  const v = ib(fb(r)) // CRC32(r) → 8 位 hex → 字节
+  const data = r.concat(v) // 明文 + 校验尾
   // padding：补 0 到 64 的倍数，末尾 4 字节写原始长度（大端）
-  const padCount = len % 64 <= 60 ? 64 - len % 64 - 4 : 128 - len % 64 - 4
+  const padCount = len % 64 <= 60 ? 64 - (len % 64) - 4 : 128 - (len % 64) - 4
   // 逐 64 字节块（CBC 式，prev 链）
   let h = f
   for (let y = 0; y < blocks.length; y++) {
-    let g = rb(Lb(blocks[y]), f)   // ① Lb 4 轮变换 ② 异或 salt
-    g = rb($m(g, h), h)            // ③ 加 prev ④ 异或 prev
-    h = hb(hb(g))                  // ⑤ 双 S 盒
-    out.set(h, 64 * y + 4)         // 写入输出（前 4 字节留给 s）
+    let g = rb(Lb(blocks[y]), f) // ① Lb 4 轮变换 ② 异或 salt
+    g = rb($m(g, h), h) // ③ 加 prev ④ 异或 prev
+    h = hb(hb(g)) // ⑤ 双 S 盒
+    out.set(h, 64 * y + 4) // 写入输出（前 4 字节留给 s）
   }
-  return vb(out, MB_ALPHABET, '7')  // 自定义字母表 base64，pad 字符是 '7'
+  return vb(out, MB_ALPHABET, '7') // 自定义字母表 base64，pad 字符是 '7'
 }
 ```
 
@@ -185,11 +196,11 @@ function Mb(r) {
 
 ### 5.3 移植验证
 
-| 检查项 | 结果 |
-|---|---|
-| `fb(ib("abc"))` | `352441c2` ✓（标准 CRC32） |
-| `Mb(捕获明文)` 输出长度 | **2652**，与线上捕获的 `d` **完全一致** ✓ |
-| 纯 Node 请求 `fp-upload` | `code:200`，`dt` 32 字符 ✓ |
+| 检查项                   | 结果                                      |
+| ------------------------ | ----------------------------------------- |
+| `fb(ib("abc"))`          | `352441c2` ✓（标准 CRC32）                |
+| `Mb(捕获明文)` 输出长度  | **2652**，与线上捕获的 `d` **完全一致** ✓ |
+| 纯 Node 请求 `fp-upload` | `code:200`，`dt` 32 字符 ✓                |
 
 （Node 移植：`.scratch/fp-mb.cjs`；验证：`fp-verify.cjs`）
 
@@ -197,14 +208,14 @@ function Mb(r) {
 
 用同一份 TLV 模板只改若干项再上报，**全部照发 token**：
 
-| 改动 | 结果 |
-|---|---|
-| 基线（快照原样） | `code:200` ✓ |
-| IP(510) 改成 `1.2.3.4` | `code:200` ✓ |
-| IP(510) 清空 | `code:200` ✓ |
-| UA(200) 换成 Linux Firefox | `code:200` ✓ |
-| canvas(268) 清空 | `code:200` ✓ |
-| webgl(901/902/904) 清空 | `code:200` ✓ |
+| 改动                                        | 结果         |
+| ------------------------------------------- | ------------ |
+| 基线（快照原样）                            | `code:200` ✓ |
+| IP(510) 改成 `1.2.3.4`                      | `code:200` ✓ |
+| IP(510) 清空                                | `code:200` ✓ |
+| UA(200) 换成 Linux Firefox                  | `code:200` ✓ |
+| canvas(268) 清空                            | `code:200` ✓ |
+| webgl(901/902/904) 清空                     | `code:200` ✓ |
 | 全部高熵 hash(216/217/240/273/281/900) 清空 | `code:200` ✓ |
 
 即 `fp-upload` 只做**格式/解密校验**，不做指纹合理性或一致性判定。（脚本 `.scratch/fp-probe.cjs`）
@@ -219,11 +230,11 @@ function Mb(r) {
 
 **全程无 8821**。对照三次实验的 802 之后行为：
 
-| 实验 | ydDeviceToken | WM cookie | 802 之后 |
-|---|---|---|---|
-| A（ADR-051 基线） | 空串 | 无 | **2.1s → 8821** |
-| B（ADR-052） | headless 取 | 有（全套） | **1.2s → 803**（MUSIC_U 下发） |
-| C（本次，纯 Node） | **Node 算的** | **无** | 无 8821，停在 802 直到过期 |
+| 实验               | ydDeviceToken | WM cookie  | 802 之后                       |
+| ------------------ | ------------- | ---------- | ------------------------------ |
+| A（ADR-051 基线）  | 空串          | 无         | **2.1s → 8821**                |
+| B（ADR-052）       | headless 取   | 有（全套） | **1.2s → 803**（MUSIC_U 下发） |
+| C（本次，纯 Node） | **Node 算的** | **无**     | 无 8821，停在 802 直到过期     |
 
 C 卡在 802 的原因与协议无关：当天真人扫码次数过多，**手机端弹「24 小时后再试」**，授权无法回写，网页侧只能等到二维码自然过期。风控若要拒这个 token，8821 会在 2 秒内出现（实验 A 的时间线为证）——它没出现，即**设备风控放行了纯 Node token**。
 
@@ -237,9 +248,9 @@ C 卡在 802 的原因与协议无关：当天真人扫码次数过多，**手�
 `send` 的 `catch` 分支里有一条**不联网**的 token 生成路径：
 
 ```js
-p = rx({p: appId, v: sdkVersion, vk: versionKey, n: nonce, d: i()})  // rx = JSON.stringify
-g = "1#".concat(lb(ib(p)))                                          // lb = 标准 base64（A-Za-z0-9+/）
-return [g, !1]                                                      // 第二值 false = 未联网
+p = rx({ p: appId, v: sdkVersion, vk: versionKey, n: nonce, d: i() }) // rx = JSON.stringify
+g = '1#'.concat(lb(ib(p))) // lb = 标准 base64（A-Za-z0-9+/）
+return [g, !1] // 第二值 false = 未联网
 ```
 
 即网络失败时 token 形如 `1#<标准base64(JSON)>`。**未验证**：这种离线 token 能否过登录风控（本次没走到该分支）。若可用，则连 `fp-upload` 都不必请求，登录彻底离线自足。
@@ -253,13 +264,13 @@ return [g, !1]                                                      // 第二值
 
 ## 附录：复现脚本
 
-| 脚本 | 作用 |
-|---|---|
-| `.scratch/fp-stack.mjs` | hook XHR/fetch 抓调用栈，定位 SDK 文件与偏移 |
+| 脚本                                    | 作用                                                 |
+| --------------------------------------- | ---------------------------------------------------- |
+| `.scratch/fp-stack.mjs`                 | hook XHR/fetch 抓调用栈，定位 SDK 文件与偏移         |
 | `.scratch/fp-deob.mjs` / `fp-deob2.mjs` | 提取 `Zw` 数组、解码 1439 条字符串、全量替换 3953 处 |
-| `.scratch/fp-hook-mb.mjs` | route 拦截 `deviceid.js`，在 `Mb` 入口注入明文记录 |
-| `.scratch/fp-parse-tlv.mjs` | 解析 TLV 流（86 项） |
-| `.scratch/fp-mb.cjs` | **Node 移植**（`Mb` 全链路 + CRC32 + 自定义 base64） |
-| `.scratch/fp-verify.cjs` | 纯 Node 造 `d` 打 `fp-upload` 换 `dt` |
-| `.scratch/fp-probe.cjs` | 指纹值校验严格度探测 |
-| `.scratch/fp-login-pure.cjs` | 零浏览器完整登录验证 |
+| `.scratch/fp-hook-mb.mjs`               | route 拦截 `deviceid.js`，在 `Mb` 入口注入明文记录   |
+| `.scratch/fp-parse-tlv.mjs`             | 解析 TLV 流（86 项）                                 |
+| `.scratch/fp-mb.cjs`                    | **Node 移植**（`Mb` 全链路 + CRC32 + 自定义 base64） |
+| `.scratch/fp-verify.cjs`                | 纯 Node 造 `d` 打 `fp-upload` 换 `dt`                |
+| `.scratch/fp-probe.cjs`                 | 指纹值校验严格度探测                                 |
+| `.scratch/fp-login-pure.cjs`            | 零浏览器完整登录验证                                 |

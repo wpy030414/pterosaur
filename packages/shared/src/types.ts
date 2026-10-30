@@ -424,7 +424,8 @@ export function formatTime(sec: number): string {
 export function formatCollectionSummary(tracks: ReadonlyArray<Track>): string {
   if (!tracks.length) return ''
   const total = tracks.reduce(
-    (sum, t) => sum + (Number.isFinite(t.duration) && t.duration > 0 ? t.duration : 0),
+    (sum, t) =>
+      sum + (Number.isFinite(t.duration) && t.duration > 0 ? t.duration : 0),
     0,
   )
   // 向上取整到分钟；有秒即算 1 分钟

@@ -280,7 +280,7 @@ describe('扫码登录（现行网页协议）', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('https://music.163.com/api/login/qrcode/unikey')
     expect(init.method).toBe('POST')
-    expect(String(init.body)).toBe('type=1')
+    expect(init.body as string).toBe('type=1')
   })
 
   it('qrCreate 生成的二维码内容即现行扫码落地页，且与轮询共用同一 chainId', async () => {
@@ -305,7 +305,7 @@ describe('扫码登录（现行网页协议）', () => {
     expect(res.code).toBe(801)
     const [u, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit]
     expect(u).toBe('https://music.163.com/api/login/qrcode/client/login')
-    const body = new URLSearchParams(String(init.body))
+    const body = new URLSearchParams(init.body as string)
     expect(body.get('type')).toBe('1')
     expect(body.get('noCheckToken')).toBe('true')
     expect(body.get('key')).toBe(key)
@@ -325,19 +325,21 @@ describe('扫码登录（现行网页协议）', () => {
 
     // unikey 请求带上了设备 cookie
     const [, uniInit] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(String((uniInit.headers as Record<string, string>).Cookie)).toContain(
-      'WM_TID=abc',
-    )
+    expect(
+      String((uniInit.headers as Record<string, string>).Cookie),
+    ).toContain('WM_TID=abc')
 
     // chainId 用真实 sDeviceId
     const url = new URL(await qrLoginUrl(key))
-    expect(url.searchParams.get('chainId')).toMatch(/^v1_YD-real-1_web_login_\d+$/)
+    expect(url.searchParams.get('chainId')).toMatch(
+      /^v1_YD-real-1_web_login_\d+$/,
+    )
 
     fetchMock.mockResolvedValue(respond({ code: 801, message: '等待扫码' }, []))
     await qrCheck(key)
     const [u, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit]
     expect(u).toBe('https://music.163.com/api/login/qrcode/client/login')
-    expect(new URLSearchParams(String(init.body)).get('ydDeviceToken')).toBe(
+    expect(new URLSearchParams(init.body as string).get('ydDeviceToken')).toBe(
       'tok-32chars',
     )
     expect(String((init.headers as Record<string, string>).Cookie)).toContain(
@@ -359,7 +361,10 @@ describe('扫码登录（现行网页协议）', () => {
       sDeviceId: 'YD-x',
     }
     fetchMock.mockResolvedValue(
-      respond({ code: 8821, message: '请切换其他登录方式或升级新版本再试' }, []),
+      respond(
+        { code: 8821, message: '请切换其他登录方式或升级新版本再试' },
+        [],
+      ),
     )
     const res = await qrCheck('k-risk')
     expect(res.code).toBe(8821)
