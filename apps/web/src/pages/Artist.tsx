@@ -125,7 +125,7 @@ export function ArtistPage() {
   const allTracksTo = `${worksBase}/tracks${artistQuery}`
 
   return (
-    <div className="artist-page" aria-busy={loading}>
+    <div className="artist-page detail--artist" aria-busy={loading}>
       {/* ---------- 通栏大图 + 渐隐 ---------- */}
       <div className="artist-hero">
         {artist.avatar ? (

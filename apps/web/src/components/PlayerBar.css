@@ -326,12 +326,11 @@
   .playerbar {
     /*
      * 底部留白：岛要**贴住**用户的身高 UI。
-     * - safe-area-inset-bottom 在带 Home Indicator 的机型上约等于 34px；
-     * - 但 iPhone 17 这类**大圆角屏**，指示条之下的圆角弧线还会继续「吃掉」可视区，
-     *   若岛按 inset 顶格就绪，胶囊两端会顶到弧线边缘、显得发飘。
-     * 故在 inset 之余再压 6px，让岛整体下探一点，两端落进弧线的安全区。
-     * 该值与侧栏底部操作栏共用 `--playerbar-bottom-inset`（见 tokens.css），
-     * 抽屉里的按钮行据此与胶囊的中线对齐。
+     * safe-area-inset-bottom 在带 Home Indicator 的机型上约等于 34px；
+     * 无安全区的机型退到 20px。
+     * 底距只取 `--playerbar-bottom-inset`（见 tokens.css 的 768 块）——**不要**在此
+     * 再叠额外的审美余量，岛的位置不随展示层的调整而漂移。侧栏底部操作栏读同一
+     * 令牌推算胶囊中线（见 SidebarFooter.css），抽屉里的按钮行因此与胶囊对齐。
      */
     padding: 0 20px var(--playerbar-bottom-inset);
   }

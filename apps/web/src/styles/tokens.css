@@ -43,23 +43,33 @@
   --sidebar-width: 260px;
   --playerbar-height: 88px;
   /*
-   * 播放岛与窗口底边的距离（胶囊底距）。桌面端 14px；移动端在安全区之上再压
-   * 6px（见 PlayerBar.css 的 768 块）。侧栏底部操作栏用它推算胶囊中线，
-   * 保证「主题 / 设置 / 账户」与岛中心水平对齐（见 SidebarFooter.css）。
+   * 播放岛胶囊（.playerbar__dock）与窗口底边的距离。桌面 14px，移动端档位见下方
+   * 768 块。**岛的定位只由它决定**：组件不得再写底距字面量，侧栏底部操作栏也借它
+   * 推算胶囊中线（见 SidebarFooter.css）。
    */
   --playerbar-bottom-inset: 14px;
   --topbar-height: 56px;
   /*
    * 页面底部留白：播放区是**悬浮玻璃岛**（见 PlayerBar.css），内容会从它下面滚过，
-   * 故滚到底时需要额外空间，避免最后一行被胶囊压住。≈ 岛高 + 与岛的间距。
+   * 故滚到底时需要额外空间，避免最后一行被胶囊压住。
+   * 由「胶囊高 + 胶囊底距」推算，并留 8px 余量（桌面 74 + 14 + 8 = 96px；移动端
+   * 取 20px 安全区时为 102px）——调岛的位置时留白跟着走，不会一处动、另一处错位。
+   * --playerbar-height 必须定义在上方：纯 CSS 的变量循环引用会让两侧都失效。
    */
-  --page-bottom-inset: 104px;
+  --page-bottom-inset: calc(
+    var(--playerbar-height) - 14px + var(--playerbar-bottom-inset) + 8px
+  );
   /*
    * 页面左右内边距（内容槽）：桌面 32px、移动端 16px。原先散落在 app.css / pages.css /
    * Artist.css / ArtistWorks.css 各自的窄屏块里，现统一由本令牌驱动——这些同名 `16px`
    * 的移动端覆盖随之删除，页面内边距不再需要单独断点（见 AGENTS：只有 768 一档）。
    */
   --page-gutter: 32px;
+  /*
+   * 页面顶部留白：页首距内容区顶端的间距（桌面 32px、移动端 60px 见下方 768 块）。
+   * 由路由根节点统一施加（见 app.css），页面 header 不自带上间距。
+   */
+  --page-top-inset: 32px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-sm: 6px;
@@ -104,9 +114,21 @@
 @media (max-width: 768px) {
   :root {
     --page-gutter: 16px;
-    /* 与 PlayerBar.css 的 768 块一致：安全区 + 6px（大圆角屏的弧线余量） */
-    --playerbar-bottom-inset: calc(
-      max(20px, env(safe-area-inset-bottom, 0px)) + 6px
+    /* 窄屏左上角浮着抽屉开关（36px 见方、距顶 12px），页首须整体让到按钮下方 */
+    --page-top-inset: 60px;
+    /*
+     * 与 PlayerBar.css 的 768 块一致：取安全区，且不低于 20px。
+     * **不加弧线余量**——岛的位置不随展示层的审美调整而变（曾用「安全区 + 6px」
+     * 抬高过岛）；想调岛的下探只改这一处，两侧同步。
+     */
+    --playerbar-bottom-inset: max(20px, env(safe-area-inset-bottom, 0px));
+    /*
+     * 幂等地重写同一算式：纯 CSS 的 var() 不做惰性求值，根上那条 --page-bottom-inset
+     * 已定格为 14px 版；此处随上面的新底距重算。无论根上那次求值是否读到同一块里的
+     * 覆盖，结果都一致。
+     */
+    --page-bottom-inset: calc(
+      var(--playerbar-height) - 14px + var(--playerbar-bottom-inset) + 8px
     );
   }
 }
@@ -128,6 +150,15 @@
   --glass-sidebar: rgba(30, 30, 34, 0.72);
   --glass-player: rgba(38, 38, 42, 0.52);
   --glass-overlay: rgba(28, 28, 32, 0.6);
+  /*
+   * 以上三者的**不透明同色档**：仅在主题转场的根快照期间替代毛玻璃使用
+   * （快照里 backdrop-filter 失效，见 global.css「主题转场期间停用毛玻璃」）。
+   * 色值 = 各自 alpha 叠在深色基底 --bg(#131315) 上的合成结果——合成后的观感就是
+   * 无模糊时的样子，故揭示时看不出接缝。新增毛玻璃色时记得同步补一条。
+   */
+  --glass-sidebar-solid: #252528;
+  --glass-player-solid: #1e1e21;
+  --glass-overlay-solid: #1c1c1f;
 
   --text: #f5f5f7;
   --text-secondary: rgba(245, 245, 247, 0.62);
@@ -180,6 +211,9 @@
   --glass-sidebar: rgba(246, 246, 247, 0.72);
   --glass-player: rgba(250, 250, 251, 0.58);
   --glass-overlay: rgba(246, 246, 247, 0.6);
+  --glass-sidebar-solid: #fcfcfc;
+  --glass-player-solid: #fefefe;
+  --glass-overlay-solid: #fbfbfc;
 
   --text: #1d1d1f;
   --text-secondary: rgba(29, 29, 31, 0.6);
@@ -230,6 +264,9 @@
     --glass-sidebar: rgba(246, 246, 247, 0.72);
     --glass-player: rgba(250, 250, 251, 0.58);
     --glass-overlay: rgba(246, 246, 247, 0.6);
+    --glass-sidebar-solid: #fcfcfc;
+    --glass-player-solid: #fefefe;
+    --glass-overlay-solid: #fbfbfc;
 
     --text: #1d1d1f;
     --text-secondary: rgba(29, 29, 31, 0.6);

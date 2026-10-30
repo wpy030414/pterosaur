@@ -10,7 +10,7 @@
   display: flex;
   align-items: flex-end;
   gap: 16px;
-  padding: 32px 0 8px;
+  padding: 0 0 8px;
 }
 
 .home__greeting {
@@ -34,7 +34,7 @@
 }
 
 .browse__header {
-  padding: 32px 0 4px;
+  padding: 0 0 4px;
 }
 
 /* 分组小标（如「流派」） */
@@ -67,7 +67,7 @@
   display: flex;
   align-items: center;
   max-width: 520px;
-  margin: 28px auto 0;
+  margin: 0 auto;
 }
 
 .search-page__icon {
@@ -108,7 +108,7 @@
 }
 
 .search {
-  margin-top: 20px;
+  margin-top: 0;
 }
 
 .search__header {
@@ -166,7 +166,7 @@
   display: flex;
   align-items: flex-end;
   gap: 28px;
-  padding: 32px var(--page-gutter) 24px;
+  padding: 0 var(--page-gutter) 24px;
 }
 
 .detail__cover {
@@ -190,7 +190,7 @@
 .detail--playlist .detail__hero {
   /* 右栏内容（标题 / 艺术家 / 年份）较矮，顶部对齐避免与大封面错位 */
   align-items: flex-start;
-  padding-top: 40px;
+  padding-top: 0;
   /* 按钮已移入右栏底部，Hero 自身无需再留操作区高度 */
   padding-bottom: 20px;
 }
@@ -482,7 +482,7 @@
 }
 
 .library-page__header {
-  padding: 32px 0 8px;
+  padding: 0 0 8px;
 }
 
 .library-page__label {
@@ -662,7 +662,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 18px;
-    padding: 24px var(--page-gutter) 18px;
+    padding: 0 var(--page-gutter) 18px;
   }
 
   .detail__cover {
@@ -690,7 +690,7 @@
 
   /* 空行随标题字号同比缩小 */
   .detail__lead-space {
-    height: calc(22px * 1.25);
+    height: 0;
   }
 
   .detail__artist {
@@ -726,17 +726,6 @@
   .genre-group__title,
   .library-page__title {
     font-size: 24px;
-  }
-
-  /*
-   * 窄屏左上角浮着汉堡按钮（顶栏移除后的抽屉开关，见 MobileMenuButton.css），
-   * 故所有页面 hero 的顶部与左侧都要让位，避免标题与按钮重叠。
-   */
-  .home__hero,
-  .search-page__bar,
-  .library-page__header,
-  .browse__header {
-    padding-top: 60px;
   }
 
   /* 窄屏下搜索框恢复占满可用宽度（仍居中）：限宽只对宽屏有意义 */

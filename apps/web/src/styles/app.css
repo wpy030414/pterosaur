@@ -78,6 +78,25 @@
   padding-bottom: var(--page-bottom-inset);
 }
 
+/*
+ * 页面顶部留白——**全站唯一出口**（与上面的底部空档同理）。
+ *
+ * 页首距内容区顶端的间距一律由路由根节点提供（令牌 `--page-top-inset` 的桌面 / 移动两档），
+ * 各页 header 不再自带任何上间距 / 上外边距——否则桌面端与移动端都要逐页调，
+ * 还叠出两份空白。
+ *
+ * 例外只有两页：艺人页与磁带页——它们的头部是通栏大图，本就从屏幕顶端铺起，
+ * 顶部留白只须由各自头部的文字区块内部让位（含窄屏按钮）。
+ *
+ * 特异性说明：`.route-stage >` 前缀在本文件（分块 `index-*.css`）里压不过后加载的
+ * `pages-*.css` 中同前缀的 `.route-stage >` 规则，故这里写成 `.route-stage.route-stage`
+ * 双类（页首规则本身也是双类级别的 `:not()` 链），确保单类页面根的 `padding: 0 …`
+ * 简写不会把上边距重置掉。
+ */
+.route-stage.route-stage > :not(.detail--artist):not(.detail--cassette) {
+  padding-top: var(--page-top-inset);
+}
+
 /* ============================ 通用页面骨架 ============================ */
 .page {
   padding: 0 var(--page-gutter);
