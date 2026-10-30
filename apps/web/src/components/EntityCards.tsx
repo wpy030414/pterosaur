@@ -1,4 +1,4 @@
-import { Play, Heart } from 'lucide-react'
+import { Play, Star } from 'lucide-react'
 import type { Album, Artist } from '@pterosaur/shared/types'
 import { keyOf } from '@pterosaur/shared/types'
 import { usePlayCollection } from '../hooks/usePlayCollection.js'
@@ -16,9 +16,9 @@ interface ArtistCardProps {
  * 艺人卡片：圆形头像 + 名称 + 单曲/专辑数。
  *
  * - 点击卡片本体：进入艺人详情页；
- * - 悬浮浮现的红心：收藏 / 取消收藏该艺人（`stopPropagation`，不进入详情页）。
+ * - 悬浮浮现的星标：收藏 / 取消收藏该艺人（`stopPropagation`，不进入详情页）。
  *
- * 因内部要嵌一个红心 `<button>`（按钮不能嵌套按钮），外层改用 `div[role=button]`，
+ * 因内部要嵌一个星标 `<button>`（按钮不能嵌套按钮），外层改用 `div[role=button]`，
  * 与 {@link AlbumCard} 保持一致。
  */
 export function ArtistCard({ artist, onClick }: ArtistCardProps) {
@@ -42,7 +42,7 @@ export function ArtistCard({ artist, onClick }: ArtistCardProps) {
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => {
-        // 仅在卡片本体获得焦点时响应，避免误触内部红心按钮
+        // 仅在卡片本体获得焦点时响应，避免误触内部星标按钮
         if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
@@ -67,7 +67,7 @@ export function ArtistCard({ artist, onClick }: ArtistCardProps) {
             toggleSaveArtist(artist)
           }}
         >
-          <Heart
+          <Star
             size={18}
             strokeWidth={2}
             fill={isSaved ? 'currentColor' : 'none'}

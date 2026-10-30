@@ -26,7 +26,7 @@ export function AlbumsPage() {
       {savedAlbums.length === 0 ? (
         <section className="section">
           <Empty
-            text="还没有收藏的专辑，去专辑页点红心收藏吧"
+            text="还没有收藏的专辑"
             icon={<Disc3 size={32} strokeWidth={1.5} />}
           />
         </section>

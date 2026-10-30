@@ -137,15 +137,16 @@
   background: var(--control-overlay-hover);
 }
 
-/* 已收藏：常显 + 强调色（选择器与 `.card__fav:hover` 同权重、靠后生效，避免被中性 hover 盖掉） */
+/* 已收藏：常显 + 中性令牌底与令牌前景（深色白星 / 浅色黑星），不再用强调红 */
 .card__fav.card__fav--active {
   opacity: 1;
   transform: translateY(0);
-  background: var(--accent);
+  background: var(--bg-elevated);
+  color: var(--star);
 }
 
 .card__fav.card__fav--active:hover {
-  background: var(--accent-hover);
+  background: var(--bg-elevated-2);
 }
 
 .card__body {

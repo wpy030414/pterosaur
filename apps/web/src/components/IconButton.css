@@ -51,10 +51,11 @@
 }
 
 /* 激活态（随机 / 循环开启）：强调色 */
+/* 激活态：收藏星标走中性令牌（深色白 / 浅色黑），与强调红拉开语义 */
 .icon-btn--active {
-  color: var(--accent);
+  color: var(--star);
 }
 
 .icon-btn--active:hover {
-  background: var(--accent-soft);
+  background: var(--bg-hover);
 }

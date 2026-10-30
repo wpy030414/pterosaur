@@ -731,22 +731,28 @@
 }
 
 /* ============================ 我喜欢的音乐封面 ============================ */
+/* 「我喜欢的音乐」封面：中性抬升面 + 令牌前景，星标随主题反色（深色白星 / 浅色黑星） */
 .fav-cover {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 200px;
-  height: 200px;
+  width: 270px;
+  height: 270px;
   flex-shrink: 0;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, #fa243c, #ff7a5e);
-  color: #fff;
+  background: var(--bg-elevated-2);
+  color: var(--text);
+}
+
+.fav-cover svg {
+  width: 44%;
+  height: 44%;
 }
 
 @media (max-width: 760px) {
   .fav-cover {
-    width: 160px;
-    height: 160px;
+    width: 200px;
+    height: 200px;
   }
 }
 

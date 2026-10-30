@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { Play, Shuffle, Heart } from 'lucide-react'
+import { Play, Shuffle, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
@@ -157,7 +157,7 @@ export function AlbumPage() {
           active={isSaved}
           onClick={() => toggleSaveAlbum(album)}
         >
-          <Heart
+          <Star
             size={20}
             strokeWidth={2}
             fill={isSaved ? 'currentColor' : 'none'}

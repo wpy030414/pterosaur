@@ -1,4 +1,4 @@
-import { Play, Shuffle, Heart } from 'lucide-react'
+import { Play, Shuffle, Star } from 'lucide-react'
 import { useLibrary } from '../store/library.js'
 import { usePlayer } from '../store/player.js'
 import { TrackList } from '../components/TrackList.js'
@@ -56,23 +56,14 @@ export function FavoritesPage() {
     })
   }
 
-  const totalDuration = favorites.reduce((sum, t) => sum + (t.duration || 0), 0)
-
   return (
-    <div className="detail">
+    <div className="detail detail--playlist">
       <header className="detail__hero">
         <div className="fav-cover" aria-hidden>
-          <Heart size={72} fill="currentColor" strokeWidth={0} />
+          <Star fill="currentColor" strokeWidth={0} />
         </div>
         <div className="detail__info">
-          <span className="detail__type">歌单</span>
           <h1 className="detail__name">我喜欢的音乐</h1>
-          <p className="detail__meta">
-            <span>{favorites.length} 首</span>
-            {totalDuration > 0 && (
-              <span> · 约 {Math.round(totalDuration / 60)} 分钟</span>
-            )}
-          </p>
         </div>
       </header>
 
@@ -105,10 +96,7 @@ export function FavoritesPage() {
 
       <div className="detail__list">
         {favorites.length === 0 ? (
-          <Empty
-            text="还没有喜欢的音乐，点击曲目行的红心收藏"
-            icon={<Heart size={32} strokeWidth={1.5} />}
-          />
+          <Empty text="还没有喜欢的音乐" icon={<Star size={32} strokeWidth={1.5} />} />
         ) : (
           <TrackList tracks={favorites} />
         )}

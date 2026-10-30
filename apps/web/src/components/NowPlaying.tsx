@@ -5,9 +5,9 @@ import {
   Pause,
   SkipBack,
   SkipForward,
-  Heart,
   ListMusic,
   Loader2,
+  Star,
 } from 'lucide-react'
 import { usePlayer, currentPlayMode } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
@@ -344,7 +344,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
             active={isFav}
             onClick={() => toggleFavorite(current)}
           >
-            <Heart
+            <Star
               size={20}
               strokeWidth={2}
               fill={isFav ? 'currentColor' : 'none'}

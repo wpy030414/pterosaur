@@ -1,4 +1,4 @@
-import { Play, Pause, Heart, MoreHorizontal, Clock } from 'lucide-react'
+import { Play, Pause, Star, MoreHorizontal, Clock } from 'lucide-react'
 import type { Track } from '@pterosaur/shared/types'
 import { formatTime, keyOf } from '@pterosaur/shared/types'
 import { usePlayer } from '../store/player.js'
@@ -265,7 +265,7 @@ export function TrackList({
                 className="row-action"
                 onClick={() => toggleFavorite(t)}
               >
-                <Heart
+                <Star
                   size={16}
                   strokeWidth={2}
                   fill={isFav ? 'currentColor' : 'none'}
