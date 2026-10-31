@@ -22,60 +22,94 @@ import type {
   RipLastResult,
 } from '@pterosaur/shared/rip'
 
-/** 统一的 GET JSON 请求，解析后端 `ApiResult` 包裹。 */
-async function get<T>(
-  path: string,
-  query?: Record<string, string | number | undefined>,
-): Promise<T> {
-  const url = new URL(path, window.location.origin)
-  if (query) {
-    for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== '') url.searchParams.set(k, String(v))
-    }
+/**
+ * 接口错误：调用方按 `status` / `needLogin` 区分处理，而不是去匹配错误文案。
+ *
+ * 此前 GET 与写请求各自构造一个裸 `Error` 并挂零散字段，写请求**不设 `status`**，
+ * 于是「401 未登录」与「502 上游故障」在调用方看来没有区别。
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly needLogin: boolean
+
+  constructor(message: string, status: number, needLogin = false) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.needLogin = needLogin
   }
-  const res = await fetch(url.toString(), { credentials: 'include' })
-  const json = (await res.json().catch(() => null)) as ApiResult<T> | null
-  if (!json || !json.ok) {
-    const err = new Error(
-      json?.error ?? `请求失败（${res.status}）`,
-    ) as Error & {
-      needLogin?: boolean
-      status?: number
-    }
-    err.needLogin = json?.needLogin
-    err.status = res.status
-    throw err
-  }
-  return json.data as T
 }
 
-/** 带 JSON body 的写请求（POST / PUT），解析后端 `ApiResult` 包裹。 */
-async function send<T>(
-  method: 'POST' | 'PUT',
+type Query = Record<string, string | number | undefined>
+
+/**
+ * 统一的请求入口：拼 URL、带凭证、解析 `ApiResult`、统一抛 {@link ApiError}。
+ *
+ * - 路径一律相对同源（开发期由 Vite 代理、生产由同一 Hono 进程提供），
+ *   不再混用「`new URL(path, origin)`」与「相对路径」两种解析方式；
+ * - 非 JSON / 非预期形状的响应也被归一成 `ApiError`，调用方无需再判断。
+ */
+async function request<T>(
+  method: 'GET' | 'POST' | 'PUT',
   path: string,
-  body?: unknown,
+  init: { query?: Query; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  const json = (await res.json().catch(() => null)) as ApiResult<T> | null
-  if (!json || !json.ok) {
-    const err = new Error(
-      json?.error ?? `请求失败（${res.status}）`,
-    ) as Error & { needLogin?: boolean }
-    err.needLogin = json?.needLogin
-    throw err
+  // GET 不得携带 body：只在写请求上设置，避免出现非法 fetch 选项
+  const hasBody = init.body !== undefined && method !== 'GET'
+  let res: Response
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: 'include',
+      ...(hasBody
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(init.body),
+          }
+        : {}),
+    })
+  } catch {
+    // 断网 / 请求被取消：统一为 0 状态，调用方据「非 4xx/5xx」处理
+    throw new ApiError('网络不可用，请检查连接', 0)
   }
-  return json.data as T
+
+  const json = (await res.json().catch(() => null)) as ApiResult<T> | null
+  // `ok:true` 但缺 `data` 的畸形响应同样视为失败，避免把 undefined 当数据返回
+  if (!json || !json.ok || json.data === undefined) {
+    throw new ApiError(
+      json?.error ?? `请求失败（${res.status}）`,
+      res.status,
+      json?.needLogin ?? false,
+    )
+  }
+  return json.data
 }
 
-const post = <T>(path: string, body?: unknown): Promise<T> =>
-  send<T>('POST', path, body)
-const put = <T>(path: string, body?: unknown): Promise<T> =>
-  send<T>('PUT', path, body)
+function get<T>(path: string, query?: Query): Promise<T> {
+  return request<T>('GET', withQuery(path, query))
+}
+
+function post<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>('POST', path, { body })
+}
+
+function put<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>('PUT', path, { body })
+}
+
+/** 把查询参数拼到路径上（空值 / `undefined` 一律省略）。 */
+function withQuery(path: string, query?: Query): string {
+  if (!query) return path
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== '') params.set(k, String(v))
+  }
+  const qs = params.toString()
+  return qs ? `${path}?${qs}` : path
+}
+
+/** 批量 id 的分隔符（后端 `/api/songs` 按逗号切分）。id 自身不含逗号。 */
+const ID_SEPARATOR = ','
 
 export const api = {
   search: (source: MusicSource, keywords: string, limit = 30) =>
@@ -117,9 +151,7 @@ export const api = {
   discoverCapabilities: (source: MusicSource) =>
     get<{ recommend: boolean; playlists: boolean; toplists: boolean }>(
       `${API_BASE}/discover/capabilities`,
-      {
-        source,
-      },
+      { source },
     ),
 
   recommend: (source: MusicSource, limit = 12) =>
@@ -149,6 +181,7 @@ export const api = {
     get<PlaylistCategoryGroup[]>(`${API_BASE}/discover/categories`, {
       source,
     }),
+
   /** 「本周新发行」：最近发布的专辑。 */
   newAlbums: (source: MusicSource, limit = 12) =>
     get<Album[]>(`${API_BASE}/discover/new-albums`, { limit, source }),
@@ -159,8 +192,13 @@ export const api = {
       `${API_BASE}/playlist/${source}/${encodeURIComponent(id)}`,
     ),
 
+  /**
+   * 批量曲目详情。**先按逗号拼接、再整体交给 `withQuery` 编码**：
+   * 若逐个 `encodeURIComponent` 后再拼接，含逗号的 id 会被编码成 `%2C`、与其他 id
+   * 粘连，后端再按逗号切分时就成了一个错 id。上游 id 本身不含逗号。
+   */
   songs: (source: MusicSource, ids: string[]) =>
-    get<Track[]>(`${API_BASE}/songs`, { ids: ids.join(','), source }),
+    get<Track[]>(`${API_BASE}/songs`, { ids: ids.join(ID_SEPARATOR), source }),
 
   /** 把一个视频 / 曲目展开为多个可播放条目（如 B 站分P 的一对多映射）。 */
   parts: (source: MusicSource, id: string) =>
@@ -193,6 +231,8 @@ export const api = {
 
   userPlaylists: (uid?: string) =>
     get<Playlist[]>(`${API_BASE}/user/playlists`, { uid }),
+
+  /* ------------------------- 云同步 ------------------------- */
 
   /** 读取本人 library 的云端副本；`payload` 为 null 表示云端尚无数据。 */
   syncGet: () =>
