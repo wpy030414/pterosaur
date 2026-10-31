@@ -3,6 +3,7 @@ import { API_BASE } from '@pterosaur/shared/types'
 import { api } from '../api/client.js'
 import { useLibrary } from '../store/library.js'
 import { useSync } from '../store/sync.js'
+import { invalidateAsyncCache } from '../hooks/useAsync.js'
 
 /**
  * library 云同步引擎（**云端权威**）。
@@ -67,10 +68,16 @@ export async function pullLibrary(): Promise<SyncEnvelope | null> {
   return payload
 }
 
-/** 把当前本地 library 推送到云端，并把本机版本号推进到服务端返回的 `rev`。 */
+/**
+ * 把当前本地 library 推送到云端，并把本机版本号推进到服务端返回的 `rev`。
+ *
+ * 成功后作废 `useAsync` 里的 `playlist:` 前缀缓存：本地歌单 / 收藏的改动若不失效，
+ * 带缓存的远程歌单视图会继续显示旧的曲目列表。
+ */
 export async function pushLibrary(): Promise<void> {
   const saved = await api.syncPut(snapshotLibrary())
   useSync.getState().touch(saved.rev ?? 0)
+  invalidateAsyncCache('playlist:')
 }
 
 /** 推送一份全新的空 library（重置时清空云端副本）。 */
