@@ -1,0 +1,32 @@
+/* 由原 pages.css 按页面拆分而来（见第 17 项重构）：只由对应页面 import。 */
+/* ============================ 浏览 / 电台 ============================ */
+.browse {
+  padding: 0 var(--page-gutter);
+  max-width: 1600px;
+  /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
+  margin-inline: auto;
+}
+
+.browse__header {
+  padding: 0 0 4px;
+}
+
+/* 分组小标（如「流派」） */
+.browse__label {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.browse__title {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* tab 胶囊样式已随搜索页 tab 一并移除（ADR-050）：搜索结果改为分区滑轨，不再有 tab。 */
+
+@media (max-width: 768px) {
+  .browse__title {
+    font-size: 24px;
+  }
+}

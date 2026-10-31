@@ -13,8 +13,8 @@ import {
 import { AlbumCard } from '../components/EntityCards.js'
 import { TrackList } from '../components/TrackList.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
-import '../pages/pages.css'
 import './ArtistWorks.css'
+import './Detail.css'
 
 /**
  * 子页类别：

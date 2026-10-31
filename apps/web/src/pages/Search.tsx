@@ -22,6 +22,7 @@ import { Rail } from '../components/Rail.js'
 import { RailMore } from '../components/RailMore.js'
 import { SongRow } from '../components/SongRow.js'
 import { playerCommands } from '../store/player.js'
+import './Search.css'
 import {
   CASSETTE_SOURCE,
   SEARCH_PAGE_SIZE,

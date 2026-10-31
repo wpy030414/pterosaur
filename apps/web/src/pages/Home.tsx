@@ -13,7 +13,8 @@ import { Rail } from '../components/Rail.js'
 import { RailMore } from '../components/RailMore.js'
 import { SongRow } from '../components/SongRow.js'
 import { Loading, ErrorState } from '../components/States.js'
-import './pages.css'
+import './Home.css'
+import './Home.css'
 
 /**
  * 「继续收听」收录上限：4 行 × 6 列 = 24 首。

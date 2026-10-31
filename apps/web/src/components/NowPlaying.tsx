@@ -1,76 +1,62 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ChevronDown,
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
   ListMusic,
   Loader2,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
   Star,
 } from 'lucide-react'
-import { currentPlayMode, playerCommands } from '../store/player.js'
-import { usePlayerQueue } from '../store/playerQueue.js'
+import { ARTIST_SEPARATOR, formatTime, keyOf } from '@pterosaur/shared/types'
+import { COVER_LARGE, coverAt } from '@pterosaur/shared/image'
+import { playerCommands, currentPlayMode } from '../store/player.js'
 import { usePlaybackSession } from '../store/playbackSession.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
 import { usePlayerUi } from '../store/playerUi.js'
 import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
-import { useSettings } from '../store/settings.js'
+import { useMediaQuery, MOBILE_QUERY } from '../hooks/useMediaQuery.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { MOBILE_QUERY, useMediaQuery } from '../hooks/useMediaQuery.js'
 import { seekTo } from '../hooks/audioElement.js'
-import { api } from '../api/client.js'
-import { getCachedLyric, putCachedLyric } from '../lib/lyricCache.js'
-import { whenCoverReady } from '../lib/imageCache.js'
-import {
-  canonicalNeteaseImage,
-  coverAt,
-  COVER_LARGE,
-} from '@pterosaur/shared/image'
 import { startNowPlayingTransition } from '../lib/nowPlayingTransition.js'
-import {
-  formatTime,
-  keyOf,
-  formatQuality,
-  ARTIST_SEPARATOR,
-} from '@pterosaur/shared/types'
-import type { AudioQuality, Lyric } from '@pterosaur/shared/types'
 import { Cover } from './Cover.js'
 import { IconButton } from './IconButton.js'
 import { Slider } from './Slider.js'
 import { PLAY_MODE_META } from './playMode.js'
+import { LyricPanel } from './LyricPanel.js'
+import { NowPlayingBackground } from './NowPlayingBackground.js'
+import { QualityChip } from './QualityChip.js'
 import './NowPlaying.css'
 
-interface NowPlayingProps {
-  /** 是否处于展开态（退出动画期间为 false）。 */
+export interface NowPlayingProps {
+  /** 是否处于展开态（退出动画期间仍为 true）。 */
   open: boolean
-  /** 是否正在播放退出动画。 */
+  /** 是否正在播放退出动画（此时不能响应关闭）。 */
   exiting: boolean
 }
-
-/** 背景双层状态：stable 为常驻绘制层，incoming 为正在淡入、淡完落位即卸载的层。 */
-type BgState = { stable: string | null; incoming: string | null }
-
-/**
- * 背景淡入动画（`--dur-slow` = 400ms）后的落位时限。用定时器而非 animationend 兜底：
- * reduced-motion 下动画时长被压到 0.01ms，事件时机不可靠（与 usePresence 同款处理）。
- */
-const BG_FADE_SETTLE_MS = 480
 
 /**
  * 全屏播放页（Apple Music「正在播放」）。
  *
  * 左侧封面（带动态模糊背景），右侧上部同步歌词、下部播放控制。
  * 常驻挂载，由 `open`/`exiting` 驱动进入 / 退出动画；Esc 关闭。
+ *
+ * 结构上拆为三个自带状态的自洽块：
+ * - {@link NowPlayingBackground}：双层模糊背景（切歌防闪）
+ * - {@link LyricPanel}：唯一订阅 `position` 的区域（歌词高亮与居中滚动）
+ * - {@link QualityChip}：顶部实际音频流参数
+ * 本组件只负责布局与「曲目元信息 / 封面 / 控制」。
  */
 export function NowPlaying({ open, exiting }: NowPlayingProps) {
   const current = usePlaybackSession((s) => s.current)
   const isPlaying = usePlaybackSession((s) => s.isPlaying)
   const position = usePlaybackSession((s) => s.position)
   const duration = usePlaybackSession((s) => s.duration)
+  const buffering = usePlaybackSession((s) => s.buffering)
   const repeat = usePlayerQueue((s) => s.repeat)
   const shuffle = usePlayerQueue((s) => s.shuffle)
-  const buffering = usePlaybackSession((s) => s.buffering)
   const toggle = playerCommands.toggle
   const next = playerCommands.next
   const prev = playerCommands.prev
@@ -92,110 +78,6 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
   const toggleQueue = useQueuePanel((s) => s.toggleQueue)
   const queueOpen = useQueuePanel((s) => s.queueOpen)
 
-  const [lyric, setLyric] = useState<Lyric | null>(null)
-  const [lyricLoading, setLyricLoading] = useState(false)
-
-  /*
-   * 切歌防闪背景：稳定层（旧封面）常驻绘制，新封面**加载并解码完成后**才经淡入层盖上、
-   * 淡完落位。此前单层 `backgroundImage` 跟随 `current.cover` 同步替换——未缓存的封面在
-   * 下载 + 解码期间整层空白，透过 scrim 的 backdrop-filter 糊出身后页面（命中缓存则无感，
-   * 正是「有概率」复现的来源）。
-   */
-  const [bg, setBg] = useState<BgState>({ stable: null, incoming: null })
-
-  const coverUrl = current ? coverAt(current.cover, COVER_LARGE) : undefined
-  useEffect(() => {
-    if (!coverUrl) return
-    let cancelled = false
-    void whenCoverReady(coverUrl).then((ok) => {
-      if (cancelled || !ok) return // 加载失败维持旧背景：稳定优先于空白
-      setBg((prev) => {
-        // 规范化后比较：旧持久化数据（轮换前的 host）与新鲜 API 数据是同一封面时不重复淡入
-        const same = (a: string | null) =>
-          a !== null &&
-          canonicalNeteaseImage(a) === canonicalNeteaseImage(coverUrl)
-        if (same(prev.stable) || same(prev.incoming)) return prev
-        // 首张直接落位（进场动画本就有整体淡入），此后才走「旧图垫底 + 新图盖上」的交叉淡入
-        return prev.stable === null
-          ? { stable: coverUrl, incoming: null }
-          : { stable: prev.stable, incoming: coverUrl }
-      })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [coverUrl])
-
-  // 淡入完成 → 新图落位、卸载淡入层（收敛回单层，避免常驻多层全屏模糊的合成开销）
-  useEffect(() => {
-    if (!bg.incoming) return
-    const t = setTimeout(
-      () =>
-        setBg((prev) =>
-          prev.incoming ? { stable: prev.incoming, incoming: null } : prev,
-        ),
-      BG_FADE_SETTLE_MS,
-    )
-    return () => clearTimeout(t)
-  }, [bg.incoming])
-
-  // 拉取歌词
-  useEffect(() => {
-    let cancelled = false
-    if (!current) {
-      setLyric(null)
-      return
-    }
-    // 命中预载缓存：直接显示，无「歌词加载中」停留
-    const cached = getCachedLyric(current)
-    if (cached) {
-      setLyric(cached)
-      setLyricLoading(false)
-      return
-    }
-    setLyricLoading(true)
-    setLyric(null)
-    api
-      .lyric(current.source, current.id)
-      .then((l) => {
-        if (cancelled) return
-        putCachedLyric(current, l)
-        setLyric(l)
-      })
-      .catch(() => {
-        if (!cancelled) setLyric({ lines: [], timed: false })
-      })
-      .finally(() => {
-        if (!cancelled) setLyricLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [current])
-
-  // 音质 chip：反映服务端**实际**解析到的档位（含降级），仅在展开时拉取（见 ADR-041）。
-  const level = useSettings((s) => s.level)
-  const [quality, setQuality] = useState<AudioQuality | null>(null)
-  useEffect(() => {
-    if (!open || !current) {
-      setQuality(null)
-      return
-    }
-    let cancelled = false
-    api
-      .quality(current.source, current.id, level)
-      .then((q) => {
-        if (!cancelled) setQuality(q)
-      })
-      .catch(() => {
-        // 接口不可用（如该源未实现 501）或解析失败：不显示 chip，绝不阻塞播放
-        if (!cancelled) setQuality(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [open, current, level])
-
   // 移动端「专注歌词」：点封面收起（缩小封面 + 隐藏歌名 / 艺术家，腾给歌词），再点复原。
   const isMobile = useMediaQuery(MOBILE_QUERY)
   const [lyricFocused, setLyricFocused] = useState(false)
@@ -204,80 +86,15 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
     setLyricFocused(false)
   }, [current, open])
 
-  // 当前高亮行下标
-  const activeIndex = useMemo(() => {
-    if (!lyric?.timed || !lyric.lines.length) return -1
-    let idx = -1
-    for (let i = 0; i < lyric.lines.length; i++) {
-      if (lyric.lines[i].time <= position) idx = i
-      else break
-    }
-    return idx
-  }, [lyric, position])
-
-  // 自动滚动到当前行（居中）；首句未到时也保证第一行居中而非挤在顶部。
-  // 提取为回调，供「当前行变化」与「容器高度变化」两处复用。
-  const listRef = useRef<HTMLDivElement | null>(null)
-  const centerActiveLine = useCallback(
-    (animate: boolean) => {
-      const el = listRef.current
-      if (!el || !lyric?.timed || !lyric.lines.length) return
-      // activeIndex 为 -1 表示播放位置尚未到达第一句：用第一行作为居中参照
-      const targetIdx = activeIndex < 0 ? 0 : activeIndex
-      const line = el.querySelector<HTMLElement>(`[data-idx="${targetIdx}"]`)
-      if (!line) return
-
-      // 首 / 末行居中的上下留白：写成 CSS 变量、由 `.nowplaying__lyrics` 的 `::before/::after`
-      // 撑起，而**不是**直接改容器的 `padding`。改 padding 等于每次换行都动这个滚动容器自身的
-      // 盒模型，WebKit 下会触发它重新测高、把下方控制区顶出视口（见 ADR-041）。
-      const pad = Math.max(0, (el.clientHeight - line.clientHeight) / 2)
-      el.style.setProperty('--np-lyric-pad', `${pad}px`)
-
-      if (activeIndex < 0) {
-        // 第一句还没到时静默滚到顶部——留白已使第一行居中
-        el.scrollTo({ top: 0, behavior: 'instant' })
-      } else {
-        const elRect = el.getBoundingClientRect()
-        const lineRect = line.getBoundingClientRect()
-        const delta =
-          lineRect.top - elRect.top - (el.clientHeight - line.clientHeight) / 2
-        el.scrollTo({
-          top: el.scrollTop + delta,
-          behavior: animate ? 'smooth' : 'instant',
-        })
-      }
-    },
-    [activeIndex, lyric],
-  )
-
-  useEffect(() => {
-    centerActiveLine(true)
-  }, [centerActiveLine])
-
-  // 歌词区高度变化时也要立即重居中，否则点封面「专注歌词」（容器变高）后当前行会偏，
-  // 非得等到下一句才归位。ResizeObserver 观察的是容器盒尺寸（不受留白伪元素影响，无回环）。
-  const centerRef = useRef(centerActiveLine)
-  useEffect(() => {
-    centerRef.current = centerActiveLine
-  }, [centerActiveLine])
-  useEffect(() => {
-    const el = listRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => centerRef.current(false))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [current])
-
   const mode = currentPlayMode(shuffle, repeat)
   const modeMeta = PLAY_MODE_META[mode]
   const ModeIcon = modeMeta.icon
   // 播放中且处于缓冲态：播放键显示加载动画
   const showBuffering = buffering && isPlaying
 
-  // 顶部音频流参数（如 `FLAC · 1411Kbps · 44.1kHz`）；未解析到 / 该源不支持时为空，不渲染。
-  const streamInfo = quality ? formatQuality(quality) : ''
-
   if (!current) return null
+
+  const coverUrl = coverAt(current.cover, COVER_LARGE)
 
   return (
     <div
@@ -289,19 +106,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
     >
       {/* 动态模糊背景：当前封面双层防闪（切歌时新封面淡入盖上旧封面）。
           自定义应用背景**不**作用于沉浸页（见 ADR-041）。 */}
-      <div
-        className="nowplaying__bg"
-        style={bg.stable ? { backgroundImage: `url(${bg.stable})` } : undefined}
-        aria-hidden
-      />
-      {bg.incoming && (
-        <div
-          key={bg.incoming}
-          className="nowplaying__bg nowplaying__bg-in"
-          style={{ backgroundImage: `url(${bg.incoming})` }}
-          aria-hidden
-        />
-      )}
+      <NowPlayingBackground coverUrl={coverUrl || undefined} />
       <div
         className="nowplaying__scrim"
         onClick={() => startNowPlayingTransition(false)}
@@ -319,14 +124,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
           </IconButton>
           <div className="nowplaying__header-title">
             {/* 顶部不再有「正在播放」标语：这里直接如实展示当前音频流参数（见 ADR-041）。 */}
-            {streamInfo && (
-              <span
-                className="nowplaying__stream"
-                data-testid="nowplaying-stream"
-              >
-                {streamInfo}
-              </span>
-            )}
+            <QualityChip track={current} visible={open} />
             <strong className="ellipsis">
               {current.albumId && current.album ? (
                 <button
@@ -383,7 +181,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
             }
           >
             <Cover
-              src={coverAt(current.cover, COVER_LARGE)}
+              src={coverUrl}
               alt={current.title}
               seed={keyOf(current)}
               radius="lg"
@@ -417,38 +215,7 @@ export function NowPlaying({ open, exiting }: NowPlayingProps) {
               </p>
             </div>
 
-            {/* 歌词 */}
-            <div className="nowplaying__lyrics" ref={listRef}>
-              {lyricLoading ? (
-                <div className="nowplaying__lyrics-empty">歌词加载中…</div>
-              ) : !lyric || !lyric.lines.length ? (
-                <div className="nowplaying__lyrics-empty">暂无歌词</div>
-              ) : lyric.timed ? (
-                lyric.lines.map((l, i) => (
-                  <p
-                    key={`${l.time}-${i}`}
-                    data-idx={i}
-                    className={`lyric-line${i === activeIndex ? ' lyric-line--active' : ''}${
-                      i < activeIndex ? ' lyric-line--past' : ''
-                    }`}
-                    onClick={() => seekTo(l.time)}
-                    role="button"
-                    tabIndex={-1}
-                  >
-                    <span>{l.text || '♪'}</span>
-                    {l.translation && (
-                      <span className="lyric-line__trans">{l.translation}</span>
-                    )}
-                  </p>
-                ))
-              ) : (
-                lyric.lines.map((l, i) => (
-                  <p key={i} className="lyric-line lyric-line--plain">
-                    {l.text}
-                  </p>
-                ))
-              )}
-            </div>
+            <LyricPanel track={current} position={position} />
 
             {/* 进度 */}
             <div className="nowplaying__progress">

@@ -23,6 +23,7 @@ import { RipButton } from '../components/RipButton.js'
 import { Loading, ErrorState } from '../components/States.js'
 import { useRip } from '../store/rip.js'
 import { isRipping, runRip } from '../lib/rip.js'
+import './Detail.css'
 
 interface AlbumDetail {
   album: Album
@@ -122,7 +123,7 @@ export function AlbumPage() {
           className="detail__cover"
         />
         <div className="detail__info">
-          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          {/* 标题上方的呼吸空行：与标题同高（见 Detail.css 的 .detail__lead-space） */}
           <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">{album.name}</h1>
           <p className="detail__artist">

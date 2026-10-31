@@ -21,6 +21,7 @@ import { ArtistInfoDialog } from '../components/ArtistInfoDialog.js'
 import { coverAt, COVER_LARGE } from '@pterosaur/shared/image'
 import { Loading, ErrorState } from '../components/States.js'
 import './Artist.css'
+import './Detail.css'
 
 interface ArtistDetail {
   artist: Artist

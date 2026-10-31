@@ -6,6 +6,7 @@ import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
 import { usePaginatedQuery } from '../hooks/usePaginatedQuery.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { Loading, ErrorState } from '../components/States.js'
+import './Browse.css'
 
 /** 每批拉取的歌单数（上游精品歌单本就按 30 条一页返回）。 */
 const PAGE_SIZE = 30

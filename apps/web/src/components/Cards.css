@@ -198,3 +198,27 @@
 .card__art--cassette {
   aspect-ratio: 16 / 9;
 }
+
+/* ---------- 移动端：操作常显 + 更密的网格 ---------- */
+/* 卡片自身的响应式规则与组件同名样式放在一起：此前写在 TrackList.css 里，
+   卡片外观会取决于「TrackList 是否被加载」与 import 顺序。 */
+@media (max-width: 768px) {
+  .card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px 12px;
+  }
+
+  .card__play {
+    opacity: 1;
+    transform: translateY(0);
+    width: 38px;
+    height: 38px;
+  }
+
+  .card__fav {
+    opacity: 1;
+    transform: translateY(0);
+    width: 36px;
+    height: 36px;
+  }
+}

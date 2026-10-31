@@ -26,6 +26,8 @@ import {
   isSearchCategory,
   type SearchCategory,
 } from '../lib/searchCategory.js'
+import './Browse.css'
+import './Search.css'
 
 /**
  * 独立类别页（`/search/:category?q=`）。

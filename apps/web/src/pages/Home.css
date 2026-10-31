@@ -1,0 +1,28 @@
+/* 由原 pages.css 按页面拆分而来：只由对应页面 import。 */
+
+/* ============================ 首页 ============================ */
+.home {
+  padding: 0 var(--page-gutter);
+  max-width: 1600px;
+  /* 超宽屏居中：否则内容被 max-width 压住后靠左、右侧大片留白 */
+  margin-inline: auto;
+}
+
+.home__hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 0 0 8px;
+}
+
+.home__greeting {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* 横向分区内的加载 / 错误占位：撑满一屏宽度，避免折叠成一小块 */
+.rail__placeholder {
+  flex: 1 0 100%;
+  width: 100%;
+}

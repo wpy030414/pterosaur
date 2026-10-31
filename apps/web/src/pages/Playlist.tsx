@@ -22,9 +22,10 @@ import { IconButton } from '../components/IconButton.js'
 import { RipButton } from '../components/RipButton.js'
 import { Loading, ErrorState } from '../components/States.js'
 import { useRip } from '../store/rip.js'
-import './pages.css'
+import './Detail.css'
 import { useSettings } from '../store/settings.js'
 import { isRipping, runRip } from '../lib/rip.js'
+import './Detail.css'
 
 /**
  * 歌单详情页。
@@ -270,7 +271,7 @@ export function PlaylistPage() {
           className="detail__cover"
         />
         <div className="detail__info">
-          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          {/* 标题上方的呼吸空行：与标题同高（见 Detail.css 的 .detail__lead-space） */}
           <div className="detail__lead-space" aria-hidden />
           {isLocal && renaming ? (
             <input

@@ -4,7 +4,7 @@ import { useLibrary } from '../../store/library.js'
 import { useViewNavigate } from '../../hooks/useViewNavigate.js'
 import { ArtistCard } from '../../components/EntityCards.js'
 import { Empty } from '../../components/States.js'
-import '../pages.css'
+import '../Detail.css'
 
 /**
  * 库 · 艺术家：收藏（星标）的艺术家。

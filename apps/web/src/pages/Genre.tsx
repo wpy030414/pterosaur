@@ -8,7 +8,8 @@ import type { Playlist } from '@pterosaur/shared/types'
 import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
-import './pages.css'
+import './Browse.css'
+import './Browse.css'
 
 /**
  * 流派页：某个歌单分类（如「华语」「流行」）下的歌单网格。

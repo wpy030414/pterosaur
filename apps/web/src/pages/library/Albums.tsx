@@ -4,7 +4,7 @@ import { useLibrary } from '../../store/library.js'
 import { useViewNavigate } from '../../hooks/useViewNavigate.js'
 import { AlbumCard } from '../../components/EntityCards.js'
 import { Empty } from '../../components/States.js'
-import '../pages.css'
+import '../Detail.css'
 
 /**
  * 库 · 专辑：收藏的专辑。

@@ -10,6 +10,8 @@ import { useRip } from '../store/rip.js'
 import { useSettings } from '../store/settings.js'
 import { isRipping, runRip } from '../lib/rip.js'
 import { ripDialog } from '../store/ui.js'
+import './Detail.css'
+import './Covers.css'
 
 /**
  * 我喜欢的音乐。展示收藏曲目，支持顺序 / 随机播放。
@@ -64,7 +66,7 @@ export function FavoritesPage() {
           <Star fill="currentColor" strokeWidth={0} />
         </div>
         <div className="detail__info">
-          {/* 标题上方的呼吸空行：与标题同高（见 pages.css 的 .detail__lead-space） */}
+          {/* 标题上方的呼吸空行：与标题同高（见 Detail.css 的 .detail__lead-space） */}
           <div className="detail__lead-space" aria-hidden />
           <h1 className="detail__name">我喜欢的音乐</h1>
 

@@ -1,0 +1,45 @@
+/* 由原 pages.css 按页面拆分而来（见第 17 项重构）：只由对应页面 import。 */
+/* ============================ 我喜欢的音乐封面 ============================ */
+/* 「我喜欢的音乐」封面：中性抬升面 + 令牌前景，星标随主题反色（深色白星 / 浅色黑星） */
+.fav-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 270px;
+  height: 270px;
+  flex-shrink: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated-2);
+  color: var(--text);
+}
+
+.fav-cover svg {
+  width: 44%;
+  height: 44%;
+}
+
+/* ============================ 最近播放封面 ============================ */
+.recent-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 200px;
+  flex-shrink: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #5e5ce6, #8e8aff);
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  /* 「我喜欢的音乐」/「最近播放」主视觉封面收窄，与通用详情的 160px 档对齐 */
+  .fav-cover {
+    width: 200px;
+    height: 200px;
+  }
+
+  .recent-cover {
+    width: 160px;
+    height: 160px;
+  }
+}
