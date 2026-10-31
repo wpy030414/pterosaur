@@ -527,6 +527,18 @@ describe('结构化数据内存缓存（TTL 2h，见 ADR-042）', () => {
     expect(searchSongsMock).toHaveBeenCalledTimes(2)
   })
 
+  it('上游异常的内部细节不透给前端（只回前缀文案）', async () => {
+    searchSongsMock.mockRejectedValueOnce(
+      new Error('http://upstream.internal/api?key=SECRET 返回 500'),
+    )
+    const res = await app.request('/api/search?keywords=leak')
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as { error?: string }
+    expect(body.error).toBe('搜索失败')
+    expect(JSON.stringify(body)).not.toContain('SECRET')
+    expect(JSON.stringify(body)).not.toContain('upstream.internal')
+  })
+
   it('不带凭证的热歌路由仍带凭证指纹进缓存键（不因 hotSongs 无 cred 参数就漏项）', async () => {
     const hotSongs = vi.spyOn(neteaseAdapter, 'hotSongs')
     hotSongs!.mockResolvedValue([])

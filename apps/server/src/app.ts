@@ -30,6 +30,7 @@ import {
 } from './audioFetch.js'
 import { isFakeBurn } from './imapi.js'
 import { createRipEngine, validateBurnBody, type RipEngine } from './rip.js'
+import { failure, onError } from './errors.js'
 import {
   cacheKey,
   clearCookies,
@@ -158,6 +159,7 @@ export function createApp({
   rip = createRipEngine(),
 }: { rip?: RipEngine } = {}) {
   const app = new Hono()
+  app.onError(onError)
 
   // 同源部署；开发期由 Vite 代理转发，这里放开 CORS 便于本地联调。
   app.use(
@@ -186,7 +188,7 @@ export function createApp({
       )
       return c.json(ok<Track[]>(tracks))
     } catch (e) {
-      return c.json(fail(`搜索失败：${(e as Error).message}`), 502)
+      throw failure(502, '搜索失败', e)
     }
   })
 
@@ -241,7 +243,7 @@ export function createApp({
       )
       return c.json(ok(result))
     } catch (e) {
-      return c.json(fail(`搜索失败：${(e as Error).message}`), 502)
+      throw failure(502, '搜索失败', e)
     }
   })
 
@@ -434,7 +436,7 @@ export function createApp({
       )
       return c.json(ok<Track[]>(tracks))
     } catch (e) {
-      return c.json(fail(`获取曲目详情失败：${(e as Error).message}`), 502)
+      throw failure(502, '获取曲目详情失败', e)
     }
   })
 
@@ -482,7 +484,7 @@ export function createApp({
       if (quality) qualityCache.set(key, quality)
       return c.json(ok<AudioQuality | null>(quality))
     } catch (e) {
-      return c.json(fail(`获取音质失败：${(e as Error).message}`), 502)
+      throw failure(502, '获取音质失败', e)
     }
   })
 
@@ -529,7 +531,7 @@ export function createApp({
       const qrimg = await ctx.adapter.qrCreate(key, cookie)
       return c.json(ok({ key, qrimg }))
     } catch (e) {
-      return c.json(fail(`生成二维码失败：${(e as Error).message}`), 502)
+      throw failure(502, '生成二维码失败', e)
     }
   }
   app.get('/api/auth/:source/qr', authQrHandler)
@@ -573,7 +575,7 @@ export function createApp({
         }),
       )
     } catch (e) {
-      return c.json(fail(`检查登录状态失败：${(e as Error).message}`), 502)
+      throw failure(502, '检查登录状态失败', e)
     }
   }
   app.get('/api/auth/:source/qr/check', authQrCheckHandler)
@@ -608,7 +610,7 @@ export function createApp({
       }
       return c.json(ok<Playlist[]>(await netease.userPlaylists(uid, cookie)))
     } catch (e) {
-      return c.json(fail(`获取用户歌单失败：${(e as Error).message}`), 502)
+      throw failure(502, '获取用户歌单失败', e)
     }
   })
 
@@ -633,7 +635,7 @@ export function createApp({
         }),
       )
     } catch (e) {
-      return c.json(fail(`读取云同步失败：${(e as Error).message}`), 502)
+      throw failure(502, '读取云同步失败', e)
     }
   })
 
@@ -653,7 +655,7 @@ export function createApp({
       broadcast(key, { rev: saved.rev ?? 0 })
       return c.json(ok<SyncEnvelope>(saved))
     } catch (e) {
-      return c.json(fail(`写入云同步失败：${(e as Error).message}`), 400)
+      throw failure(400, '写入云同步失败', e)
     }
   })
 

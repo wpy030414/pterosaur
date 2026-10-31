@@ -11,6 +11,7 @@ import {
   ok,
   sourceQuery,
 } from '../http.js'
+import { failure } from '../errors.js'
 
 /** 已解析的源上下文。`id` 仅 URL 段版（`/:source/:id`）有。 */
 export interface SourceContext {
@@ -32,8 +33,9 @@ interface BaseOptions {
   params: (c: Context) => readonly (string | number | boolean | undefined)[]
 }
 
-function upstreamFailure(c: Context, label: string, e: unknown): Response {
-  return c.json(fail(`${label}：${(e as Error).message}`), 502)
+/** 上游失败一律抛业务错误，由全局 `onError` 映射为 502（带前缀的可读文案）。 */
+function upstreamFailure(label: string, e: unknown): never {
+  throw failure(502, label, e)
 }
 
 /**
@@ -70,7 +72,7 @@ export function defineQueryRoute<T extends object>(
       )
       return c.json(ok(value))
     } catch (e) {
-      return upstreamFailure(c, options.errorLabel, e)
+      return upstreamFailure(options.errorLabel, e)
     }
   }
 }
@@ -105,7 +107,7 @@ export function defineSegRoute<T extends object>(
       )
       return c.json(ok(value))
     } catch (e) {
-      return upstreamFailure(c, options.errorLabel, e)
+      return upstreamFailure(options.errorLabel, e)
     }
   }
 }
