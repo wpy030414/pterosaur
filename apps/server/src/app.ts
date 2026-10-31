@@ -1,18 +1,15 @@
-import { createHash } from 'node:crypto'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { cors } from 'hono/cors'
-import { streamSSE } from 'hono/streaming'
-import { LRUCache } from 'lru-cache'
+
 import { adapterOf } from './sources/index.js'
 import type { SourceAdapter } from './sources/types.js'
+import { defineQueryRoute, defineSegRoute } from './sources/route.js'
+import { sseChannel } from './sse.js'
+import type { RipEvent } from '@pterosaur/shared/rip'
 import {
-  isMusicSource,
   audioLevelOrDefault,
   ALL_SOURCES,
-  DEFAULT_SOURCE,
-  type MusicSource,
-  type ApiResult,
   type AudioQuality,
   type LoginStatus,
   type Playlist,
@@ -22,6 +19,7 @@ import {
   type Artist,
   type Album,
   type PlaylistCategoryGroup,
+  type SearchResults,
 } from '@pterosaur/shared/types'
 import { isLibraryState, readLibrary, writeLibrary } from './syncStore.js'
 import { broadcast, subscribe } from './syncEvents.js'
@@ -30,8 +28,6 @@ import {
   audioContentTypeFromUrl,
   fetchAudioCandidate,
 } from './audioFetch.js'
-import { getConnInfo } from '@hono/node-server/conninfo'
-import { isLoopbackHost, type RipEvent } from '@pterosaur/shared/rip'
 import { isFakeBurn } from './imapi.js'
 import {
   jobSnapshot,
@@ -41,219 +37,70 @@ import {
   subscribeRip,
   validateBurnBody,
 } from './rip.js'
+import {
+  cacheKey,
+  clearCookies,
+  cached,
+  cookieOf,
+  credentialOf,
+  credentialKey,
+  ctxAdapter,
+  fail,
+  forwardSessionCookies,
+  ok,
+  parseLimit,
+  parsePage,
+  qualityCache,
+  requireIdentity,
+  requireLoopback,
+  sourceQuery,
+  syncKey,
+  urlCache,
+} from './http.js'
+
+// 单测经 app.js 观察 / 重置结构化数据缓存（保持既有导入路径）
+export { dataCache, DATA_CACHE_TTL_MS } from './http.js'
+
+/** `/api/search/all` 允许的 `type` 取值（与返回字段一一对应）。 */
+const SEARCH_TYPES = new Set(['songs', 'artists', 'albums', 'playlists'])
+type SearchType = 'songs' | 'artists' | 'albums' | 'playlists'
 
 /**
- * 音频地址缓存：id|level|凭证指纹 -> **有序候选 https 地址**（首个优先）。
- * 网易云地址有时效，TTL 设短一些；命中位会随实际可用候选动态前移（见 streamHandler）。
+ * 注册 `/api/<name>/:source/:id` 与其 2 段式别名 `/api/<name>/:id`
+ * （缺省源，兼容旧页面 / 旧 SW 外壳缓存）。
  */
-const urlCache = new LRUCache<string, string[]>({
-  max: 2000,
-  ttl: 15 * 60 * 1000,
-})
-
-/**
- * 音质查询缓存：`源|id|档位|凭证指纹` -> 实际音质（只缓存成功结果）。
- * 与音频地址缓存同容量 / TTL，避免每次重开沉浸页都重新解析上游。
- */
-const qualityCache = new LRUCache<string, AudioQuality>({
-  max: 2000,
-  ttl: 15 * 60 * 1000,
-})
-
-/**
- * 结构化数据缓存：搜索 / 发现 / 详情 / 分P / 歌词等**已归一化的 JSON 结果**，
- * 键为 `源|端点|归一化参数|凭证指纹`（见 ADR-042）。这类数据 2 小时内基本稳定，
- * 命中即免一次上游往返；与音频地址 / 音质缓存（15 分钟，时效敏感）分开管理。
- * 导出实例供单测观察（清空 / TTL 断言）。
- */
-export const DATA_CACHE_TTL_MS = 2 * 60 * 60 * 1000
-export const dataCache = new LRUCache<string, object>({
-  max: 1000,
-  ttl: DATA_CACHE_TTL_MS,
-})
-
-/**
- * 包装一次上游结构化数据读取：命中缓存直接返回；未命中执行 loader、**成功才入缓存**——
- * 抛错（上游故障 / 风控，路由回 502）不缓存，下次请求立即重试。适配器把失败降级为
- * 空结果的（B 站歌词 / 分P 返空数组）空结果也会被缓存：防反复打挂上游，TTL 到期自愈。
- *
- * 键必须含**凭证指纹**：匿名访客与登录用户、不同账号间同一请求可能得到不同结果
- * （B 站字幕匿名恒空、网易云 VIP 标记），不隔离会串数据；匿名访客全体回落到服务端
- * 缺省凭证（`credentialOf`），恰好共享同一条目。
- */
-async function cached<T extends object>(
-  key: string,
-  loader: () => Promise<T>,
-): Promise<T> {
-  const hit = dataCache.get(key)
-  if (hit !== undefined) return hit as T
-  const value = await loader()
-  dataCache.set(key, value)
-  return value
-}
-
-/** 统一成功响应。 */
-function ok<T>(data: T): ApiResult<T> {
-  return { ok: true, data }
-}
-
-/** 统一失败响应。 */
-function fail(error: string, needLogin = false): ApiResult<never> {
-  return { ok: false, error, needLogin: needLogin || undefined }
-}
-
-/**
- * 从 `?source=` 查询参数解析音源；缺省为缺省源（网易云）。
- */
-function sourceQuery(c: Context): MusicSource {
-  const s = c.req.query('source')
-  return isMusicSource(s) ? s : DEFAULT_SOURCE
-}
-
-/**
- * 解析路由的源：`:source` 段**缺省为缺省源**（兼容 2 段式别名路由，如 `/api/album/:id`）；
- * 非法（如本地歌单 id `pl-…`）或未注册返回 null（调用方回 404）。
- */
-function ctxAdapter(
-  c: Context,
-): { source: MusicSource; adapter: SourceAdapter } | null {
-  const raw = c.req.param('source')
-  const source =
-    raw === undefined ? DEFAULT_SOURCE : isMusicSource(raw) ? raw : null
-  if (!source) return null
-  const adapter = adapterOf(source)
-  return adapter ? { source, adapter } : null
-}
-
-/** 从请求头取出**指定源**的会话 cookie 字符串（仅访客本人会话，用于身份判断）。 */
-function cookieOf(c: Context, adapter: SourceAdapter): string | undefined {
-  const raw = c.req.header('cookie')
-  if (!raw) return undefined
-  const names = adapter.sessionCookieNames
-  const parts = raw
-    .split(';')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .filter((kv) => names.includes(kv.slice(0, kv.indexOf('='))))
-  return parts.length ? parts.join('; ') : undefined
-}
-
-/**
- * 服务端缺省凭证：由 `pnpm log-in --source=<源>` 写入仓库根 `.env`
- * （`NETEASE_COOKIE` / `BILIBILI_COOKIE`）。供**未登录访客**解析会员资源，不代表访客身份。
- */
-const DEFAULT_CREDENTIAL_ENV: Record<MusicSource, string> = {
-  netease: 'NETEASE_COOKIE',
-  bilibili: 'BILIBILI_COOKIE',
-}
-function defaultCredential(source: MusicSource): string | undefined {
-  const v = process.env[DEFAULT_CREDENTIAL_ENV[source]]?.trim()
-  return v || undefined
-}
-
-/**
- * **内容接口**所用凭证：优先访客本人会话，回退到服务端缺省凭证。
- * 只用于搜索 / 播放 / 歌词等内容解析，绝不用于身份判断。
- */
-function credentialOf(c: Context, adapter: SourceAdapter): string | undefined {
-  return cookieOf(c, adapter) ?? defaultCredential(adapter.id)
-}
-
-/** 音频地址缓存键里的凭证指纹：区分匿名 / 不同账号，避免串用解析出的 CDN 地址。 */
-function credentialKey(cookie?: string): string {
-  if (!cookie) return 'anon'
-  return createHash('sha1').update(cookie).digest('hex').slice(0, 12)
-}
-
-/**
- * 解析**访客本人**的活动账号身份 `{ source, id }`（最多一个源已登录）；未登录返回 `null`。
- * 身份接口专用——**绝不回退到缺省凭证**，否则会把匿名访客当成运营者账号。
- */
-async function requireIdentity(
-  c: Context,
-): Promise<{ source: MusicSource; id: string } | null> {
-  // 遍历**全部源**（含磁带渠道）：登录 B 站同样是一个可云同步的账号身份
-  for (const source of ALL_SOURCES) {
-    const adapter = adapterOf(source)
-    if (!adapter) continue
-    const st = await adapter.loginStatus(cookieOf(c, adapter))
-    if (st.logged && st.userId) return { source, id: st.userId }
-  }
-  return null
-}
-
-/** 云同步的文件键：`<source>-<账号id>`（单活动账号，故与源绑定）。 */
-function syncKey(identity: { source: MusicSource; id: string }): string {
-  return `${identity.source}-${identity.id}`
-}
-
-/**
- * 直刻路由的**回环硬门控**（见 ADR-048）：仅允许后端所在设备本机访问
- * （`localhost` / `127.x.y.z` / `::1`）。连接信息探测失败一律拒绝（fail-closed）。
- *
- * 已知边界：同机 nginx 反代下对端恒为回环、本门控退化为纵深防御——前端
- * `location.hostname` 门控为主，故**请勿将本服务暴露至公网**。
- */
-function requireLoopback(c: Context): boolean {
-  try {
-    return isLoopbackHost(getConnInfo(c).remote.address ?? '')
-  } catch {
-    return false
-  }
-}
-
-/**
- * 只把登录响应中会话必需的 Set-Cookie 下发给浏览器（同源；生产 https 下安全存储）。
- * 上游会附带数十条无关 cookie，且部分带 `Domain=…` / `Secure` / `SameSite`——须剥离，
- * 否则浏览器会把这些 cookie 存到上游域而非本域，导致会话建立失败。
- */
-function forwardSessionCookies(
-  c: Context,
-  adapter: SourceAdapter,
-  cookies?: string[],
+function segRoute(
+  app: Hono,
+  name: string,
+  handler: (c: Context) => Promise<Response>,
 ) {
-  if (!cookies?.length) return
-  const names = adapter.sessionCookieNames
-  for (const raw of cookies) {
-    const name = raw.slice(0, raw.indexOf('='))
-    if (!names.includes(name)) continue
-    const cleaned = raw
-      .replace(/;\s*Domain=[^;]*/i, '')
-      .replace(/;\s*Secure/i, '')
-      .replace(/;\s*SameSite=\w+/i, '')
-    c.header('Set-Cookie', `${cleaned}; Path=/; SameSite=Lax`, { append: true })
-  }
+  app.get(`/api/${name}/:source/:id`, handler)
+  app.get(`/api/${name}/:id`, handler)
 }
 
 /**
  * 音频流代理处理器：`GET|HEAD /stream/:id`。
  *
  * 浏览器 `<audio>` 直接请求本地址；服务端解析真实 CDN 地址、改写为 https，
- * 再按客户端 Range 转发到网易云 CDN，从而规避混合内容与跨域限制。
+ * 再按客户端 Range 转发到上游 CDN，从而规避混合内容与跨域限制。
  */
 async function streamHandler(c: Context): Promise<Response> {
   // 2 段式 `/stream/:id` 视为缺省源（兼容旧页面 / 旧 SW 缓存）；3 段式显式带源。
-  const rawSource = c.req.param('source')
-  const source: MusicSource | null =
-    rawSource === undefined
-      ? DEFAULT_SOURCE
-      : isMusicSource(rawSource)
-        ? rawSource
-        : null
-  const adapter = source ? adapterOf(source) : undefined
-  if (!source || !adapter) return c.json(fail('未知音源'), 404)
+  const ctx = ctxAdapter(c)
+  if (!ctx) return c.json(fail('未知音源'), 404)
+  const { source, adapter } = ctx
 
   const id = c.req.param('id') ?? ''
   const level = audioLevelOrDefault(c.req.query('level'))
   const cookie = credentialOf(c, adapter)
 
-  const cacheKey = `${source}|${id}|${level}|${credentialKey(cookie)}`
-  let urls = urlCache.get(cacheKey)
+  const key = `${source}|${id}|${level}|${credentialKey(cookie)}`
+  let urls = urlCache.get(key)
   if (!urls) {
     const resolved = await adapter.songUrl(id, cookie, level)
     if (resolved.length) {
       urls = resolved
-      urlCache.set(cacheKey, resolved)
+      urlCache.set(key, resolved)
     }
   }
 
@@ -275,7 +122,7 @@ async function streamHandler(c: Context): Promise<Response> {
   const fetched = await fetchAudioCandidate(urls, upstreamHeaders)
   if (!fetched) {
     // 全部候选失败（地址过期 / 节点故障）：淘汰缓存，下次请求重新解析
-    urlCache.delete(cacheKey)
+    urlCache.delete(key)
     return c.json(fail('音频源不可用'), 502)
   }
   const upstream = fetched.res
@@ -283,7 +130,7 @@ async function streamHandler(c: Context): Promise<Response> {
 
   // 命中的非首位候选提到队首，下次直接先用它，避免反复白撞已知坏节点
   if (usedUrl !== urls[0]) {
-    urlCache.set(cacheKey, [usedUrl, ...urls.filter((u) => u !== usedUrl)])
+    urlCache.set(key, [usedUrl, ...urls.filter((u) => u !== usedUrl)])
   }
 
   const headers = new Headers()
@@ -323,18 +170,18 @@ export function createApp() {
 
   app.get('/api/search', async (c) => {
     const keywords = (c.req.query('keywords') ?? c.req.query('s') ?? '').trim()
-    const limit = Number(c.req.query('limit') ?? 30)
-    const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1)
     if (!keywords) return c.json(fail('缺少搜索关键词'), 400)
+    // 缺省 30、收口 60；键与实参共用同一个归一化值
+    const limit = parseLimit(c.req.query('limit'), 30, 60)
+    const page = parsePage(c.req.query('page'))
     const source = sourceQuery(c)
     const adapter = adapterOf(source)
     if (!adapter) return c.json(fail('未知音源'), 404)
     const cred = credentialOf(c, adapter)
     try {
-      // 键用**与实参完全一致**的归一化值（limit 收口 60），避免同义参数重复建条目
       const tracks = await cached(
-        `${source}|search|${keywords}|${Math.min(limit, 60)}|${page}|${credentialKey(cred)}`,
-        () => adapter.searchSongs(keywords, Math.min(limit, 60), cred, page),
+        cacheKey(source, 'search', [keywords, limit, page], cred),
+        () => adapter.searchSongs(keywords, limit, cred, page),
       )
       return c.json(ok<Track[]>(tracks))
     } catch (e) {
@@ -343,32 +190,30 @@ export function createApp() {
   })
 
   /**
-   * 多类型搜索：并行返回歌曲 / 艺术家 / 专辑 / 歌单；缺失的能力返回空数组并标记。
+   * 多类型搜索：并行返回歌曲 / 艺术家 / 专辑 / 歌单。
    *
    * 每类条数统一取请求的 `limit`（收口 1–50，缺省 20）——主搜索页要歌曲 32 条、
    * 其余分区 20 条，独立类别页续页时也按同一口径判断「是否还有下一批」。
    * `page`（从 1 起）供前端滚动续取下一批；`type` 可**只跑某一类**（省掉其余三类上游请求，
-   * 供独立类别页续取下一页用），未指定时四类全跑。
+   * 供独立类别页续取下一页用），未指定时四类全跑；**未知 `type` 回 400**——否则会生成并
+   * 缓存一份「四类全空」的结果。`capabilities` 由适配器的静态能力决定，随结果一起缓存。
    */
   app.get('/api/search/all', async (c) => {
     const keywords = (c.req.query('keywords') ?? '').trim()
     if (!keywords) return c.json(fail('缺少搜索关键词'), 400)
-    const limit = Math.min(
-      Math.max(Number(c.req.query('limit') ?? 20) || 20, 1),
-      50,
-    )
-    const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1)
+    const limit = parseLimit(c.req.query('limit'), 20, 50)
+    const page = parsePage(c.req.query('page'))
+    const only = c.req.query('type') ?? ''
+    if (only && !SEARCH_TYPES.has(only))
+      return c.json(fail(`未知的搜索类型：${only}`), 400)
     const source = sourceQuery(c)
     const adapter = adapterOf(source)
     if (!adapter) return c.json(fail('未知音源'), 404)
     const cred = credentialOf(c, adapter)
-    const only = c.req.query('type')
-    const want = (t: string) => !only || only === t
+    const want = (t: SearchType) => !only || only === t
     try {
-      // 整批缓存（`type` 进键：短路与否决定返回形状）；capabilities 由 adapter 静态
-      // 能力决定、恒定，一并缓存无妨。
-      const result = await cached(
-        `${source}|search-all|${keywords}|${limit}|${page}|${only ?? ''}|${credentialKey(cred)}`,
+      const result = await cached<SearchResults>(
+        cacheKey(source, 'search-all', [keywords, limit, page, only], cred),
         async () => {
           const [songs, artists, albums, playlists] = await Promise.all([
             want('songs')
@@ -412,189 +257,162 @@ export function createApp() {
     )
   })
 
-  app.get('/api/discover/recommend', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.recommendPlaylists)
-      return c.json(fail('该音源暂不支持推荐'), 501)
-    const limit = Number(c.req.query('limit') ?? 12)
-    const cred = credentialOf(c, adapter)
-    try {
-      const list = await cached(
-        `${source}|recommend|${limit}|${credentialKey(cred)}`,
-        () => adapter.recommendPlaylists!(limit, cred),
-      )
-      return c.json(ok<Playlist[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取推荐失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/recommend',
+    defineQueryRoute<Playlist[]>(
+      'recommend',
+      {
+        unsupported: '该音源暂不支持推荐',
+        errorLabel: '获取推荐失败',
+        params: (c) => [parseLimit(c.req.query('limit'), 12, 50)],
+      },
+      (a) => Boolean(a.recommendPlaylists),
+      ({ adapter, params }, cred) =>
+        adapter.recommendPlaylists!(Number(params[0]), cred),
+    ),
+  )
 
-  app.get('/api/discover/toplists', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.toplists) return c.json(fail('该音源暂不支持排行榜'), 501)
-    const limit = Number(c.req.query('limit') ?? 50)
-    const cred = credentialOf(c, adapter)
-    try {
-      const list = await cached(
-        `${source}|toplists|${limit}|${credentialKey(cred)}`,
-        () => adapter.toplists!(limit, cred),
-      )
-      return c.json(ok<Playlist[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取排行榜失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/toplists',
+    defineQueryRoute<Playlist[]>(
+      'toplists',
+      {
+        unsupported: '该音源暂不支持排行榜',
+        errorLabel: '获取排行榜失败',
+        params: (c) => [parseLimit(c.req.query('limit'), 50, 50)],
+      },
+      (a) => Boolean(a.toplists),
+      ({ adapter, params }, cred) => adapter.toplists!(Number(params[0]), cred),
+    ),
+  )
 
-  app.get('/api/discover/playlists', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.topPlaylists)
-      return c.json(fail('该音源暂不支持精品歌单'), 501)
-    const cat = c.req.query('cat') ?? '全部'
-    const limit = Number(c.req.query('limit') ?? 12)
-    const page = Math.max(1, Number(c.req.query('page') ?? 1) || 1)
-    const cred = credentialOf(c, adapter)
-    try {
-      const list = await cached(
-        `${source}|top-playlists|${limit}|${cat}|${page}|${credentialKey(cred)}`,
-        () => adapter.topPlaylists!(limit, cat, page, cred),
-      )
-      return c.json(ok<Playlist[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取歌单失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/playlists',
+    defineQueryRoute<Playlist[]>(
+      'top-playlists',
+      {
+        unsupported: '该音源暂不支持精品歌单',
+        errorLabel: '获取歌单失败',
+        params: (c) => [
+          parseLimit(c.req.query('limit'), 12, 50),
+          c.req.query('cat') ?? '全部',
+          parsePage(c.req.query('page')),
+        ],
+      },
+      (a) => Boolean(a.topPlaylists),
+      ({ adapter, params }, cred) =>
+        adapter.topPlaylists!(
+          Number(params[0]),
+          String(params[1]),
+          Number(params[2]),
+          cred,
+        ),
+    ),
+  )
 
   /** 「新歌精选」：发现流的纵向分区之一（见 ADR-049）。 */
-  app.get('/api/discover/new-songs', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.newSongs) return c.json(fail('该音源暂不支持新歌'), 501)
-    const limit = Number(c.req.query('limit') ?? 20)
-    const cred = credentialOf(c, adapter)
-    try {
-      const list = await cached(
-        `${source}|new-songs|${limit}|${credentialKey(cred)}`,
-        () => adapter.newSongs!(limit, cred),
-      )
-      return c.json(ok<Track[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取新歌失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/new-songs',
+    defineQueryRoute<Track[]>(
+      'new-songs',
+      {
+        unsupported: '该音源暂不支持新歌',
+        errorLabel: '获取新歌失败',
+        params: (c) => [parseLimit(c.req.query('limit'), 20, 50)],
+      },
+      (a) => Boolean(a.newSongs),
+      ({ adapter, params }, cred) => adapter.newSongs!(Number(params[0]), cred),
+    ),
+  )
 
   /** 「正在流行中」：热歌榜曲目（发现流的一个纵向分区）。 */
-  app.get('/api/discover/hot-songs', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.hotSongs) return c.json(fail('该音源暂不支持热门歌曲'), 501)
-    const limit = Number(c.req.query('limit') ?? 24)
-    try {
-      const list = await cached(`${source}|hot-songs|${limit}`, () =>
-        adapter.hotSongs!(limit),
-      )
-      return c.json(ok<Track[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取热歌失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/hot-songs',
+    defineQueryRoute<Track[]>(
+      'hot-songs',
+      {
+        unsupported: '该音源暂不支持热门歌曲',
+        errorLabel: '获取热歌失败',
+        // hotSongs 不接收凭证；仍走统一键（凭证指纹恒为访客自身），不特殊化
+        params: (c) => [parseLimit(c.req.query('limit'), 24, 50)],
+      },
+      (a) => Boolean(a.hotSongs),
+      ({ adapter, params }) => adapter.hotSongs!(Number(params[0])),
+    ),
+  )
 
   /** 歌单分类标签（搜索页的流派快捷入口）。 */
-  app.get('/api/discover/categories', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.playlistCategories)
-      return c.json(fail('该音源暂不支持分类'), 501)
-    const cred = credentialOf(c, adapter)
-    try {
-      const list = await cached(
-        `${source}|categories|${credentialKey(cred)}`,
-        () => adapter.playlistCategories!(cred),
-      )
-      return c.json(ok<PlaylistCategoryGroup[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取分类失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/categories',
+    defineQueryRoute<PlaylistCategoryGroup[]>(
+      'categories',
+      {
+        unsupported: '该音源暂不支持分类',
+        errorLabel: '获取分类失败',
+        params: () => [],
+      },
+      (a) => Boolean(a.playlistCategories),
+      ({ adapter }, cred) => adapter.playlistCategories!(cred),
+    ),
+  )
+
   /** 「本周新发行」：最近发布的专辑。 */
-  app.get('/api/discover/new-albums', async (c) => {
-    const source = sourceQuery(c)
-    const adapter = adapterOf(source)
-    if (!adapter?.newAlbums) return c.json(fail('该音源暂不支持新专辑'), 501)
-    const limit = Number(c.req.query('limit') ?? 12)
-    const cred = credentialOf(c, adapter)
-    try {
-      const list = await cached(
-        `${source}|new-albums|${limit}|${credentialKey(cred)}`,
-        () => adapter.newAlbums!(limit, cred),
-      )
-      return c.json(ok<Album[]>(list))
-    } catch (e) {
-      return c.json(fail(`获取新专辑失败：${(e as Error).message}`), 502)
-    }
-  })
+  app.get(
+    '/api/discover/new-albums',
+    defineQueryRoute<Album[]>(
+      'new-albums',
+      {
+        unsupported: '该音源暂不支持新专辑',
+        errorLabel: '获取新专辑失败',
+        params: (c) => [parseLimit(c.req.query('limit'), 12, 50)],
+      },
+      (a) => Boolean(a.newAlbums),
+      ({ adapter, params }, cred) =>
+        adapter.newAlbums!(Number(params[0]), cred),
+    ),
+  )
 
-  /** 歌单详情（3 段式带源；2 段式为缺省源别名）。 */
-  const playlistHandler = async (c: Context) => {
-    const ctx = ctxAdapter(c)
-    if (!ctx) return c.json(fail('未知音源'), 404)
-    if (!ctx.adapter.playlistTracks)
-      return c.json(fail('该音源暂不支持歌单页'), 501)
-    const id = c.req.param('id') ?? ''
-    const cred = credentialOf(c, ctx.adapter)
-    try {
-      const { playlist, tracks } = await cached(
-        `${ctx.source}|playlist|${id}|${credentialKey(cred)}`,
-        () => ctx.adapter.playlistTracks!(id, cred),
-      )
-      return c.json(ok({ playlist, tracks }))
-    } catch (e) {
-      return c.json(fail(`获取歌单详情失败：${(e as Error).message}`), 502)
-    }
-  }
-  app.get('/api/playlist/:source/:id', playlistHandler)
-  app.get('/api/playlist/:id', playlistHandler)
+  /* ============================ 详情（命中 / 歌词 / 音质） ============================ */
 
-  const artistHandler = async (c: Context) => {
-    const ctx = ctxAdapter(c)
-    if (!ctx) return c.json(fail('未知音源'), 404)
-    if (!ctx.adapter.artistDetail)
-      return c.json(fail('该音源暂不支持艺术家页'), 501)
-    const name = c.req.query('name')
-    const id = c.req.param('id') ?? ''
-    const cred = credentialOf(c, ctx.adapter)
-    try {
-      const detail = await cached(
-        `${ctx.source}|artist|${id}|${name ?? ''}|${credentialKey(cred)}`,
-        () => ctx.adapter.artistDetail!(id, cred, name),
-      )
-      return c.json(ok(detail))
-    } catch (e) {
-      return c.json(fail(`获取艺术家详情失败：${(e as Error).message}`), 502)
-    }
-  }
-  app.get('/api/artist/:source/:id', artistHandler)
-  app.get('/api/artist/:id', artistHandler)
+  segRoute(
+    app,
+    'playlist',
+    defineSegRoute<{ playlist: Playlist; tracks: Track[] }>(
+      'playlist',
+      { unsupported: '该音源暂不支持歌单页', errorLabel: '获取歌单详情失败' },
+      (a) => Boolean(a.playlistTracks),
+      ({ adapter, id }, cred) => adapter.playlistTracks!(id, cred),
+    ),
+  )
 
-  const albumHandler = async (c: Context) => {
-    const ctx = ctxAdapter(c)
-    if (!ctx) return c.json(fail('未知音源'), 404)
-    const id = c.req.param('id') ?? ''
-    const cred = credentialOf(c, ctx.adapter)
-    try {
-      const detail = await cached(
-        `${ctx.source}|album|${id}|${credentialKey(cred)}`,
-        () => ctx.adapter.albumDetail(id, cred),
-      )
-      return c.json(ok(detail))
-    } catch (e) {
-      return c.json(fail(`获取专辑详情失败：${(e as Error).message}`), 502)
-    }
-  }
-  app.get('/api/album/:source/:id', albumHandler)
-  app.get('/api/album/:id', albumHandler)
+  segRoute(
+    app,
+    'artist',
+    defineSegRoute<
+      Awaited<ReturnType<NonNullable<SourceAdapter['artistDetail']>>>
+    >(
+      'artist',
+      {
+        unsupported: '该音源暂不支持艺术家页',
+        errorLabel: '获取艺术家详情失败',
+        params: (c) => [c.req.query('name')],
+      },
+      (a) => Boolean(a.artistDetail),
+      ({ adapter, id, params }, cred) =>
+        adapter.artistDetail!(id, cred, params[0] as string | undefined),
+    ),
+  )
+
+  segRoute(
+    app,
+    'album',
+    defineSegRoute<Awaited<ReturnType<SourceAdapter['albumDetail']>>>(
+      'album',
+      { unsupported: '该音源暂不支持专辑页', errorLabel: '获取专辑详情失败' },
+      () => true,
+      ({ adapter, id }, cred) => adapter.albumDetail(id, cred),
+    ),
+  )
 
   app.get('/api/songs', async (c) => {
     const ids = (c.req.query('ids') ?? '')
@@ -602,15 +420,15 @@ export function createApp() {
       .map((s) => s.trim())
       .filter(Boolean)
     if (!ids.length) return c.json(fail('缺少 ids'), 400)
+    const capped = ids.slice(0, 200)
     const source = sourceQuery(c)
     const adapter = adapterOf(source)
     if (!adapter) return c.json(fail('未知音源'), 404)
     if (!adapter.songDetail) return c.json(fail('该音源暂不支持批量曲目'), 501)
-    const capped = ids.slice(0, 200)
     const cred = credentialOf(c, adapter)
     try {
       const tracks = await cached(
-        `${source}|songs|${capped.join(',')}|${credentialKey(cred)}`,
+        cacheKey(source, 'songs', [capped.join(',')], cred),
         () => adapter.songDetail!(capped, cred),
       )
       return c.json(ok<Track[]>(tracks))
@@ -620,49 +438,34 @@ export function createApp() {
   })
 
   /** 把一个视频 / 曲目展开为多个可播放条目（如 B 站分P 视频的一对多映射）。 */
-  const partsHandler = async (c: Context) => {
-    const ctx = ctxAdapter(c)
-    if (!ctx) return c.json(fail('未知音源'), 404)
-    if (!ctx.adapter.parts) return c.json(fail('该音源暂不支持拆分'), 501)
-    const id = c.req.param('id') ?? ''
-    const cred = credentialOf(c, ctx.adapter)
-    try {
-      const tracks = await cached(
-        `${ctx.source}|parts|${id}|${credentialKey(cred)}`,
-        () => ctx.adapter.parts!(id, cred),
-      )
-      return c.json(ok<Track[]>(tracks))
-    } catch (e) {
-      return c.json(fail(`获取分P失败：${(e as Error).message}`), 502)
-    }
-  }
-  app.get('/api/parts/:source/:id', partsHandler)
-  app.get('/api/parts/:id', partsHandler)
+  segRoute(
+    app,
+    'parts',
+    defineSegRoute<Track[]>(
+      'parts',
+      { unsupported: '该音源暂不支持拆分', errorLabel: '获取分P失败' },
+      (a) => Boolean(a.parts),
+      ({ adapter, id }, cred) => adapter.parts!(id, cred),
+    ),
+  )
 
-  const lyricHandler = async (c: Context) => {
-    const ctx = ctxAdapter(c)
-    if (!ctx) return c.json(fail('未知音源'), 404)
-    const id = c.req.param('id') ?? ''
-    const cred = credentialOf(c, ctx.adapter)
-    try {
-      // 凭证指纹进键是硬要求：B 站字幕**匿名恒空、登录才可见**，不隔离则登录后仍命中空歌词
-      const lyric = await cached(
-        `${ctx.source}|lyric|${id}|${credentialKey(cred)}`,
-        () => ctx.adapter.getLyric(id, cred),
-      )
-      return c.json(ok<Lyric>(lyric))
-    } catch (e) {
-      return c.json(fail(`获取歌词失败：${(e as Error).message}`), 502)
-    }
-  }
-  app.get('/api/lyric/:source/:id', lyricHandler)
-  app.get('/api/lyric/:id', lyricHandler)
+  segRoute(
+    app,
+    'lyric',
+    // 凭证指纹进键是硬要求：B 站字幕**匿名恒空、登录才可见**，不隔离则登录后仍命中空歌词
+    defineSegRoute<Lyric>(
+      'lyric',
+      { unsupported: '该音源暂不支持歌词', errorLabel: '获取歌词失败' },
+      () => true,
+      ({ adapter, id }, cred) => adapter.getLyric(id, cred),
+    ),
+  )
 
   /**
    * 查询某曲在给定档位下**实际**得到的音质（含服务端降级），供沉浸页音质 chip。
    * 结果按 `源|id|档位|凭证指纹` 缓存（与音频地址缓存同 TTL），避免每次重开沉浸页都重解析。
    */
-  const qualityHandler = async (c: Context) => {
+  segRoute(app, 'quality', async (c) => {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)
     if (!ctx.adapter.audioQuality)
@@ -670,19 +473,17 @@ export function createApp() {
     const id = c.req.param('id') ?? ''
     const level = audioLevelOrDefault(c.req.query('level'))
     const cookie = credentialOf(c, ctx.adapter)
-    const cacheKey = `${ctx.source}|${id}|${level}|${credentialKey(cookie)}`
-    const cached = qualityCache.get(cacheKey)
-    if (cached) return c.json(ok<AudioQuality>(cached))
+    const key = `${ctx.source}|quality|${id}|${level}|${credentialKey(cookie)}`
+    const hit = qualityCache.get(key)
+    if (hit) return c.json(ok<AudioQuality>(hit))
     try {
       const quality = await ctx.adapter.audioQuality(id, cookie, level)
-      if (quality) qualityCache.set(cacheKey, quality)
+      if (quality) qualityCache.set(key, quality)
       return c.json(ok<AudioQuality | null>(quality))
     } catch (e) {
       return c.json(fail(`获取音质失败：${(e as Error).message}`), 502)
     }
-  }
-  app.get('/api/quality/:source/:id', qualityHandler)
-  app.get('/api/quality/:id', qualityHandler)
+  })
 
   /* ============================ 登录 / VIP ============================ */
 
@@ -704,13 +505,8 @@ export function createApp() {
     try {
       const status = await ctx.adapter.loginStatus(presented)
       // 带了会话 cookie 却判定未登录 → 清掉失效残留，让后续请求回落到缺省凭证
-      if (!status.logged && presented) {
-        for (const name of ctx.adapter.sessionCookieNames) {
-          c.header('Set-Cookie', `${name}=; Path=/; Max-Age=0; SameSite=Lax`, {
-            append: true,
-          })
-        }
-      }
+      if (!status.logged && presented)
+        clearCookies(c, ctx.adapter.sessionCookieNames)
       return c.json(ok<LoginStatus>({ ...status, loginable }))
     } catch {
       return c.json(ok<LoginStatus>({ logged: false, loginable }))
@@ -763,12 +559,7 @@ export function createApp() {
       for (const other of ALL_SOURCES) {
         if (other === ctx.source) continue
         const oa = adapterOf(other)
-        if (!oa) continue
-        for (const name of oa.logoutCookieNames) {
-          c.header('Set-Cookie', `${name}=; Path=/; Max-Age=0; SameSite=Lax`, {
-            append: true,
-          })
-        }
+        if (oa) clearCookies(c, oa.logoutCookieNames)
       }
       return c.json(
         ok<LoginStatus & { code: number; message?: string }>({
@@ -790,11 +581,7 @@ export function createApp() {
   const authLogoutHandler = (c: Context) => {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)
-    for (const name of ctx.adapter.logoutCookieNames) {
-      c.header('Set-Cookie', `${name}=; Path=/; Max-Age=0; SameSite=Lax`, {
-        append: true,
-      })
-    }
+    clearCookies(c, ctx.adapter.logoutCookieNames)
     return c.json(ok<LoginStatus>({ logged: false }))
   }
   app.post('/api/auth/:source/logout', authLogoutHandler)
@@ -864,35 +651,11 @@ export function createApp() {
     }
   })
 
-  /**
-   * 云同步的实时版本信号（SSE）。以访客本人 cookie 判定身份。
-   *
-   * 事件只携带 `{ rev }`；客户端据此按需重拉（见 `web/lib/sync.ts` 的 `startEventStream`）。
-   * 每隔约 25s 写一次心跳，压过 nginx / 代理的空闲超时；`X-Accel-Buffering: no` 关掉
-   * nginx 的响应缓冲，否则事件会被攒着不下发。
-   */
+  /** 云同步的实时版本信号（SSE）。以访客本人 cookie 判定身份。 */
   app.get('/api/sync/events', async (c) => {
     const identity = await requireIdentity(c)
     if (!identity) return c.json(fail('未登录', true), 401)
-    const key = syncKey(identity)
-    c.header('X-Accel-Buffering', 'no')
-    c.header('Cache-Control', 'no-cache')
-    return streamSSE(c, async (stream) => {
-      const unsubscribe = subscribe(key, stream)
-      await new Promise<void>((resolve) => {
-        const timer = setInterval(() => {
-          stream.writeSSE({ event: 'ping', data: '' }).catch(() => {
-            clearInterval(timer)
-            resolve()
-          })
-        }, 25_000)
-        stream.onAbort(() => {
-          clearInterval(timer)
-          unsubscribe()
-          resolve()
-        })
-      })
-    })
+    return sseChannel(c, (stream) => subscribe(syncKey(identity), stream))
   })
 
   /* ============================ 翻录（实体直刻） ============================ */
@@ -924,44 +687,27 @@ export function createApp() {
   /**
    * 刻录事件流（SSE）。连接建立后先发**快照帧**（当前任务 + 最近终态），
    * 消除「订阅晚于任务启动 / 任务刚结束」的竞态；随后转发任务事件。
-   * 25s 心跳压过反代空闲超时；`X-Accel-Buffering: no` 关 nginx 缓冲。
    */
   app.get('/api/rip/events', async (c) => {
     if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
-    c.header('X-Accel-Buffering', 'no')
-    c.header('Cache-Control', 'no-cache')
-    return streamSSE(c, async (stream) => {
-      const snapshot: RipEvent = {
+    return sseChannel(
+      c,
+      (stream) => {
+        const unsubscribe = subscribeRip((ev) => {
+          void stream
+            .writeSSE({ event: 'message', data: JSON.stringify(ev) })
+            .catch(() => {
+              /* 连接已断开：交给 onAbort 清理 */
+            })
+        })
+        return unsubscribe
+      },
+      (): RipEvent => ({
         type: 'state',
         job: jobSnapshot(),
         last: lastResultSnapshot(),
-      }
-      await stream.writeSSE({
-        event: 'message',
-        data: JSON.stringify(snapshot),
-      })
-      const unsubscribe = subscribeRip((ev) => {
-        void stream
-          .writeSSE({ event: 'message', data: JSON.stringify(ev) })
-          .catch(() => {
-            /* 连接已断开：交给 onAbort 清理 */
-          })
-      })
-      await new Promise<void>((resolve) => {
-        const timer = setInterval(() => {
-          stream.writeSSE({ event: 'ping', data: '' }).catch(() => {
-            clearInterval(timer)
-            unsubscribe()
-            resolve()
-          })
-        }, 25_000)
-        stream.onAbort(() => {
-          clearInterval(timer)
-          unsubscribe()
-          resolve()
-        })
-      })
-    })
+      }),
+    )
   })
 
   /**
@@ -971,7 +717,6 @@ export function createApp() {
    */
   app.post('/api/rip/burn', async (c) => {
     if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
-    if (jobSnapshot()) return c.json(fail('已有刻录任务进行中'), 409)
     const body: unknown = await c.req.json().catch(() => null)
     const validated = validateBurnBody(body)
     if (!validated.ok) return c.json(fail(validated.error), 400)
@@ -997,5 +742,3 @@ export function createApp() {
 
   return app
 }
-
-export type AppType = ReturnType<typeof createApp>

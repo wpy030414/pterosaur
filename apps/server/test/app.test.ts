@@ -341,6 +341,14 @@ describe('搜索分页（page / type）', () => {
     // capabilities 仍如实反映能力（前端据此显示 tab），不因 type 过滤而收窄
     expect(body.data.capabilities.artists).toBe(true)
   })
+
+  it('/api/search/all 未知 type 回 400，且不请求上游、不污染缓存', async () => {
+    searchSongsMock.mockResolvedValue([])
+    const res = await app.request('/api/search/all?keywords=x&type=bogus')
+    expect(res.status).toBe(400)
+    expect(searchSongsMock).not.toHaveBeenCalled()
+    expect(dataCache.size).toBe(0)
+  })
 })
 
 describe('音频响应 Content-Type（按直链后缀，纠正上游谎报）', () => {
@@ -517,6 +525,19 @@ describe('结构化数据内存缓存（TTL 2h，见 ADR-042）', () => {
     const second = await app.request('/api/search?keywords=flaky')
     expect(second.status).toBe(200)
     expect(searchSongsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('不带凭证的热歌路由仍带凭证指纹进缓存键（不因 hotSongs 无 cred 参数就漏项）', async () => {
+    const hotSongs = vi.spyOn(neteaseAdapter, 'hotSongs')
+    hotSongs!.mockResolvedValue([])
+    await app.request('/api/discover/hot-songs')
+    await app.request('/api/discover/hot-songs')
+    expect(hotSongs).toHaveBeenCalledTimes(1)
+    // 带访客 cookie 则应不同指纹 → 新建条目
+    await app.request('/api/discover/hot-songs', {
+      headers: { cookie: 'MUSIC_U=mine; __csrf=m' },
+    })
+    expect(hotSongs).toHaveBeenCalledTimes(2)
   })
 
   it('缓存条目挂 2 小时级 TTL（到期重新打上游由 lru-cache 自身保证）', async () => {
