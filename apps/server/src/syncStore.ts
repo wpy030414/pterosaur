@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import type { LibraryData, SyncEnvelope } from '@pterosaur/shared/types'
 import { ROOT_DIR } from './env.js'
-import { deleteRow, getRow, putRow } from './syncDb.js'
+import { deleteRow, getRow, upsertRow } from './syncDb.js'
 
 /**
  * 云同步的服务端持久化（对外 API）。存储层已换为嵌入式 SQLite（见 `syncDb.ts`）。
@@ -10,7 +10,7 @@ import { deleteRow, getRow, putRow } from './syncDb.js'
  * - `userId` 由访客 cookie 解析（`<source>-<accountId>`），只做净化防路径穿越。
  * - **版本号与写入时刻均由服务端指派**（`rev` 每次 +1、`updatedAt = Date.now()`），
  *   避免多设备时钟偏差影响「云端是否更新」的判断。
- * - 读写一律 try/catch，失败降级（读 → `null`），绝不因存储层异常拖垮请求。
+ * - 读失败**不**降级为「无数据」（见 {@link ReadResult}），由路由回 502，避免误覆盖。
  *
  * 注意：这是 Pterosaur「无状态后端」原则的**有意例外**（见 ADR-016）——服务端开始持久化
  * **访客本人**的资料库数据。`userId` 由访客 cookie 解析，每个用户只能读写自己的记录。
@@ -55,19 +55,48 @@ export function isLibraryState(v: unknown): v is LibraryData {
   return COLLECTIONS.every((k) => Array.isArray(s[k]))
 }
 
-/** 读取某用户的 library；不存在或损坏时返回 `null`。 */
-export async function readLibrary(
-  userId: string,
-  dir?: string,
-): Promise<SyncEnvelope | null> {
+/**
+ * 读取结果。**必须区分「没有」与「坏了」**：客户端对「没有」的处理是「以本地为准并上传」，
+ * 若把「库损坏 / 读失败」也报成「没有」，就会用本地空库抹掉云端副本——这是最坏的数据丢失路径。
+ */
+export type ReadResult =
+  | { kind: 'ok'; envelope: SyncEnvelope }
+  | { kind: 'missing' }
+  | { kind: 'corrupt'; reason: string }
+
+/** 读取某用户的 library。不存在 → `missing`；存在但解析 / 校验 / 读取失败 → `corrupt`。 */
+export function readLibrary(userId: string, dir?: string): ReadResult {
+  let key: string
   try {
-    const row = getRow(dataDir(dir), sanitizeId(userId))
-    if (!row) return null
-    const parsed: unknown = JSON.parse(row.state)
-    if (!isLibraryState(parsed)) return null
-    return { state: parsed, rev: row.rev, updatedAt: row.updatedAt }
+    key = sanitizeId(userId)
   } catch {
-    return null
+    // 非法 userId 是**请求**问题而非云端数据问题：按「不存在」处理，
+    // 不能报 corrupt（那是「云端副本坏了」，客户端会走恢复流程）
+    return { kind: 'missing' }
+  }
+  let row
+  try {
+    row = getRow(dataDir(dir), key)
+  } catch (e) {
+    return {
+      kind: 'corrupt',
+      reason: e instanceof Error ? e.message : String(e),
+    }
+  }
+  if (!row) return { kind: 'missing' }
+  try {
+    const parsed: unknown = JSON.parse(row.state)
+    if (!isLibraryState(parsed))
+      return { kind: 'corrupt', reason: '云端载荷形状非法' }
+    return {
+      kind: 'ok',
+      envelope: { state: parsed, rev: row.rev, updatedAt: row.updatedAt },
+    }
+  } catch (e) {
+    return {
+      kind: 'corrupt',
+      reason: e instanceof Error ? e.message : String(e),
+    }
   }
 }
 
@@ -86,12 +115,8 @@ export async function writeLibrary(
   if (Buffer.byteLength(json, 'utf8') > MAX_PAYLOAD_BYTES)
     throw new Error('同步载荷过大')
 
-  const d = dataDir(dir)
-  const key = sanitizeId(userId)
-  const existing = getRow(d, key)
-  const rev = (existing?.rev ?? 0) + 1
-  const updatedAt = Date.now()
-  const row = putRow(d, key, json, rev, updatedAt)
+  // 原子递增：并发 PUT 不会写出同一个 rev（见 syncDb.upsertRow）
+  const row = upsertRow(dataDir(dir), sanitizeId(userId), json, Date.now())
   return { state, rev: row.rev, updatedAt: row.updatedAt }
 }
 

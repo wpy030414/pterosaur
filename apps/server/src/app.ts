@@ -622,9 +622,14 @@ export function createApp({
     const identity = await requireIdentity(c)
     if (!identity) return c.json(fail('未登录', true), 401)
     try {
+      const read = readLibrary(syncKey(identity))
+      // 「损坏」绝不能报成「没有」：客户端会把「没有」当成「以本地为准并上传」，
+      // 从而用本地空库覆盖云端副本（见 syncStore.ReadResult）
+      if (read.kind === 'corrupt')
+        return c.json(fail(`云端副本损坏：${read.reason}`), 502)
       return c.json(
         ok<{ payload: SyncEnvelope | null }>({
-          payload: await readLibrary(syncKey(identity)),
+          payload: read.kind === 'ok' ? read.envelope : null,
         }),
       )
     } catch (e) {

@@ -78,6 +78,33 @@ export function putRow(
   return { state, rev, updatedAt }
 }
 
+/**
+ * **原子**写入：在同一条 SQL 里完成「读旧 rev → +1 → 写新内容」，
+ * 返回写入后的行。并发 PUT 各自拿到**互不相同**的 rev（此前是「先 SELECT 再 +1」
+ * 的两步读改写，两个并发请求会写出同一个 rev）。
+ */
+export function upsertRow(
+  dir: string,
+  key: string,
+  state: string,
+  updatedAt: number,
+): SyncRow {
+  const row = syncDb(dir)
+    .prepare(
+      'INSERT INTO sync_docs (key, state, rev, updated_at) VALUES (?, ?, 1, ?) ' +
+        'ON CONFLICT(key) DO UPDATE SET ' +
+        'state = excluded.state, ' +
+        'rev = sync_docs.rev + 1, ' +
+        'updated_at = excluded.updated_at ' +
+        'RETURNING state, rev, updated_at',
+    )
+    .get(key, state, updatedAt) as
+    | { state: string; rev: number; updated_at: number }
+    | undefined
+  if (!row) throw new Error('写入同步记录失败')
+  return { state: row.state, rev: row.rev, updatedAt: row.updated_at }
+}
+
 /** 删除一行；不存在静默。 */
 export function deleteRow(dir: string, key: string): void {
   syncDb(dir).prepare('DELETE FROM sync_docs WHERE key = ?').run(key)
