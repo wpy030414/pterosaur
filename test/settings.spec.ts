@@ -12,7 +12,7 @@ const LIBRARY_KEY = 'pterosaur-library'
 
 interface SeedEntry {
   key: string
-  kind: 'audio' | 'image'
+  kind: 'audio'
   size: number
   mime: string
 }
@@ -184,12 +184,6 @@ test.describe('设置弹窗', () => {
   test('查看占用并清理缓存，资料库保留', async ({ page }) => {
     await page.goto('/')
     await seedMedia(page, {
-      key: 'image|https://example.com/a.jpg',
-      kind: 'image',
-      size: 2048,
-      mime: 'image/jpeg',
-    })
-    await seedMedia(page, {
       key: 'netease:123|exhigh',
       kind: 'audio',
       size: 4096,
@@ -202,21 +196,17 @@ test.describe('设置弹窗', () => {
 
     // 总量与分项
     await expect(page.getByTestId('cache-total')).not.toHaveText('0 B')
-    await expect(page.getByTestId('cache-breakdown')).toContainText('歌曲')
-    await expect(page.getByTestId('cache-breakdown')).toContainText('封面')
+    await expect(page.getByTestId('cache-breakdown')).toContainText('共')
 
     // 清理（无需二次确认，点击即生效）
     await page.getByTestId('clear-cache').click()
 
-    // 媒体缓存归零，资料库保留
-    // 注：按 key 判定（而非总量），避免与应用后台写入封面缓存的竞态
+    // 离线保存归零，资料库保留
+    // 注：按 key 判定（而非总量），避免与应用后台写入离线保存的竞态
     await expect
       .poll(() => mediaKeys(page), { timeout: 5000 })
       .not.toContain('netease:123|exhigh')
-    await expect
-      .poll(() => mediaKeys(page))
-      .not.toContain('image|https://example.com/a.jpg')
-    expect(await favoriteCount(page)).toBe(1)
+    await expect.poll(() => favoriteCount(page)).toBe(1)
   })
 
   test('音质模式（一般 / 质量）可选并持久化', async ({ page }) => {
@@ -313,12 +303,6 @@ test.describe('设置弹窗', () => {
   test('重置清空本机全部内容并刷新', async ({ page }) => {
     await page.goto('/')
     await seedMedia(page, {
-      key: 'image|https://example.com/a.jpg',
-      kind: 'image',
-      size: 2048,
-      mime: 'image/jpeg',
-    })
-    await seedMedia(page, {
       key: 'netease:123|exhigh',
       kind: 'audio',
       size: 4096,
@@ -349,17 +333,14 @@ test.describe('设置弹窗', () => {
     )
     expect(navType).toBe('reload')
 
-    // 本机内容清空：localStorage 与 IndexedDB（媒体缓存 + 资料库）
+    // 本机内容清空：localStorage 与 IndexedDB（离线保存 + 资料库）
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('pterosaur-probe')))
       .toBeNull()
-    // 按 key / 收藏数判定，避免与应用后台写入封面缓存的竞态
+    // 按 key / 收藏数判定，避免与应用后台写入离线保存的竞态
     await expect
       .poll(() => mediaKeys(page), { timeout: 5000 })
       .not.toContain('netease:123|exhigh')
-    await expect
-      .poll(() => mediaKeys(page))
-      .not.toContain('image|https://example.com/a.jpg')
-    expect(await favoriteCount(page)).toBe(0)
+    await expect.poll(() => favoriteCount(page)).toBe(0)
   })
 })

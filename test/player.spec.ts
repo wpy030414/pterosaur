@@ -1161,10 +1161,13 @@ test.describe('后端 API 契约', () => {
   })
 })
 
-test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
-  test('播放后音频被缓存进 IndexedDB', async ({ page }) => {
+test.describe('离线保存', () => {
+  test('「保存离线」后音频写入 IndexedDB，断网仍可播放', async ({
+    page,
+    context,
+  }) => {
     await page.goto('/')
-    // 等 SW 就绪并 reload，确保页面自首次音频请求起即受 SW 控制
+    // 等 SW 就绪并 reload：预取 / 离线保存的下载由 SW 执行
     await page.evaluate(() => navigator.serviceWorker?.ready)
     await page.reload()
 
@@ -1172,9 +1175,10 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
+    // 播放后从底部播放岛的「保存离线」按钮显式保存当前曲
     await page.locator('.track-row').first().click()
+    await page.getByTestId('save-offline-button').click()
 
-    // 缓存发生在整文件下载完成时，故轮询 audioMeta 表直至出现记录
     await expect
       .poll(
         () =>
@@ -1182,7 +1186,6 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
             ({ db }) =>
               new Promise<number>((resolve) => {
                 const req = indexedDB.open(db)
-                req.onupgradeneeded = () => resolve(0)
                 req.onsuccess = () => {
                   const d = req.result
                   if (!d.objectStoreNames.contains('mediaMeta')) {
@@ -1210,6 +1213,31 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
         { timeout: 30000, intervals: [1000] },
       )
       .toBeGreaterThan(0)
+
+    // 断网后重新播放：应改播本地 blob（不止是「不报错」，而是进度真的在走）
+    await context.setOffline(true)
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')))
+    // 等引擎把 <audio> 换成 blob: 地址（离线且已保存）
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const a = document.querySelector('audio')
+            return a?.src ?? ''
+          }),
+        { timeout: 15000 },
+      )
+      .toMatch(/^blob:/)
+    await page.evaluate(() => {
+      const a = document.querySelector('audio')
+      a?.play().catch(() => {})
+    })
+    await expect
+      .poll(() => audioState(page).then((s) => s.currentTime), {
+        timeout: 15000,
+      })
+      .toBeGreaterThan(0)
+    await context.setOffline(false)
   })
 
   test('未命中缓存时 seek 型 Range 请求透传上游（206 而非 200 全量）', async ({
@@ -1217,9 +1245,6 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
     request,
   }) => {
     await page.goto('/')
-    // 等 SW 就绪并 reload，确保 fetch 自始即受 SW 控制
-    await page.evaluate(() => navigator.serviceWorker?.ready)
-    await page.reload()
 
     const s = await request.get('/api/search', {
       params: { keywords: FREE_SONG_KEYWORD, limit: 1 },
@@ -1253,7 +1278,7 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
     page,
     context,
   }) => {
-    // 记录线上 /stream 请求：seek 型 Range 才会带有 Range 头（SW 不再接管）。
+    // 记录线上 /stream 请求：seek 必须带 Range 直接打到后端（SW 已不拦截任何请求）。
     // 旧实现会把 seek 吞成「无 Range 的整文件请求」，本用例据此变红。
     const seekRanges: string[] = []
     await context.route('**/stream/**', async (route) => {
@@ -1263,8 +1288,6 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
     })
 
     await page.goto('/')
-    await page.evaluate(() => navigator.serviceWorker?.ready)
-    await page.reload()
 
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
@@ -1304,56 +1327,6 @@ test.describe('媒体缓存（Service Worker + IndexedDB）', () => {
 
     // 全程无错误提示
     await expect(page.locator('.toast[role="alert"]')).toHaveCount(0)
-  })
-
-  test('封面图片经 SW 缓存进 IndexedDB（与音频共用存储）', async ({ page }) => {
-    await page.goto('/')
-    // 等 SW 就绪并 reload，确保图片请求自始即受 SW 控制
-    await page.evaluate(() => navigator.serviceWorker?.ready)
-    await page.reload()
-
-    // 搜索结果行带封面，触发对网易云 CDN 的图片请求
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
-    await expect(page.locator('.track-row').first()).toBeVisible({
-      timeout: 15000,
-    })
-
-    // SW 以 CORS 拉取图片字节后写入 mediaMeta，轮询直至出现 image 条目
-    await expect
-      .poll(
-        () =>
-          page.evaluate(
-            ({ db }) =>
-              new Promise<number>((resolve) => {
-                const req = indexedDB.open(db)
-                req.onsuccess = () => {
-                  const d = req.result
-                  if (!d.objectStoreNames.contains('mediaMeta')) {
-                    d.close()
-                    resolve(0)
-                    return
-                  }
-                  const g = d
-                    .transaction('mediaMeta', 'readonly')
-                    .objectStore('mediaMeta')
-                    .getAll()
-                  g.onsuccess = () => {
-                    d.close()
-                    const rows = g.result as { kind?: string }[]
-                    resolve(rows.filter((r) => r.kind === 'image').length)
-                  }
-                  g.onerror = () => {
-                    d.close()
-                    resolve(0)
-                  }
-                }
-                req.onerror = () => resolve(0)
-              }),
-            { db: IDB_DB },
-          ),
-        { timeout: 30000, intervals: [1000] },
-      )
-      .toBeGreaterThan(0)
   })
 })
 
