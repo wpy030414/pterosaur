@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { Play, Star, Info } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
+import { useArtColor } from '../hooks/useArtColor.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
@@ -88,6 +89,8 @@ export function ArtistPage() {
   const artist = data?.artist
   const tracks = data?.tracks ?? []
   const albums = data?.albums ?? []
+  // 载入后依头像代表色给页面换底（见 Artist.css 的「代表色底」）
+  useArtColor(artist?.avatar)
 
   const handlePlay = () => {
     if (!tracks.length) return

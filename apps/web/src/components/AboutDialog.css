@@ -1,0 +1,96 @@
+/* 「关于」弹窗：点侧边栏品牌名打开。与设置弹窗同构（遮罩 + 卡片），只是内容更轻。 */
+.about-dialog {
+  position: fixed;
+  inset: 0;
+  /* 低于 ConfirmDialog(140)：「检查更新」还要再弹一层确认框 */
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.about-dialog__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim-strong);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: fade-in var(--dur) var(--ease);
+}
+
+.about-dialog__card {
+  position: relative;
+  z-index: 1;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 18px 22px 22px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--separator);
+  animation: settings-in var(--dur-slow) var(--ease);
+  outline: none;
+}
+
+.about-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.about-dialog__head h2 {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.about-dialog__brand {
+  margin-top: 12px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.about-dialog__stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.about-dialog__stat-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.about-dialog__code {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.about-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  margin-top: 18px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    filter var(--dur-fast) var(--ease);
+}
+
+.about-dialog__btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.about-dialog__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

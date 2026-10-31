@@ -201,3 +201,18 @@ export const useSettingsDialog = create<SettingsDialogState>()((set) => ({
   openSettings: () => set({ open: true }),
   closeSettings: () => set({ open: false }),
 }))
+
+interface AboutDialogState {
+  open: boolean
+  openAbout: () => void
+  closeAbout: () => void
+}
+
+/**
+ * 「关于」弹窗的 UI 状态：点侧边栏品牌名打开（版本信息与检查更新）。
+ */
+export const useAboutDialog = create<AboutDialogState>()((set) => ({
+  open: false,
+  openAbout: () => set({ open: true }),
+  closeAbout: () => set({ open: false }),
+}))

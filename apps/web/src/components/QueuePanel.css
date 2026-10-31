@@ -16,12 +16,8 @@
   max-width: 90vw;
   display: flex;
   flex-direction: column;
-  /* 毛玻璃：与移动端左侧边栏抽屉一致。
-     -webkit- 在前、标准属性在后：构建期 CSS 压缩会合并这对同义声明并保留最后一条，
-     故把 Firefox 需要的标准属性放在最后，保证 Chromium 与 Firefox 都有毛玻璃。 */
-  background: var(--glass-sidebar);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  backdrop-filter: blur(32px) saturate(180%);
+  /* 实色：与左侧边栏同一档不透明底色（不走毛玻璃） */
+  background: var(--glass-sidebar-solid);
   /* 不投射阴影：靠左缘描边与内容区分离（前端禁用 box-shadow） */
   border-left: 1px solid var(--separator-strong);
   transform: translateX(100%);

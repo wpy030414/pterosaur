@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom'
 import { Play, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
+import { useArtColor } from '../hooks/useArtColor.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
@@ -60,6 +61,8 @@ export function AlbumPage() {
 
   const album = data?.album
   const tracks = data?.tracks ?? []
+  // 载入后依封面代表色给页面换底（见 Detail.css 的「代表色底」）
+  useArtColor(album?.cover)
 
   const handlePlay = () => {
     if (!tracks.length) return

@@ -168,17 +168,35 @@ function accentVar(page: Page): Promise<string> {
 }
 
 test.describe('设置弹窗', () => {
-  test('顶栏齿轮打开设置；Esc 关闭', async ({ page }) => {
+  test('侧栏齿轮打开设置；Esc 关闭（版本与更新已移至「关于」）', async ({
+    page,
+  }) => {
     await page.goto('/')
     await page.getByTestId('settings-button').click()
 
     const dialog = page.getByRole('dialog', { name: '设置' })
     await expect(dialog).toBeVisible()
     await expect(page.getByTestId('cache-total')).toBeVisible()
-    await expect(page.getByTestId('check-update')).toBeVisible()
+    await expect(page.getByTestId('check-update')).toHaveCount(0)
 
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
+  })
+
+  test('点侧栏品牌名打开「关于」：版本信息与检查更新在这里', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const brand = page.locator('.sidebar__name')
+    await expect(brand).toHaveText('Pterosaur')
+    await brand.click()
+
+    const about = page.getByRole('dialog', { name: '关于' })
+    await expect(about).toBeVisible()
+    await expect(about.getByTestId('check-update')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(about).toBeHidden()
   })
 
   test('查看占用并清理缓存，资料库保留', async ({ page }) => {
@@ -278,7 +296,7 @@ test.describe('设置弹窗', () => {
 
   test('检查更新触发整页刷新', async ({ page }) => {
     await page.goto('/')
-    await page.getByTestId('settings-button').click()
+    await page.getByTestId('about-button').click()
     await page.getByTestId('check-update').click()
     const confirm = page.getByRole('dialog', { name: '检查更新？' })
     await expect(confirm).toBeVisible()

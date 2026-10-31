@@ -7,24 +7,14 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 interface ThemeState {
   mode: ThemeMode
   setMode: (mode: ThemeMode) => void
-  /** 在 light / dark 之间快速切换（system 时按当前系统偏好取反）。 */
-  toggle: () => void
 }
 
 export const useTheme = create<ThemeState>()(
   persist(
-    (set, get) => ({
-      mode: 'system',
+    (set) => ({
+      // 默认深色（不再跟随系统）：明暗由设置弹窗里的「外观」显式选择
+      mode: 'dark',
       setMode: (mode) => set({ mode }),
-      toggle: () => {
-        const { mode } = get()
-        const prefersDark =
-          mode === 'system'
-            ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ??
-              true)
-            : mode === 'dark'
-        set({ mode: prefersDark ? 'light' : 'dark' })
-      },
     }),
     { name: 'pterosaur-theme', storage: createJSONStorage(() => localStorage) },
   ),

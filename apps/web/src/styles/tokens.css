@@ -146,6 +146,24 @@
   --bg-hover: rgba(255, 255, 255, 0.07);
   --bg-active: rgba(255, 255, 255, 0.11);
 
+  /* ---------- 详情页代表色底色 ----------
+   * `--art-color` 由 `hooks/useArtColor` 在 JS 里写入（形如 `#3a6ea5`），缺省不定义——
+   * 所有消费处都写成 `var(--art-color, 回落)`，取不到色时与默认外观一致。
+   * 各主题块派生三档（另有备用档 `--art-surface-2`，当前未使用）：
+   *   `--art-surface`     `.app-main` 的底色：代表色**与主题底色混合**（深色取 55% 封面色）
+   *                       后再压一档明度，色相来自封面、明度仍由主题主导，保证正文可读；
+   *   `--art-surface-2`   比 `--art-surface` 再靠近封面一档（备用档）；
+   *   `--art-surface-side` 侧边栏底色，与 `--art-surface` 同族、略暗一档（侧栏在内容之侧先压一级）；
+   *   `--art-ink`         文字与图标前景（深色近白、浅色近黑）。 */
+  --art-surface: color-mix(in srgb, var(--art-color, var(--bg)) 55%, #131315);
+  --art-surface-2: color-mix(in srgb, var(--art-color, var(--bg)) 65%, #131315);
+  --art-surface-side: color-mix(
+    in srgb,
+    var(--art-color, var(--bg)) 42%,
+    #131315
+  );
+  --art-ink: #f5f5f7;
+
   /* 毛玻璃层（同步上移，避免叠加后反而比基底更黑） */
   --glass-sidebar: rgba(30, 30, 34, 0.72);
   --glass-player: rgba(38, 38, 42, 0.52);
@@ -208,6 +226,16 @@
   --bg-hover: rgba(0, 0, 0, 0.05);
   --bg-active: rgba(0, 0, 0, 0.09);
 
+  /* 详情页代表色底色（浅色偏亮，见深色块的说明：封面色占 30%，仍以白为主） */
+  --art-surface: color-mix(in srgb, var(--art-color, var(--bg)) 30%, #ffffff);
+  --art-surface-2: color-mix(in srgb, var(--art-color, var(--bg)) 38%, #ffffff);
+  --art-surface-side: color-mix(
+    in srgb,
+    var(--art-color, var(--bg)) 24%,
+    #fcfcfc
+  );
+  --art-ink: #1d1d1f;
+
   --glass-sidebar: rgba(246, 246, 247, 0.72);
   --glass-player: rgba(250, 250, 251, 0.58);
   --glass-overlay: rgba(246, 246, 247, 0.6);
@@ -260,6 +288,20 @@
     --bg-elevated-2: #ebebed;
     --bg-hover: rgba(0, 0, 0, 0.05);
     --bg-active: rgba(0, 0, 0, 0.09);
+
+    /* 详情页代表色底色（跟随系统浅色时同上） */
+    --art-surface: color-mix(in srgb, var(--art-color, var(--bg)) 30%, #ffffff);
+    --art-surface-2: color-mix(
+      in srgb,
+      var(--art-color, var(--bg)) 38%,
+      #ffffff
+    );
+    --art-surface-side: color-mix(
+      in srgb,
+      var(--art-color, var(--bg)) 24%,
+      #fcfcfc
+    );
+    --art-ink: #1d1d1f;
 
     --glass-sidebar: rgba(246, 246, 247, 0.72);
     --glass-player: rgba(250, 250, 251, 0.58);

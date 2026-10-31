@@ -6,15 +6,31 @@
  * 居中裁切容易把脸切掉。
  */
 .artist-page {
+  /* 大图的绝对定位锚点：`position: relative` 放在路由舞台上，左边界与主内容区重合 */
+  position: relative;
   max-width: 1600px;
   margin-inline: auto;
+  /*
+   * 通栏大图必须贴内容区顶端铺起：路由舞台给页面留了 `--page-top-inset`（桌面 32px /
+   * 移动 60px）的上内边距，抵消掉这截留白，图顶才不会被内容区顶边「裁」去一条。
+   * 本页自带大图头部，本就不需要这份顶部留白（见 app.css 对 `.detail--artist` 的豁免）。
+   */
+  display: flow-root;
+  margin-top: calc(var(--page-top-inset) * -1);
 }
 
-/* ---------- 通栏大图 ---------- */
+/* ---------- 通栏大图（背景） ----------
+ * 图片与渐隐层**只当背景**：绝对定位、不占文档流、不遮任何内容（`pointer-events: none`）。
+ * 页面根因此由下面的 `.artist-head` / `.artist-sections` 自然撑高；图有多高只影响观感，
+ * 不会把分区推到首屏之外——拉宽窗口图变高也不会「损失内容」。
+ */
 .artist-hero {
-  position: relative;
-  height: clamp(280px, 42vw, 520px);
-  overflow: hidden;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: clamp(380px, 52vw, 620px);
+  pointer-events: none;
 }
 
 .artist-hero__img {
@@ -31,26 +47,55 @@
 }
 
 /*
- * 渐隐层：**一元一次线性**从透明过渡到页面底色。
+ * 渐隐层：以**图片上边界中点为圆心画圆**、圆外逐渐模糊成页面底色（代表色），而不是一条直线。
  *
- * 之前用多段压暗（透明 → 浅黑 → 深黑 → 底色）做文字对比度，但浅色主题下页面底色是白的，
- * 这条曲线会在中间出现一段明显的黑色带（白→黑→白），观感上像图片中间糊了一块黑。
- * 现在只保留两个色标：顶部透明、底部 `--bg`，中间严格线性。
- *
- * 文字可读性不再依赖压暗层，而由姓名自身的白色 + 黑色描边阴影保证（见 .artist-head__name），
- * 因此深浅主题都能保持「从底色线性过渡到图片」的干净观感。
+ * 圆的**半径 = 图片高度**：横纵半径都取 `clamp(380px, 52vw, 620px)`，正圆，圆心到图片
+ * 「下边界中点」的距离恰在圆周上。圆心横向取 `calc(50vw - 130px)`（主内容区中点：视口宽减
+ * 侧栏 260px 的一半），纵向在图片顶边。图层略向下多出 12% 图高，过渡带跨过图下沿与底色接续。
  */
 .artist-hero__scrim {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, transparent 0%, var(--bg) 100%);
+  inset: 0 0 calc(clamp(380px, 52vw, 620px) * -0.12);
+  background:
+    /* 下沿收边：直线只负责最后几个像素，避免弧线在图片边缘留下细边 */
+    linear-gradient(to bottom, transparent 88%, var(--art-surface) 100%),
+    radial-gradient(
+      clamp(380px, 52vw, 620px) clamp(380px, 52vw, 620px) at calc(50vw - 130px)
+        0%,
+      transparent 0%,
+      transparent 34%,
+      color-mix(in srgb, var(--art-surface) 18%, transparent) 56%,
+      color-mix(in srgb, var(--art-surface) 55%, transparent) 76%,
+      color-mix(in srgb, var(--art-surface) 85%, transparent) 88%,
+      var(--art-surface) 96%
+    );
   pointer-events: none;
+}
+
+/*
+ * 艺术家页代表色底：仿 Apple Music，页面底色取头像代表色（`.app-main` 的 `--art-color`，
+ * 见 app.css 与 `hooks/useArtColor`）。页内前景切到 `--art-ink`，让姓名、分区标题与滑轨
+ * 箭头在任意代表色上都保持对比度；三个圆形按钮自身的毛玻璃材质在彩色底上依然可用。
+ */
+.detail--artist {
+  --text: var(--art-ink);
+  --text-secondary: color-mix(in srgb, var(--art-ink) 62%, transparent);
+  --text-tertiary: color-mix(in srgb, var(--art-ink) 38%, transparent);
+  --bg-hover: color-mix(in srgb, var(--art-ink) 7%, transparent);
+  --bg-active: color-mix(in srgb, var(--art-ink) 11%, transparent);
+  /*
+   * 新建层叠上下文：大图与渐隐层是页面里的绝对定位层，姓名、按钮与分区标题同为定位 /
+   * 非定位元素时按文档序与之交错，标题在这条弧形渐隐带附近会被「压住」一半。
+   * 页面根自成一个层后，全部内容整体叠在大图之上，标题任何位置都不会被切。
+   */
+  isolation: isolate;
 }
 
 /* ---------- 姓名 + 操作 ---------- */
 .artist-head {
-  /* 上移，让姓名压在渐隐过渡带上 */
-  margin-top: clamp(-96px, -8vw, -56px);
+  /* 内容从页面顶端开始排；这段上边距把姓名 / 按钮放到底图的下段（渐隐带上），
+     图本身只是背景，不参与排版高度 */
+  margin-top: calc(clamp(380px, 52vw, 620px) * 0.8);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -154,15 +199,38 @@
   flex-direction: column;
   gap: 8px;
   padding: 32px var(--page-gutter) 0;
+  /*
+   * 分区标题落在通栏大图的边界处时，会产生一条横向「接缝线」把字号上半截切掉
+   * （文字合成层的栅格化边界与大图 / 渐隐层的层叠上下文在部分视口下对齐到同一像素行）。
+   * 让分区自成一层：标题始终在自己的合成层里完整绘制，不再被下层图片边界切断。
+   */
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 768px) {
   .artist-hero {
-    height: 300px;
+    height: 400px;
+  }
+
+  /* 移动端无侧栏：圆心回到主内容区正中，半径随图高（400px） */
+  .artist-hero__scrim {
+    background:
+      linear-gradient(to bottom, transparent 88%, var(--art-surface) 100%),
+      radial-gradient(
+        400px 400px at 50% 0%,
+        transparent 0%,
+        transparent 34%,
+        color-mix(in srgb, var(--art-surface) 18%, transparent) 56%,
+        color-mix(in srgb, var(--art-surface) 55%, transparent) 76%,
+        color-mix(in srgb, var(--art-surface) 85%, transparent) 88%,
+        var(--art-surface) 96%
+      );
   }
 
   .artist-head {
-    margin-top: -64px;
+    /* 桌面同一比例：图高 400px 的 80% */
+    margin-top: 320px;
     gap: 16px;
     padding: 0 var(--page-gutter);
   }

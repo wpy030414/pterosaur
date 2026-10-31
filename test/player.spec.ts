@@ -248,20 +248,15 @@ test.describe('应用外壳', () => {
     await expect(page.locator('.browse__title')).toHaveText(label)
   })
 
-  test('侧边栏标题点击切换 commit 哈希，GitHub 图标指向仓库', async ({
-    page,
-  }) => {
+  test('点侧边栏品牌名打开「关于」，GitHub 图标指向仓库', async ({ page }) => {
     await page.goto('/')
     const brand = page.locator('.sidebar__name')
     await expect(brand).toHaveText('Pterosaur')
 
-    // 点击一次 → 显示 commit 短哈希（7 位十六进制；非 git 构建回退为 dev）
     await brand.click()
-    await expect(brand).toHaveText(/^([0-9a-f]{7}|dev)$/)
-
-    // 再点一次 → 恢复品牌名
-    await brand.click()
-    await expect(brand).toHaveText('Pterosaur')
+    const about = page.getByRole('dialog', { name: '关于' })
+    await expect(about).toBeVisible()
+    await expect(about.locator('code')).toHaveText(/^([0-9a-f]{7}|dev)$/)
 
     // GitHub 图标：指向仓库且新窗口打开
     const gh = page.locator('.sidebar__github')
@@ -269,85 +264,31 @@ test.describe('应用外壳', () => {
     await expect(gh).toHaveAttribute('target', '_blank')
   })
 
-  test('主题切换在明暗之间生效', async ({ page }) => {
+  test('主题切换在设置里生效（默认深色，二元切换）', async ({ page }) => {
     await page.goto('/')
     const root = page.locator('html')
-
-    // 点击主题按钮（aria-label 为「切换到浅色」或「切换到深色」）
-    const toggle = page
-      .locator(
-        'button[aria-label="切换到浅色"], button[aria-label="切换到深色"]',
-      )
-      .first()
-    const before = await root.getAttribute('data-theme')
-    await toggle.click()
-    await expect
-      .poll(async () => root.getAttribute('data-theme'), { timeout: 3000 })
-      .not.toBe(before === null ? 'system' : before)
-    // 主题转场的根标记最终应清除（不残留，否则会一直开着根快照）
-    await expect(root).not.toHaveAttribute('data-theme-vt', 'on')
+    // 默认深色；设置里的外观按钮切到浅色，再切回深色
+    await expect(root).toHaveAttribute('data-theme', 'dark')
+    await page.getByTestId('settings-button').click()
+    await page.getByTestId('theme-toggle').click()
+    await expect(root).toHaveAttribute('data-theme', 'light')
+    await page.getByTestId('theme-toggle').click()
+    await expect(root).toHaveAttribute('data-theme', 'dark')
   })
 
-  test('减少动效下主题切换仍生效且不走转场', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' })
+  test('外观与背景同在设置里，侧栏不再有主题按钮', async ({ page }) => {
     await page.goto('/')
-    const root = page.locator('html')
-
-    const toggle = page
-      .locator(
+    await expect(
+      page.locator(
         'button[aria-label="切换到浅色"], button[aria-label="切换到深色"]',
-      )
-      .first()
-    const before = await root.getAttribute('data-theme')
-    await toggle.click()
-    await expect
-      .poll(async () => root.getAttribute('data-theme'), { timeout: 3000 })
-      .not.toBe(before === null ? 'system' : before)
-    // 减少动效：直连切换，不应设转场标记
-    await expect(root).not.toHaveAttribute('data-theme-vt', 'on')
-  })
-
-  test('主题转场期间侧栏毛玻璃被停用，结束后恢复', async ({ page }) => {
-    await page.goto('/')
-    const root = page.locator('html')
-    const sidebar = page.locator('.sidebar').first()
-
-    // 平时：侧栏有毛玻璃
-    const blurred = await sidebar.evaluate(
-      (el) => getComputedStyle(el).backdropFilter || 'none',
-    )
-    expect(blurred).not.toBe('none')
-
-    // 在转场标记存在的那一刻取样：根快照会栅格化整页，backdrop-filter 找不到真实背景，
-    // 毛玻璃会塌成半透明（iOS 上表现为「透明一帧再复原」，见 global.css 的说明）
-    const during = await page.evaluate(async () => {
-      const btn = document.querySelector<HTMLButtonElement>(
-        'button[aria-label="切换到浅色"], button[aria-label="切换到深色"]',
-      )!
-      btn.click()
-      // 等标记就绪（主题转场在其同步设置后才开始）
-      await new Promise<void>((r) => {
-        const tick = () =>
-          document.documentElement.dataset.themeVt
-            ? r()
-            : requestAnimationFrame(tick)
-        tick()
-      })
-      const el = document.querySelector('.sidebar')!
-      const cs = getComputedStyle(el)
-      return { filter: cs.backdropFilter || 'none', bg: cs.backgroundColor }
-    })
-    expect(during.filter).toBe('none')
-    // 换成不透明同色填充：alpha 为 1，避免揭示期间透出背后的旧页面
-    expect(during.bg).not.toMatch(/rgba\([^)]*,\s*0?\.\d+\s*\)/)
-
-    // 结束后恢复毛玻璃（标记已清除）
-    await expect(root).not.toHaveAttribute('data-theme-vt', 'on')
-    await expect
-      .poll(() =>
-        sidebar.evaluate((el) => getComputedStyle(el).backdropFilter || 'none'),
-      )
-      .not.toBe('none')
+      ),
+    ).toHaveCount(0)
+    await page.getByTestId('settings-button').click()
+    const section = page
+      .getByText('外观', { exact: true })
+      .locator('xpath=ancestor::section[1]')
+    await expect(section.getByTestId('theme-toggle')).toBeVisible()
+    await expect(section.getByTestId('pick-background')).toBeVisible()
   })
 })
 
@@ -953,8 +894,8 @@ test.describe('搜索分栏与艺术家 / 专辑跳转', () => {
   })
 })
 
-test.describe('队列面板毛玻璃', () => {
-  test('队列面板具备 backdrop-filter 毛玻璃', async ({ page }) => {
+test.describe('侧栏与队列面板实色', () => {
+  test('队列面板与侧栏为实色（无毛玻璃）', async ({ page }) => {
     // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
     await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
@@ -966,14 +907,21 @@ test.describe('队列面板毛玻璃', () => {
     const panel = page.locator('.queue-panel')
     await expect(panel).toHaveClass(/queue-panel--open/)
 
-    const backdrop = await panel.evaluate((el) => {
-      const cs = getComputedStyle(el)
-      const webkit =
-        (cs as unknown as { webkitBackdropFilter?: string })
-          .webkitBackdropFilter ?? ''
-      return `${cs.backdropFilter ?? ''} ${webkit}`
-    })
-    expect(backdrop).toContain('blur')
+    // 侧栏与队列面板统一为实色（ADR-061）：不透明底色，且不再有背景模糊
+    for (const el of [panel, page.locator('.sidebar')]) {
+      const style = await el.evaluate((node) => {
+        const cs = getComputedStyle(node)
+        const webkit =
+          (cs as unknown as { webkitBackdropFilter?: string })
+            .webkitBackdropFilter ?? ''
+        return {
+          alpha: cs.backgroundColor,
+          backdrop: `${cs.backdropFilter} ${webkit}`,
+        }
+      })
+      expect(style.backdrop).not.toContain('blur')
+      expect(style.alpha).toMatch(/^rgb\(/)
+    }
   })
 })
 

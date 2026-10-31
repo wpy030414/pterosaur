@@ -9,6 +9,7 @@ import { CreatePlaylistModal } from './components/CreatePlaylistModal.js'
 import { ConfirmDialog } from './components/ConfirmDialog.js'
 import { RipDialog } from './components/RipDialog.js'
 import { SettingsDialog } from './components/SettingsDialog.js'
+import { AboutDialog } from './components/AboutDialog.js'
 import { PlayErrorToast } from './components/PlayErrorToast.js'
 import { MobileMenuButton } from './components/MobileMenuButton.js'
 import type { WorksKind } from './pages/ArtistWorks.js'
@@ -220,6 +221,7 @@ export default function App() {
       <ConfirmDialog />
       <RipDialog />
       <SettingsDialog />
+      <AboutDialog />
       <PlayErrorToast />
     </div>
   )

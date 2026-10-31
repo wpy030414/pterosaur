@@ -8,21 +8,23 @@ import {
 import {
   X,
   Trash2,
-  RefreshCw,
   Loader2,
   RotateCcw,
   Image as ImageIcon,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { type AudioLevel } from '@pterosaur/shared/types'
 import { useSettingsDialog, confirmDialog } from '../store/ui.js'
 import { useSync } from '../store/sync.js'
 import { useSettings } from '../store/settings.js'
+import { useTheme } from '../hooks/useTheme.js'
 import {
   clearOfflineAudio,
   offlineUsage,
   type OfflineUsage,
 } from '../lib/mediaCache.js'
-import { checkForUpdates, postToServiceWorker } from '../lib/pwa.js'
+import { postToServiceWorker } from '../lib/pwa.js'
 import { pushEmptyLibrary } from '../lib/sync.js'
 import { resetAll } from '../lib/reset.js'
 import { removeBackground, saveBackground } from '../lib/background.js'
@@ -31,7 +33,7 @@ import { formatBytes } from '../lib/formatBytes.js'
 import { IconButton } from './IconButton.js'
 import './SettingsDialog.css'
 
-type Busy = 'clear' | 'update' | 'reset' | null
+type Busy = 'clear' | 'reset' | null
 
 /**
  * 音质模式：**只提供两档**（见 ADR-041）。
@@ -53,9 +55,10 @@ function modeOf(level: AudioLevel): AudioLevel {
 }
 
 /**
- * 设置弹窗：离线保存占用（查看 / 清除自动保存）与检查更新（注销 PWA + 强制刷新）。
+ * 设置弹窗：音质、外观（明暗 / 背景）与缓存（占用 / 清除 / 重置）。
  *
- * 由 {@link useSettingsDialog} store 驱动，挂载在 App 顶层，顶栏齿轮按钮打开。
+ * 由 {@link useSettingsDialog} store 驱动，挂载在 App 顶层，侧边栏齿轮按钮打开。
+ * 版本信息与「检查更新」不在这里，见 {@link AboutDialog}（点侧边栏品牌名打开）。
  */
 export function SettingsDialog() {
   const open = useSettingsDialog((s) => s.open)
@@ -64,6 +67,13 @@ export function SettingsDialog() {
   const setLevel = useSettings((s) => s.setLevel)
   const background = useSettings((s) => s.background)
   const setBackground = useSettings((s) => s.setBackground)
+  const themeMode = useTheme((s) => s.mode)
+  const setThemeMode = useTheme((s) => s.setMode)
+  // 两元态：跟随系统时按当前系统偏好取实际明暗
+  const isDark =
+    themeMode === 'dark' ||
+    (themeMode === 'system' &&
+      (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true))
 
   const [usage, setUsage] = useState<OfflineUsage | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
@@ -112,22 +122,6 @@ export function SettingsDialog() {
     } finally {
       setBusy(null)
     }
-  }
-
-  const handleUpdate = async () => {
-    if (busy) return
-    const ok = await confirmDialog({
-      title: '检查更新？',
-      message:
-        '将注销离线缓存并强制刷新页面，以拉取最新版本。资料库与本机缓存不受影响。',
-      confirmText: '刷新',
-      danger: true,
-    })
-    if (!ok) return
-    setBusy('update')
-    // 结束时页面通常会卸载；若未刷新则恢复按钮
-    await checkForUpdates()
-    setBusy(null)
   }
 
   const handlePickBackground = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -210,9 +204,6 @@ export function SettingsDialog() {
 
         <section className="settings-dialog__section">
           <h3 className="settings-dialog__section-title">音质</h3>
-          <p className="settings-dialog__desc">
-            取流音质；该曲不可得时自动降级。实际在播的流参数见全屏播放页顶部。
-          </p>
           <div
             className="settings-dialog__segmented"
             role="radiogroup"
@@ -238,36 +229,39 @@ export function SettingsDialog() {
         </section>
 
         <section className="settings-dialog__section">
-          <h3 className="settings-dialog__section-title">背景</h3>
-          <p className="settings-dialog__desc">
-            自定义应用背景，并自动从背景中取主题色。
-          </p>
+          <h3 className="settings-dialog__section-title">外观</h3>
           <div className="settings-dialog__btnrow">
             <button
               type="button"
               className="settings-dialog__btn settings-dialog__btn--neutral"
-              onClick={() => fileRef.current?.click()}
+              onClick={() => setThemeMode(isDark ? 'light' : 'dark')}
+              aria-label={isDark ? '切换到浅色' : '切换到深色'}
+              aria-pressed={!isDark}
+              data-testid="theme-toggle"
+            >
+              {isDark ? <Moon size={15} /> : <Sun size={15} />}
+              {isDark ? '深色' : '浅色'}
+            </button>
+            <button
+              type="button"
+              className="settings-dialog__btn settings-dialog__btn--neutral"
+              onClick={() =>
+                background
+                  ? void handleClearBackground()
+                  : fileRef.current?.click()
+              }
               disabled={bgBusy}
-              data-testid="pick-background"
+              data-testid={background ? 'clear-background' : 'pick-background'}
             >
               {bgBusy ? (
                 <Loader2 size={15} className="spinner" />
+              ) : background ? (
+                <Trash2 size={15} />
               ) : (
                 <ImageIcon size={15} />
               )}
-              {background ? '更换背景' : '上传背景'}
+              {background ? '移除背景' : '上传背景'}
             </button>
-            {background && (
-              <button
-                type="button"
-                className="settings-dialog__btn settings-dialog__btn--danger"
-                onClick={handleClearBackground}
-                disabled={bgBusy}
-                data-testid="clear-background"
-              >
-                <Trash2 size={15} /> 清除背景
-              </button>
-            )}
           </div>
           <input
             ref={fileRef}
@@ -288,29 +282,7 @@ export function SettingsDialog() {
         </section>
 
         <section className="settings-dialog__section">
-          <h3 className="settings-dialog__section-title">更新</h3>
-          <p className="settings-dialog__desc">
-            当前版本{' '}
-            <code className="settings-dialog__code">{__COMMIT_HASH__}</code>。
-          </p>
-          <button
-            type="button"
-            className="settings-dialog__btn settings-dialog__btn--primary"
-            onClick={handleUpdate}
-            disabled={busy !== null}
-            data-testid="check-update"
-          >
-            {busy === 'update' ? (
-              <Loader2 size={15} className="spinner" />
-            ) : (
-              <RefreshCw size={15} />
-            )}
-            检查更新
-          </button>
-        </section>
-
-        <section className="settings-dialog__section">
-          <h3 className="settings-dialog__section-title">离线保存</h3>
+          <h3 className="settings-dialog__section-title">缓存</h3>
           <div className="settings-dialog__stat">
             <span className="settings-dialog__stat-label">已占用</span>
             <span

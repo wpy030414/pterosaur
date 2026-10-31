@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Search,
@@ -12,7 +12,11 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { keyOf } from '@pterosaur/shared/types'
 import { useLibrary } from '../store/library.js'
-import { useCreatePlaylist, useSidebarDrawer } from '../store/ui.js'
+import {
+  useAboutDialog,
+  useCreatePlaylist,
+  useSidebarDrawer,
+} from '../store/ui.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { AppLink } from './AppLink.js'
 import { SidebarGroup } from './SidebarGroup.js'
@@ -89,8 +93,8 @@ export function Sidebar() {
     if (isMobile) setSidebarOpen(false)
   }, [pathname, isMobile, setSidebarOpen])
 
-  // 点击标题切换：在品牌名与当前 commit 短哈希之间来回
-  const [showHash, setShowHash] = useState(false)
+  // 点品牌名打开「关于」弹窗（版本与检查更新）
+  const openAbout = useAboutDialog((s) => s.openAbout)
 
   const handleCreate = () => {
     openCreate({ onDone: (id) => navigate(`/playlist/${id}`) })
@@ -109,10 +113,12 @@ export function Sidebar() {
           <button
             type="button"
             className="sidebar__name"
-            onClick={() => setShowHash((v) => !v)}
-            title={showHash ? '显示名称' : '显示当前 commit'}
+            onClick={openAbout}
+            aria-label="关于"
+            title="关于"
+            data-testid="about-button"
           >
-            {showHash ? __COMMIT_HASH__ : 'Pterosaur'}
+            Pterosaur
           </button>
           <a
             className="sidebar__github"

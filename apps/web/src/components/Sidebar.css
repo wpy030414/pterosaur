@@ -9,9 +9,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--glass-sidebar);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  backdrop-filter: blur(32px) saturate(180%);
+  /* 实色侧栏（不走毛玻璃）：深色 #252528 / 浅色 #fcfcfc，与原先「玻璃叠在 --bg 上」的合成结果同值 */
+  background: var(--glass-sidebar-solid);
   border-right: 1px solid var(--separator);
 }
 
@@ -208,9 +207,7 @@
     bottom: 0;
     z-index: 45;
     width: 280px;
-    background: var(--glass-sidebar);
-    backdrop-filter: blur(32px) saturate(180%);
-    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    background: var(--glass-sidebar-solid);
     border-right: 1px solid var(--separator);
     overflow-y: auto;
     animation: sidebar-slide-in var(--dur-slow) var(--ease) forwards;

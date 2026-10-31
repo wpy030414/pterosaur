@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Play, Trash2, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
+import { useArtColor } from '../hooks/useArtColor.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
@@ -96,6 +97,8 @@ export function PlaylistPage() {
     : remote.data?.playlist
   const tracks = isLocal ? (local?.tracks ?? []) : (remote.data?.tracks ?? [])
   const loading = !isLocal && remote.loading
+  // 载入后依封面代表色给页面换底（磁带走自己的通栏版式，不参与）
+  useArtColor(isCassette ? undefined : playlist?.cover)
   const error = !isLocal
     ? remote.error
     : isLocal && !local

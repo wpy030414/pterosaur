@@ -1,4 +1,26 @@
 /* 由原 pages.css 按页面拆分而来（见第 17 项重构）：只由对应页面 import。 */
+
+/* ============================ 歌单 / 专辑详情页的代表色底 ============================ */
+/*
+ * 仿 Apple Music：歌单 / 专辑详情页底色取封面代表色。底色由 `hooks/useArtColor`
+ * 写到 `.app-main`（见 app.css），这里把页内前景切到 `--art-ink`。
+ *
+ * 为什么在页根上改前景而不是 `--text`：详情页里也有需要在任意底色上保持可变色的元素
+ * （如播放按钮取 `--play-neutral`），改全局 `--text` 会波及侧栏与播放岛。
+ * 磁带（`.detail--cassette`）不在其列——它有自己的通栏封面版式。
+ */
+.detail--album,
+.detail--playlist:not(.detail--cassette) {
+  --text: var(--art-ink);
+  --text-secondary: color-mix(in srgb, var(--art-ink) 62%, transparent);
+  --text-tertiary: color-mix(in srgb, var(--art-ink) 38%, transparent);
+  --separator: color-mix(in srgb, var(--art-ink) 10%, transparent);
+  --separator-strong: color-mix(in srgb, var(--art-ink) 18%, transparent);
+  --bg-hover: color-mix(in srgb, var(--art-ink) 7%, transparent);
+  --bg-active: color-mix(in srgb, var(--art-ink) 11%, transparent);
+  --scrollbar-thumb: color-mix(in srgb, var(--art-ink) 18%, transparent);
+}
+
 /* ============================ 歌单 / 艺术家 / 专辑详情 ============================ */
 .detail {
   max-width: 1600px;

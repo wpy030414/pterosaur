@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sun, Moon, User, LogOut, Settings, Cloud } from 'lucide-react'
-import { useTheme } from '../hooks/useTheme.js'
-import { startThemeTransition } from '../lib/themeTransition.js'
+import { User, LogOut, Settings, Cloud } from 'lucide-react'
 import { useAuth, activeSource } from '../store/auth.js'
 import type { MusicSource } from '@pterosaur/shared/types'
 import { useSync } from '../store/sync.js'
@@ -18,17 +16,16 @@ const PLAN_LETTER: Record<MusicSource, string> = {
 const planOf = (src: MusicSource): string => `Plan ${PLAN_LETTER[src]}`
 
 /**
- * 侧边栏底部操作栏：主题切换 / 设置 / 账户。
+ * 侧边栏底部操作栏：设置 / 账户。
  *
  * 原本位于顶栏（Topbar）；顶栏移除后下沉到这里——侧边栏贯穿全高，底部是这些
  * 全局入口最自然的位置，也避免了在内容区顶部再叠一条工具条。
+ * 主题切换已并入设置弹窗的「外观」分区，这里不再提供一级按钮。
  *
  * 账户菜单**向上弹出**：本栏贴着窗口底边，向下弹会被裁掉。菜单是绝对定位、
  * 以本栏为定位上下文，故不依赖 Portal。
  */
 export function SidebarFooter() {
-  const mode = useTheme((s) => s.mode)
-  const setMode = useTheme((s) => s.setMode)
   const status = useAuth((s) => s.status)
   const openModal = useAuth((s) => s.openModal)
   const logout = useAuth((s) => s.logout)
@@ -49,22 +46,6 @@ export function SidebarFooter() {
     return () => window.removeEventListener('click', close)
   }, [menuOpen])
 
-  // 解析当前系统偏好下的「实际」明暗，用于决定切换目标与图标
-  const prefersDark =
-    mode === 'system'
-      ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true)
-      : mode === 'dark'
-
-  // 切换主题：自按钮中心做圆形揭示转场（不支持 VT / 减少动效时内部自动降级为直连）
-  const toggleTheme = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const origin = {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
-    }
-    startThemeTransition(origin, () => setMode(prefersDark ? 'light' : 'dark'))
-  }
-
   /** 切换云同步开关：开启时绑定当前账号（进入同步即触发一次「云端权威」同步，见 useLibrarySync）。 */
   const toggleSync = () => {
     const store = useSync.getState()
@@ -74,20 +55,6 @@ export function SidebarFooter() {
 
   return (
     <div className="sidebar-footer">
-      <button
-        type="button"
-        className="sidebar-footer__btn"
-        onClick={toggleTheme}
-        aria-label={prefersDark ? '切换到浅色' : '切换到深色'}
-        title={prefersDark ? '浅色模式' : '深色模式'}
-      >
-        {prefersDark ? (
-          <Sun size={17} strokeWidth={2} />
-        ) : (
-          <Moon size={17} strokeWidth={2} />
-        )}
-      </button>
-
       <button
         type="button"
         className="sidebar-footer__btn"

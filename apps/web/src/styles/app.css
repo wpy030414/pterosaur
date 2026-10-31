@@ -33,6 +33,22 @@
   min-width: 0;
   min-height: 0;
   background: var(--bg);
+  /*
+   * 详情页代表色底色（`hooks/useArtColor` 在 <html> 写 `--art-color` 并打 data-art-color）。
+   * 画在 `.app-main` 而非页面盒子上：内容盒子 1600px 上限、超宽屏居中，盒子外两侧属于本层，
+   * 且胶囊播放岛本就是本层的浮层，盖住即可；页面盒子保持透明（见 Detail.css / Artist.css）。
+   * `--art-surface` 是代表色与主题底色的混合档（见 tokens.css），未取到色 / 离开详情页时
+   * 回落为 `--bg`。底色变化**不加过渡**：切换页面时直接落到新底色，不做补间动画。
+   */
+  background-color: var(--art-surface, var(--bg));
+}
+
+/*
+ * 详情页期间左侧边栏跟着换底：与内容区同族、略暗一档（`--art-surface-side`）。
+ * 侧栏是实色——这里只换底色，不引入任何透明 / 模糊。未取到色时回落为侧栏默认实色。
+ */
+.sidebar {
+  background-color: var(--art-surface-side, var(--glass-sidebar-solid));
 }
 
 .app-content {
@@ -241,14 +257,20 @@
 
 /* ============================ 自定义应用背景 ============================ */
 /*
- * 仅在设置了自定义背景时（由 AppBackground 在 <html> 打 data-has-bg）把三大区域调得更透明，
- * 让背景图真正透出；未设置时保持默认外观。毛玻璃（backdrop-filter）保留。
- * 特异性高于各组件的单类规则，故不必改 Sidebar.css。
+ * 仅在设置了自定义背景时（由 AppBackground 在 <html> 打 data-has-bg）把主内容区调得更透明，
+ * 让背景图真正透出；未设置时保持默认外观。
+ * 侧边栏与队列面板已改为实色，不再随背景调透明。
  */
 :root[data-has-bg] .app-main {
   background: color-mix(in srgb, var(--bg) 45%, transparent);
 }
 
-:root[data-has-bg] .sidebar {
-  background: color-mix(in srgb, var(--glass-sidebar) 42%, transparent);
+/*
+ * 自定义背景给详情页代表色让路：`.app-main` 平时是半透明让背景图透出，详情页取到代表色后
+ * 改为实色的混合档——否则代表色会被背景图稀释、正文对比度失控。侧栏是实色，不受影响；
+ * 离开详情页（data-art-color 卸载）即恢复半透明，背景图照常透出。
+ * 与上一条同特异性，后写者胜。
+ */
+:root[data-has-bg][data-art-color] .app-main {
+  background: var(--art-surface);
 }
