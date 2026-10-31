@@ -27,34 +27,40 @@ export function fail(error: string, needLogin = false): ApiResult<never> {
 /* ============================ 缓存 ============================ */
 
 /**
- * 音频地址缓存：`源|id|档位|凭证指纹` -> **有序候选 https 地址**（首个优先）。
- * 网易云地址有时效，TTL 设短一些；命中位会随实际可用候选动态前移（见 streamHandler）。
+ * 后端**唯一**的 LRU 缓存工厂：容量 / TTL 在此集中登记，新增缓存不许再随手
+ * `new LRUCache(...)`（散落的 TTL 与键格式曾出现「同类数据两套口径」）。
+ * TTL 单位毫秒；`ttl: 0` 表示不按时间过期、只受容量淘汰。
  */
-export const urlCache = new LRUCache<string, string[]>({
-  max: 2000,
-  ttl: 15 * 60 * 1000,
-})
+export function cacheOf<V extends {}>(max: number, ttlMs: number) {
+  return new LRUCache<string, V>({
+    max,
+    ttl: ttlMs > 0 ? ttlMs : undefined,
+  })
+}
 
-/**
- * 音质查询缓存：`源|id|档位|凭证指纹` -> 实际音质（只缓存成功结果）。
- * 与音频地址缓存同容量 / TTL，避免每次重开沉浸页都重新解析上游。
- */
-export const qualityCache = new LRUCache<string, AudioQuality>({
-  max: 2000,
-  ttl: 15 * 60 * 1000,
-})
+/** 各类缓存的统一口径（HTTP 状态码式命名：分钟数放在常量里，避免魔法数散落）。 */
+const MIN = 60_000
+export const CACHE_TTL = {
+  /** 音频地址 / 音质：上游直链时效短，15 分钟内基本可用。 */
+  audioUrl: 15 * MIN,
+  /** 结构化数据（搜索 / 发现 / 详情 / 歌词），见 ADR-042。 */
+  data: 120 * MIN,
+  /** 翻录能力探测：5 秒，兼顾「换盘后重新检测」。 */
+  ripCapabilities: 5_000,
+} as const
+
+/** 音频地址缓存：`源|id|档位|凭证指纹` -> **有序候选 https 地址**（首个优先）。 */
+export const urlCache = cacheOf<string[]>(2000, CACHE_TTL.audioUrl)
+
+/** 音质查询缓存：`源|id|档位|凭证指纹` -> 实际音质（只缓存成功结果），与地址缓存同口径。 */
+export const qualityCache = cacheOf<AudioQuality>(2000, CACHE_TTL.audioUrl)
 
 /**
  * 结构化数据缓存：搜索 / 发现 / 详情 / 分P / 歌词等**已归一化的 JSON 结果**，
- * 键为 `源|端点|归一化参数|凭证指纹`（见 ADR-042）。这类数据 2 小时内基本稳定，
- * 命中即免一次上游往返；与音频地址 / 音质缓存（15 分钟，时效敏感）分开管理。
- * 导出实例供单测观察（清空 / TTL 断言）。
+ * 键为 `源|端点|归一化参数|凭证指纹`（见 ADR-042）。导出实例供单测观察（清空 / TTL 断言）。
  */
-export const DATA_CACHE_TTL_MS = 2 * 60 * 60 * 1000
-export const dataCache = new LRUCache<string, object>({
-  max: 1000,
-  ttl: DATA_CACHE_TTL_MS,
-})
+export const DATA_CACHE_TTL_MS = CACHE_TTL.data
+export const dataCache = cacheOf<object>(1000, DATA_CACHE_TTL_MS)
 
 /**
  * 包装一次上游结构化数据读取：命中缓存直接返回；未命中执行 loader、**成功才入缓存**——
@@ -65,7 +71,8 @@ export const dataCache = new LRUCache<string, object>({
  * （B 站字幕匿名恒空、网易云 VIP 标记），不隔离会串数据；匿名访客全体回落到服务端
  * 缺省凭证（`credentialOf`），恰好共享同一条目。
  *
- * 键一律由 {@link cacheKey} 生成——**不要把字符串拼接写在路由里**，漏一段就串数据。
+ * 键用 {@link cacheKey} 生成（`源|端点|参数…|凭证指纹`）；适配器**源内**的缓存
+ * （如 B 站 `view`）也用它，保证全后端只有一种键格式。
  */
 export async function cached<T extends object>(
   key: string,

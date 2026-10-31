@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
+import { CACHE_TTL } from './http.js'
 import { pipeline } from 'node:stream/promises'
 import {
   isAudioLevel,
@@ -272,8 +273,8 @@ export function isAllowedCoverUrl(url: string): boolean {
 
 /* ============================ 能力探测（capabilities） ============================ */
 
-/** 能力探测缓存 TTL：对话框打开时拉取；短 TTL 兼顾「换盘后重新检测」。 */
-const CAPS_TTL_MS = 5_000
+/** 能力探测缓存 TTL（统一登记在 `http.CACHE_TTL`）：短 TTL 兼顾「换盘后重新检测」。 */
+const CAPS_TTL_MS = CACHE_TTL.ripCapabilities
 let capsCache: { at: number; value: RipCapabilities } | null = null
 
 export async function ripCapabilities(): Promise<RipCapabilities> {

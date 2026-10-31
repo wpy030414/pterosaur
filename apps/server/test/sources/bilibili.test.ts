@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import {
   audioQuality,
   buildCassette,
@@ -15,6 +15,7 @@ import {
   parseDuration,
   parseSampleRate,
   pickAudio,
+  _resetBilibiliCachesForTest,
   pickSubtitleTracks,
   playlistTracks,
   rankAudioUrls,
@@ -23,6 +24,11 @@ import {
   searchSongs,
   signWbi,
 } from '../../src/sources/bilibili.js'
+
+beforeEach(() => {
+  // 源内缓存是模块级单例：跨用例共享会「莫名命中」，必须逐用例重置
+  _resetBilibiliCachesForTest()
+})
 
 describe('decodeTitle（去高亮标签 + 解码实体）', () => {
   it('去掉 <em> 高亮标签并解码常见实体', () => {
@@ -526,6 +532,30 @@ describe('bGet 匿名解析重试（按故障类别）', () => {
     await vi.advanceTimersByTimeAsync(2000) // 覆盖 5 × 333ms
     await failed
     expect(n).toBe(6)
+  })
+})
+
+describe('视频搜索源内缓存', () => {
+  const jsonRes = (body: unknown) => ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(body),
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('searchSongs 与 searchCassettes 同关键词只打一次上游 search/all', async () => {
+    let searches = 0
+    vi.stubGlobal('fetch', (input: unknown) => {
+      const url = String(input)
+      if (url.includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'buvid' } }))
+      if (url.includes('search/all/v2')) searches++
+      return Promise.resolve(jsonRes({ code: 0, data: { result: [] } }))
+    })
+    await searchSongs('同一个词', 20)
+    await searchCassettes('同一个词', 20)
+    expect(searches).toBe(1)
   })
 })
 

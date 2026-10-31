@@ -24,7 +24,6 @@
  */
 import { createHash } from 'node:crypto'
 import QRCode from 'qrcode'
-import { LRUCache } from 'lru-cache'
 import {
   DEFAULT_AUDIO_LEVEL,
   type Album,
@@ -37,10 +36,10 @@ import {
   type Track,
 } from '@pterosaur/shared/types'
 import type { QrCheckResult, SourceAdapter } from './types.js'
+import { cacheKey, cacheOf, DATA_CACHE_TTL_MS } from '../http.js'
 import {
   BROWSER_UA,
   businessError,
-  credentialFingerprint,
   isTransientError,
   parseSampleRate,
   probeFirstCandidate,
@@ -202,6 +201,16 @@ interface SearchAllData {
   result?: { result_type?: string; data?: RawVideo[] }[]
 }
 
+/** 视频搜索结果的源内缓存（短期：搜索结果本身随上游实时变化）。 */
+const searchCache = cacheOf<RawVideo[]>(200, 5 * 60_000)
+
+/** 清空 B 站源内缓存（单测用：模块级单例会跨用例污染；生产无调用方）。 */
+export function _resetBilibiliCachesForTest(): void {
+  searchCache.clear()
+  viewCache.clear()
+  sampleRateCache.clear()
+}
+
 /**
  * 关键词搜视频，返回 `search/all/v2` 的 `video` 分组原始条目。
  *
@@ -214,6 +223,16 @@ async function fetchVideoGroup(
   cred?: string,
 ): Promise<RawVideo[]> {
   const cookie = await cookieWithBuvid(cred)
+  // 源内短缓存：`/api/search/all` 会同时调 searchSongs 与 searchCassettes，
+  // 两者命中同一次上游请求，避免对同一关键词打两遍上游
+  const key = cacheKey(
+    'bilibili',
+    'search-video',
+    [keywords, Math.max(1, page)],
+    cookie,
+  )
+  const hit = searchCache.get(key)
+  if (hit !== undefined) return hit
   const res = await bGet<SearchAllData>(
     `https://api.bilibili.com/x/web-interface/search/all/v2?keyword=${encodeURIComponent(
       keywords,
@@ -221,7 +240,9 @@ async function fetchVideoGroup(
     cookie,
   )
   const groups = res.data?.result ?? []
-  return groups.find((g) => g.result_type === 'video')?.data ?? []
+  const videos = groups.find((g) => g.result_type === 'video')?.data ?? []
+  searchCache.set(key, videos)
+  return videos
 }
 
 /**
@@ -385,9 +406,8 @@ function codecName(a: BiliAudio): string | undefined {
   return undefined
 }
 
-/** 采样率探测的进程内缓存（`<曲目id>#<音频流id>` → Hz），避免每次展示音质都回源头。 */
-const sampleRateCache = new Map<string, number>()
-const SAMPLE_RATE_CACHE_MAX = 500
+/** 采样率探测缓存（`曲目id|音频流id` → Hz），避免每次展示音质都回源头。 */
+const sampleRateCache = cacheOf<number>(500, 0)
 
 /**
  * 拉取音频直链头部（Range 前缀），解析 init segment 得采样率（Hz）。
@@ -422,17 +442,14 @@ export async function audioQuality(
     if (!urls.length || !picked) return null
     const bw = picked.bandwidth
     // 采样率：上游不回报，探测文件头一次并缓存（同一视频同一音频流文件不变）
-    const cacheKey = `${id}#${picked.id ?? bw ?? 'durl'}`
-    let sr = sampleRateCache.get(cacheKey)
+    const key = cacheKey('bilibili', 'sample-rate', [
+      id,
+      picked.id ?? bw ?? 'durl',
+    ])
+    let sr = sampleRateCache.get(key)
     if (sr === undefined) {
       sr = await probeSampleRate(urls, cookie)
-      if (sr !== undefined) {
-        if (sampleRateCache.size >= SAMPLE_RATE_CACHE_MAX) {
-          const first = sampleRateCache.keys().next().value
-          if (first !== undefined) sampleRateCache.delete(first)
-        }
-        sampleRateCache.set(cacheKey, sr)
-      }
+      if (sr !== undefined) sampleRateCache.set(key, sr)
     }
     return {
       codec: codecName(picked),
@@ -539,10 +556,7 @@ function cassetteFromVideo(v: RawVideo): Playlist {
  * 有这层 memo，同凭证下每个 bvid 至多打一次上游（`playlistTracks` / `parts` / `searchCassettes`
  * 共用）。键含凭证指纹：不同账号的 `view`（封面 / 简介等）不串数据（对齐 ADR-042）。
  */
-const viewCache = new LRUCache<string, BiliViewData>({
-  max: 200,
-  ttl: 2 * 60 * 60 * 1000,
-})
+const viewCache = cacheOf<BiliViewData>(200, DATA_CACHE_TTL_MS)
 
 /**
  * 取一个视频的 `view` 数据（标题 / 封面 / UP 主 / `pages[]` / 简介 / 统计），带 {@link viewCache}。
@@ -555,7 +569,7 @@ async function fetchView(
   cred?: string,
 ): Promise<BiliViewData | undefined> {
   const cookie = await cookieWithBuvid(cred)
-  const key = `${credentialFingerprint(cookie)}|${bvid}`
+  const key = cacheKey('bilibili', 'view', [bvid], cookie)
   const hit = viewCache.get(key)
   if (hit !== undefined) return hit
   const res = await bGet<BiliViewData>(
