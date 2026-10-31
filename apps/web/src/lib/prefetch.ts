@@ -5,6 +5,7 @@ import { postToServiceWorker } from './pwa.js'
 import { preloadCover } from './imageCache.js'
 import { prefetchLyric } from './lyricCache.js'
 import { prefetchAudioMessage } from './prefetchProtocol.js'
+import { registerCacheCleaner } from './cacheRegistry.js'
 
 /**
  * 队列预载调度器：在网络良好且播放侧空闲时，预热队列**相邻曲目**（前后各 {@link PREFETCH_RADIUS}
@@ -243,3 +244,6 @@ export function createPrefetchScheduler(
     },
   }
 }
+
+// 自注册到统一清缓存：新增内存缓存不必再改 clearCaches 的清单
+registerCacheCleaner(clearPrefetchRegistry)

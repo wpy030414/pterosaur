@@ -1,26 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAllAppCaches } from '../../src/lib/clearCaches.js'
 import { clearMediaCache } from '../../src/lib/mediaCache.js'
-import { clearLyricCache } from '../../src/lib/lyricCache.js'
-import { clearCoverRegistry } from '../../src/lib/imageCache.js'
-import { clearPrefetchRegistry } from '../../src/lib/prefetch.js'
 import {
   clearAllCaches as clearCacheStorage,
   postToServiceWorker,
 } from '../../src/lib/pwa.js'
-import { clearAsyncCache } from '../../src/hooks/useAsync.js'
+import { clearRegisteredCaches } from '../../src/lib/cacheRegistry.js'
 
 vi.mock('../../src/lib/mediaCache.js', () => ({ clearMediaCache: vi.fn() }))
-vi.mock('../../src/lib/lyricCache.js', () => ({ clearLyricCache: vi.fn() }))
-vi.mock('../../src/lib/imageCache.js', () => ({ clearCoverRegistry: vi.fn() }))
-vi.mock('../../src/lib/prefetch.js', () => ({
-  clearPrefetchRegistry: vi.fn(),
-}))
 vi.mock('../../src/lib/pwa.js', () => ({
   clearAllCaches: vi.fn().mockResolvedValue(undefined),
   postToServiceWorker: vi.fn(),
 }))
-vi.mock('../../src/hooks/useAsync.js', () => ({ clearAsyncCache: vi.fn() }))
+vi.mock('../../src/lib/cacheRegistry.js', () => ({
+  clearRegisteredCaches: vi.fn(),
+}))
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -29,23 +23,21 @@ beforeEach(() => {
 })
 
 describe('clearAllAppCaches', () => {
-  it('清空媒体池 + 通知 SW + Cache Storage + 内存缓存', async () => {
+  it('清空媒体池 + 通知 SW + Cache Storage + 登记过的内存缓存', async () => {
     await clearAllAppCaches()
     expect(clearMediaCache).toHaveBeenCalledOnce()
     expect(postToServiceWorker).toHaveBeenCalledWith({
       type: 'MEDIA_CACHE_CLEARED',
     })
     expect(clearCacheStorage).toHaveBeenCalledOnce()
-    expect(clearLyricCache).toHaveBeenCalledOnce()
-    expect(clearCoverRegistry).toHaveBeenCalledOnce()
-    expect(clearAsyncCache).toHaveBeenCalledOnce()
-    expect(clearPrefetchRegistry).toHaveBeenCalledOnce()
+    // 内存缓存不再逐个硬编码调用：各模块自注册，此处统一遍历
+    expect(clearRegisteredCaches).toHaveBeenCalledOnce()
   })
 
   it('媒体池清理抛错也不阻断其余清理', async () => {
     vi.mocked(clearMediaCache).mockRejectedValue(new Error('idb'))
     await expect(clearAllAppCaches()).resolves.toBeUndefined()
     expect(clearCacheStorage).toHaveBeenCalledOnce()
-    expect(clearAsyncCache).toHaveBeenCalledOnce()
+    expect(clearRegisteredCaches).toHaveBeenCalledOnce()
   })
 })

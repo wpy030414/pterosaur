@@ -7,6 +7,7 @@ import {
   clearMediaCache,
   effectiveCap,
   expiredKeys,
+  imageCap,
   imageKey,
   isExpired,
   isWholeFileRange,
@@ -14,6 +15,7 @@ import {
   mediaUsage,
   parseRange,
   pickEvictions,
+  pickImageEvictions,
   putCached,
   responseFromBlob,
 } from '../../src/lib/mediaCache.js'
@@ -264,5 +266,40 @@ describe('mediaUsage / clearMediaCache', () => {
       audioBytes: 0,
       imageBytes: 0,
     })
+  })
+})
+
+describe('pickImageEvictions（封面独立份额）', () => {
+  const meta = (
+    key: string,
+    kind: 'audio' | 'image',
+    size: number,
+    at: number,
+  ) => ({ key, kind, size, lastAccess: at }) as never
+
+  it('封面总量未超份额时不淘汰', () => {
+    // 总预算 1000 → 封面份额 100；现有封面 50，再来 30 仍不超
+    const metas = [
+      meta('audio|1', 'audio', 800, 1),
+      meta('image|a', 'image', 50, 2),
+    ]
+    expect(pickImageEvictions(metas, 1000, 30)).toEqual([])
+  })
+
+  it('超出封面份额只淘汰封面，绝不淘汰音频', () => {
+    // 总预算 1000 → 封面份额 100；封面 a(60)+b(40)，再来 30 → 淘汰最久未用的 a
+    const metas = [
+      meta('audio|1', 'audio', 800, 1),
+      meta('image|a', 'image', 60, 2),
+      meta('image|b', 'image', 40, 3),
+    ]
+    const evicted = pickImageEvictions(metas, 1000, 30)
+    expect(evicted).toEqual(['image|a'])
+    expect(evicted.some((k) => k.startsWith('audio|'))).toBe(false)
+  })
+
+  it('imageCap 是总预算的固定份额', () => {
+    expect(imageCap(1000)).toBe(100)
+    expect(imageCap(0)).toBe(0)
   })
 })

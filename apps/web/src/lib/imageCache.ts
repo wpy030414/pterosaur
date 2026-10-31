@@ -1,4 +1,5 @@
 import { canonicalNeteaseImage } from '@pterosaur/shared/image'
+import { registerCacheCleaner } from './cacheRegistry.js'
 
 /**
  * 封面「已就绪」登记表。
@@ -88,3 +89,6 @@ export function clearCoverRegistry(): void {
   ready.clear()
   inflight.clear()
 }
+
+// 自注册到统一清缓存：新增内存缓存不必再改 clearCaches 的清单
+registerCacheCleaner(clearCoverRegistry)

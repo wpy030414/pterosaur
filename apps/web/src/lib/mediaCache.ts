@@ -96,6 +96,44 @@ export function effectiveCap(quota: number | null | undefined): number {
 }
 
 /**
+ * 封面在总预算中的**份额**。
+ *
+ * 封面是**可再生**的小文件，音频不可再生；二者共用一个 LRU 时，浏览大量封面会把音频
+ * 挤出去（下次听同一首仍要重新下载整曲）。故封面单独设份额上限，超出即淘汰最久未用的封面，
+ * 音频只受总预算约束。
+ */
+export const IMAGE_SHARE = 0.1
+
+/** 封面可用预算：总预算的 {@link IMAGE_SHARE}。 */
+export function imageCap(totalCap: number): number {
+  return Math.floor(totalCap * IMAGE_SHARE)
+}
+
+/**
+ * 只考虑封面的淘汰：封面总量超出 {@link imageCap} 时，按最久未用淘汰部分封面。
+ * 音频条目永不因本条规则被淘汰（返回里不会出现非 image 的 key）。
+ */
+export function pickImageEvictions(
+  metas: MediaMeta[],
+  totalCap: number,
+  incomingSize: number,
+): string[] {
+  const images = metas.filter((m) => m.kind === 'image')
+  const cap = imageCap(totalCap)
+  const total = images.reduce((sum, m) => sum + m.size, 0)
+  if (total + incomingSize <= cap) return []
+  const sorted = [...images].sort((a, b) => a.lastAccess - b.lastAccess)
+  const evicted: string[] = []
+  let projected = total + incomingSize
+  for (const m of sorted) {
+    if (projected <= cap) break
+    evicted.push(m.key)
+    projected -= m.size
+  }
+  return evicted
+}
+
+/**
  * 判断请求的 `Range` 头是否表达「从 0 起的整文件」语义：无 Range，或 `bytes=0-` / `bytes=0-N`
  * （部分浏览器会用 `bytes=0-1` 之类的短前缀探测资源，同样应走整文件路径）。
  * 仅这类请求由 SW 下载并缓存；起点 > 0 的 seek 切片不接管、由浏览器直接请求网络（见 ADR-012 后续修订）。

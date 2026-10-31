@@ -33,6 +33,7 @@ import {
   isWholeFileRange,
   isWholeFileResponse,
   pickEvictions,
+  pickImageEvictions,
   putCached,
   requestPersistentQuota,
   responseFromBlob,
@@ -157,9 +158,15 @@ async function storeResponse(
     const blob = await response.blob()
     if (blob.size === 0) return
 
-    const evicted = pickEvictions([...metaByKey.values()], capBytes, blob.size)
-    if (evicted.length) {
-      await deleteCached(evicted)
+    // 两级：先按总预算淘汰（音频 + 封面），再让封面不超过自己的份额
+    const evicted = new Set([
+      ...pickEvictions([...metaByKey.values()], capBytes, blob.size),
+      ...(base.kind === 'image'
+        ? pickImageEvictions([...metaByKey.values()], capBytes, blob.size)
+        : []),
+    ])
+    if (evicted.size) {
+      await deleteCached([...evicted])
       for (const k of evicted) metaByKey.delete(k)
     }
 

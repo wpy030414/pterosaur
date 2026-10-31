@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { registerCacheCleaner } from '../lib/cacheRegistry.js'
 
 interface AsyncState<T> {
   data: T | null
@@ -138,3 +139,6 @@ export function useAsync<T>(
     reload,
   }
 }
+
+// 自注册到统一清缓存：新增内存缓存不必再改 clearCaches 的清单
+registerCacheCleaner(clearAsyncCache)

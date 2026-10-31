@@ -11,14 +11,11 @@
  * **不动**资料库（收藏 / 歌单，属用户数据）与登录态本身。
  */
 import { clearMediaCache } from './mediaCache.js'
-import { clearLyricCache } from './lyricCache.js'
-import { clearCoverRegistry } from './imageCache.js'
-import { clearPrefetchRegistry } from './prefetch.js'
+import { clearRegisteredCaches } from './cacheRegistry.js'
 import {
   clearAllCaches as clearCacheStorage,
   postToServiceWorker,
 } from './pwa.js'
-import { clearAsyncCache } from '../hooks/useAsync.js'
 
 /** 清空本系统的全部缓存（凭证变化时调用；不影响资料库与登录态）。 */
 export async function clearAllAppCaches(): Promise<void> {
@@ -31,10 +28,7 @@ export async function clearAllAppCaches(): Promise<void> {
   postToServiceWorker({ type: 'MEDIA_CACHE_CLEARED' })
   // 2) Cache Storage：应用外壳 / 图标
   await clearCacheStorage()
-  // 3) 进程内内存缓存
-  clearLyricCache()
-  clearCoverRegistry()
-  clearAsyncCache()
-  // 媒体池已清空，页面侧「已预载」记录必须同步清：否则重登后会误判「已预载」而不再重发
-  clearPrefetchRegistry()
+  // 3) 进程内内存缓存：由各模块自注册（歌词 / 封面登记 / 取数 / 预载去重…）
+  //    新增内存缓存只需在自己的模块里 registerCacheCleaner()，不必回来改这里
+  clearRegisteredCaches()
 }
