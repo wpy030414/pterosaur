@@ -1,32 +1,25 @@
-import { COVER_LARGE, COVER_SMALL, coverAt } from '@pterosaur/shared/image'
 import { keyOf, type AudioLevel, type Track } from '@pterosaur/shared/types'
 import { audioKey } from './mediaCache.js'
 import { postToServiceWorker } from './pwa.js'
-import { preloadCover } from './imageCache.js'
 import { prefetchLyric } from './lyricCache.js'
 import { prefetchAudioMessage } from './prefetchProtocol.js'
 import { registerCacheCleaner } from './cacheRegistry.js'
 
 /**
- * 队列预载调度器：在网络良好且播放侧空闲时，预热队列**相邻曲目**（前后各 {@link PREFETCH_RADIUS}
- * 首）的音频 / 封面 / 歌词，使切歌近乎瞬时（见 ADR-037）。
+ * 队列**离线预取**调度器：在网络良好且播放侧空闲时，把队列**相邻曲目**（前后各
+ * {@link OFFLINE_PREFETCH_RADIUS} 首）下载进离线保存，并预热歌词内存缓存（见 ADR-060）。
  *
  * 分工：
  * - **纯函数**（`prefetchTargets` / `isNetworkGood` / `canPrefetch` / `prefetchKey`）不触浏览器 API，可单测；
  * - **副作用函数**（`prefetchTrack`）触网与缓存；
  * - **调度器**（`createPrefetchScheduler`）以注入的 `gate`/`run`/`idle` 解耦，便于确定性单测。
  *
- * 音频经 SW 消息由 SW 自行整段下载（页面不接字节）；封面走 `preloadCover`（`<img>` 的
- * `destination === 'image'`，被 SW `handleImage` 自动落同一 IDB 池）；歌词入内存缓存。
+ * 音频经 SW 消息由 SW 自行整段下载到离线保存（页面不接字节）。**封面不再预取**——封面交给
+ * 浏览器 HTTP 缓存（ADR-060），`Cover` 自身的 `<img>` 请求即可；省下的流量留给音频。
  */
 
-/** 预载半径：前后各 N 首。 */
-export const PREFETCH_RADIUS = 2
-/**
- * 预载封面档位：列表行/播放条用 SMALL、沉浸页用 LARGE——两者是**独立缓存条目**（key 含 `param`），
- * 故两档都预。若日后偏保守，收敛为 `[COVER_LARGE]` 即可。
- */
-export const PREFETCH_COVER_PXES = [COVER_SMALL, COVER_LARGE] as const
+/** 预取半径：前后各 N 首。只取 ±1：离线保存占用户存储，没必要为「两首之后」预下整曲。 */
+export const OFFLINE_PREFETCH_RADIUS = 1
 /** current 落定后的静置延迟（ms）：快速连跳时不断重置，收手后才发车，避免为「一闪而过」的曲白下。 */
 export const PREFETCH_SETTLE_MS = 2500
 /** 相邻两首预载之间的空闲间隔（ms）。 */
@@ -48,7 +41,7 @@ export interface ConnectionLike {
 export function prefetchTargets(
   queue: Track[],
   index: number,
-  radius = PREFETCH_RADIUS,
+  radius = OFFLINE_PREFETCH_RADIUS,
 ): Track[] {
   const n = queue.length
   if (n <= 1 || index < 0 || index >= n) return []
@@ -136,16 +129,13 @@ export function clearPrefetchRegistry(): void {
 }
 
 /**
- * 预载单首曲目：音频（经 SW 消息）+ 封面（两档）+ 歌词。幂等——已请求过则跳过。
- * **先登记再执行**：预载失败在本会话内不重试（避免失败循环），见 ADR-037。
+ * 预取单首曲目：音频下载进离线保存（经 SW 消息）+ 歌词。幂等——已请求过则跳过。
+ * **先登记再执行**：预取失败在本会话内不重试（避免失败循环）。
  */
 export function prefetchTrack(track: Track, level: AudioLevel): void {
   if (hasPrefetched(track, level)) return
   markPrefetched(track, level)
   postToServiceWorker(prefetchAudioMessage(track, level))
-  for (const px of PREFETCH_COVER_PXES) {
-    preloadCover(coverAt(track.cover, px))
-  }
   void prefetchLyric(track)
 }
 
@@ -154,7 +144,7 @@ export function prefetchTrack(track: Track, level: AudioLevel): void {
 export interface PrefetchSchedulerDeps {
   /** 现场门控：每一步执行前调用；返回 false 即停止后续（实时读 navigator / 播放器状态）。 */
   gate: () => boolean
-  /** 执行单首预载；默认 {@link prefetchTrack}。 */
+  /** 执行单首预取；默认 {@link prefetchTrack}。 */
   run?: (track: Track, level: AudioLevel) => void
   /** 空闲调度；默认 `requestIdleCallback`（退化 `setTimeout`）。 */
   idle?: (cb: () => void, timeoutMs: number) => number

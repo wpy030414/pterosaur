@@ -8,7 +8,7 @@ import {
 } from './idb.js'
 
 /**
- * 「重置」：清空**本机**的全部内容 —— IndexedDB（资料库 + 媒体缓存）、Cache Storage
+ * 「重置」：清空**本机**的全部内容 —— IndexedDB（资料库 + 离线保存）、Cache Storage
  * （应用外壳）、Service Worker 注册，以及 localStorage / sessionStorage（播放偏好、
  * 主题、云同步开关等）。随后整页刷新，使运行期状态一并复位。
  *

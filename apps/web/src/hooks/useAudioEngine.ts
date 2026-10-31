@@ -6,6 +6,11 @@ import { usePlayerQueue } from '../store/playerQueue.js'
 import { usePlaybackSession } from '../store/playbackSession.js'
 import { useLibrary } from '../store/library.js'
 import { useSettings } from '../store/settings.js'
+import {
+  lookupSavedAudio,
+  pickPlaybackSrc,
+  releaseSavedUrls,
+} from '../lib/offlineAudio.js'
 import { audioEl } from './audioElement.js'
 import {
   createWatchdog,
@@ -38,18 +43,27 @@ export function useAudioEngine(): void {
   // 已加载曲目的 `source:id`，用于区分「换曲」（重置进度）与「同曲换档」（保留进度）
   const loadedKeyRef = useRef('')
 
-  // current / level 变化 -> 换源（同曲换档时保留播放位置）
-  const current = usePlaybackSession((s) => s.current)
-  const level = useSettings((s) => s.level)
-  useEffect(() => {
+  /** 已确认的本地副本地址（离线时优先用它）；在线时为 null。 */
+  const savedSrcRef = useRef<{ key: string; url: string } | null>(null)
+
+  /**
+   * 换源：在线时 `src` 是 `/stream/...`（浏览器 HTTP 缓存负责省流，见 ADR-060）；
+   * 离线且已保存时换成 `blob:`（由 `lookupSavedAudio` 建好）。
+   * 同曲换档 / 在线离线切换都保留播放位置。
+   */
+  const loadSource = (
+    streamSrc: string,
+    sameTrack: boolean,
+    offline: boolean,
+  ) => {
     const audio = audioEl.current
     if (!audio) return
-    const src = audioSrc(current, level)
-    const key = current ? keyOf(current) : ''
-    const sameTrack = !!key && key === loadedKeyRef.current
-    const resumeAt = sameTrack ? audio.currentTime : 0
-    loadedKeyRef.current = key
-    // 换源即进入缓冲态（待 canplay/playing 后解除），并复位停滞看门狗
+    const key = loadedKeyRef.current
+    const saved =
+      offline && savedSrcRef.current?.key === key
+        ? savedSrcRef.current.url
+        : null
+    const src = pickPlaybackSrc(!offline, saved, streamSrc)
     getState().setBuffering(Boolean(src))
     watchdogRef.current?.reset()
     if (!src) {
@@ -57,11 +71,14 @@ export function useAudioEngine(): void {
       audio.load()
       return
     }
-    const abs = new URL(src, window.location.origin).href
+    const abs = src.startsWith('blob:')
+      ? src
+      : new URL(src, window.location.origin).href
     if (audio.src === abs) return
+    const resumeAt = sameTrack ? audio.currentTime : 0
     audio.src = abs
     if (sameTrack) {
-      // 同曲换档：重载并保留位置（与弱网恢复同一手法），并豁免 load 触发的 pause
+      // 同曲换档 / 离线切换：重载并保留位置（与弱网恢复同一手法），并豁免 load 触发的 pause
       recoveringRef.current = true
       audio.load()
       const seekBack = () => {
@@ -81,7 +98,89 @@ export function useAudioEngine(): void {
     } else {
       audio.load()
     }
+  }
+
+  // current / level 变化 -> 换源（同曲换档时保留播放位置）
+  const current = usePlaybackSession((s) => s.current)
+  const level = useSettings((s) => s.level)
+  useEffect(() => {
+    if (!current) {
+      loadedKeyRef.current = ''
+      getState().setBuffering(false)
+      const audio = audioEl.current
+      if (audio) {
+        audio.removeAttribute('src')
+        audio.load()
+      }
+      return
+    }
+    const key = keyOf(current)
+    const sameTrack = key === loadedKeyRef.current
+    loadedKeyRef.current = key
+    let cancelled = false
+
+    const offline = !navigator.onLine
+    const apply = (savedUrl: string | null) => {
+      if (cancelled) return
+      savedSrcRef.current = savedUrl ? { key, url: savedUrl } : null
+      loadSource(audioSrc(current, level), sameTrack, !navigator.onLine)
+      // 离线且未保存：明确告知，而不是让 <audio> 报一个含糊的「播放出错」
+      if (!navigator.onLine && !savedUrl) {
+        getState().setPlaying(false)
+        getState().setPlayError('该曲目未离线保存，暂时无法播放')
+      }
+    }
+
+    if (offline) {
+      // 离线：先查本地副本，查到才播
+      void lookupSavedAudio(current.source, current.id, level)
+        .then(apply)
+        .catch(() => apply(null))
+    } else {
+      apply(null)
+    }
+    return () => {
+      cancelled = true
+    }
   }, [current, level])
+
+  // 在线 ⇄ 离线：同一曲也要换源（流地址 ↔ blob），并保留播放位置
+  useEffect(() => {
+    const onOffline = () => {
+      const { current: cur } = getState()
+      if (!cur) return
+      const key = keyOf(cur)
+      void lookupSavedAudio(cur.source, cur.id, level)
+        .then((url) => {
+          if (!url) {
+            getState().setPlaying(false)
+            getState().setPlayError('该曲目未离线保存，暂时无法播放')
+            return
+          }
+          getState().setPlayError(null)
+          savedSrcRef.current = { key, url }
+          loadSource(audioSrc(cur, level), true, true)
+        })
+        .catch(() => {})
+    }
+    const onOnline = () => {
+      const { current: cur } = getState()
+      if (!cur) return
+      if (getState().playError === '该曲目未离线保存，暂时无法播放') {
+        getState().setPlayError(null)
+      }
+      loadSource(audioSrc(cur, level), true, false)
+    }
+    const onClear = () => releaseSavedUrls()
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline-audio-cleared', onClear)
+    return () => {
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline-audio-cleared', onClear)
+    }
+  }, [level])
 
   // isPlaying -> play/pause
   const isPlaying = usePlaybackSession((s) => s.isPlaying)
@@ -224,11 +323,9 @@ export function useAudioEngine(): void {
       const s = getState()
       s.setPlaying(false)
       s.setBuffering(false)
-      // 已由 SW 标记为「需登录」（后端 403）：保留该提示，勿被中性文案覆盖
-      if (s.playError && s.playErrorNeedLogin) return
       const err = audio.error
       // 元素的 error 无法区分网络失败 / 源不可用 / VIP 受限，一律给中性提示；
-      // VIP 的「登录解锁」引导由 SW 针对后端 403 的通知单独驱动。
+      // 离线且未保存的曲目已在换源时给出明确提示，这里仅在没有既有提示时兜底。
       s.setPlayError(err ? '播放出错，请检查网络后重试' : '播放中断')
     }
 

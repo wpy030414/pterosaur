@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Play,
   Pause,
@@ -12,6 +12,8 @@ import {
   Disc3,
   Loader2,
   Star,
+  HardDriveDownload,
+  Check,
 } from 'lucide-react'
 import { playerCommands, currentPlayMode } from '../store/player.js'
 import { usePlayerQueue } from '../store/playerQueue.js'
@@ -19,6 +21,8 @@ import { usePlaybackSession } from '../store/playbackSession.js'
 import { usePlayerUi } from '../store/playerUi.js'
 import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
+import { useSettings } from '../store/settings.js'
+import { useOffline } from '../store/offline.js'
 import { startNowPlayingTransition } from '../lib/nowPlayingTransition.js'
 import { seekTo } from '../hooks/audioElement.js'
 import { formatTime, keyOf } from '@pterosaur/shared/types'
@@ -85,6 +89,15 @@ export function PlayerBar() {
   const mode = currentPlayMode(shuffle, repeat)
   const modeMeta = PLAY_MODE_META[mode]
   const ModeIcon = modeMeta.icon
+
+  // 「保存离线」：当前曲是否已存本地。切曲 / 换档时重查（只读元数据，开销可忽略）
+  const level = useSettings((s) => s.level)
+  const savedState = useOffline((s) => s.trackState)
+  const refreshSaved = useOffline((s) => s.refreshTrack)
+  const saveOffline = useOffline((s) => s.saveTrack)
+  useEffect(() => {
+    void refreshSaved(current, level)
+  }, [current, level, refreshSaved])
 
   return (
     <footer className="playerbar">
@@ -178,6 +191,29 @@ export function PlayerBar() {
                 </div>
               </div>
               <div className="playerbar__actions">
+                <IconButton
+                  className="playerbar__save"
+                  label={
+                    savedState === 'saved'
+                      ? '已保存离线'
+                      : savedState === 'saving'
+                        ? '正在保存'
+                        : '保存离线'
+                  }
+                  size="sm"
+                  active={savedState === 'saved'}
+                  onClick={() => void saveOffline(current, level)}
+                  disabled={savedState === 'saving'}
+                  data-testid="save-offline-button"
+                >
+                  {savedState === 'saving' ? (
+                    <Loader2 size={16} strokeWidth={2.2} className="spinner" />
+                  ) : savedState === 'saved' ? (
+                    <Check size={16} strokeWidth={2.2} />
+                  ) : (
+                    <HardDriveDownload size={16} strokeWidth={2} />
+                  )}
+                </IconButton>
                 <AddToPlaylistMenu track={current} direction="up">
                   {({ onClick, open }) => (
                     <IconButton

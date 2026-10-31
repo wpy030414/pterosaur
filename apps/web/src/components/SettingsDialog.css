@@ -84,6 +84,23 @@
   color: var(--text-secondary);
 }
 
+/* 离线保存的复选开关：整行可点，与按钮同高 */
+.settings-dialog__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-dialog__check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .settings-dialog__error {
   margin-top: 8px;
   font-size: 13px;

@@ -5,8 +5,10 @@
  * 新增一个内存缓存就要记得回来改一处——漏掉即是「留着旧身份的数据」的隐蔽 bug。
  * 改为各模块在自己的文件里 `registerCacheCleaner()`，清缓存时统一遍历。
  *
- * 只登记**内存**缓存；IDB 媒体池与 Cache Storage 有明确的单一所有者
+ * 只登记**内存**缓存；IDB 离线保存与 Cache Storage 有明确的单一所有者
  * （`mediaCache` / `pwa`），由 `clearCaches` 直接调用，无需登记。
+ * 封面不进应用层缓存（交给浏览器 HTTP 缓存，见 ADR-060），故这里只剩「就绪登记表」
+ * 这类内存态。
  */
 
 type Cleaner = () => void

@@ -18,15 +18,16 @@ export const DB_NAME = 'pterosaur'
  * v2 起用 `media` / `mediaMeta` 取代 v1 的 `audio` / `audioMeta`；
  * v3 因音频缓存键加入源前缀（`<source>:<id>|<level>`），旧键不再命中，升级时清空媒体缓存重建。
  * v4 新增 `background` store（自定义应用背景的媒体本体）。
+ * v5 媒体池语义改为「离线保存」：只装音频、不再缓存封面（ADR-060），升级时清空重建。
  */
-export const DB_VERSION = 4
+export const DB_VERSION = 5
 /** 存 zustand persist 封套 `{state, version}` 的通用键值 store（out-of-line key）。 */
 export const LIBRARY_STORE = 'library'
-/** 存**全部媒体** blob 的 store（音频 + 封面；out-of-line key = 缓存 key，值为裸 `Blob`）。 */
+/** 存**离线保存**的音频 blob（out-of-line key = 缓存 key，值为裸 `Blob`）。 */
 export const MEDIA_STORE = 'media'
 /**
- * 存媒体缓存的元数据（`keyPath: 'key'`，含 `kind: 'audio' | 'image'`）。
- * 与 blob 分离，使 LRU 淘汰只需遍历轻量元数据、无需把全部 blob 载入内存。
+ * 存离线保存的元数据（`keyPath: 'key'`）。与 blob 分离，使 LRU 淘汰只需遍历轻量元数据、
+ * 无需把全部 blob 载入内存。
  */
 export const MEDIA_META_STORE = 'mediaMeta'
 /**
@@ -35,6 +36,8 @@ export const MEDIA_META_STORE = 'mediaMeta'
  * （见 `lib/clearCaches.ts`）。
  */
 export const BACKGROUND_STORE = 'background'
+/** 存「离线保存」的会话状态（auto / explicit）与最近动作，重启后仍能区分来源（v5）。 */
+export const OFFLINE_META_STORE = 'offlineMeta'
 /** v1 遗留的音频 store 名（v2 升级时删除；缓存可弃，`library` 不受影响）。 */
 const LEGACY_AUDIO_STORE = 'audio'
 const LEGACY_AUDIO_META_STORE = 'audioMeta'
@@ -60,8 +63,9 @@ function openDB(): Promise<IDBDatabase | null> {
     req.onupgradeneeded = (event) => {
       const db = req.result
       const oldVersion = event.oldVersion
-      // v3：音频缓存键加入源前缀，旧键（无源）不再命中——清空媒体缓存重建（缓存可弃）。
-      if (oldVersion > 0 && oldVersion < 3) {
+      // v5：媒体池改为「离线保存」专用（只有音频，封面交浏览器缓存）——旧键 / 旧封面作废。
+      // 同时覆盖 v3 的「键加源前缀」语义（v3 < 5），故不再单独保留 v3 分支。
+      if (oldVersion > 0 && oldVersion < 5) {
         if (db.objectStoreNames.contains(MEDIA_STORE))
           db.deleteObjectStore(MEDIA_STORE)
         if (db.objectStoreNames.contains(MEDIA_META_STORE))
@@ -79,6 +83,11 @@ function openDB(): Promise<IDBDatabase | null> {
         const meta = db.createObjectStore(MEDIA_META_STORE, { keyPath: 'key' })
         // LRU 遍历/淘汰辅助索引
         meta.createIndex('lastAccess', 'lastAccess')
+      }
+      if (!db.objectStoreNames.contains(OFFLINE_META_STORE)) {
+        // 离线保存的来源：`auto`（队列预取）/ `explicit`（用户点了「保存离线」）。
+        // 清理时据此保留用户显式保存的曲目，只删自动预取的部分。
+        db.createObjectStore(OFFLINE_META_STORE)
       }
       if (!db.objectStoreNames.contains(BACKGROUND_STORE)) {
         // 自定义应用背景的媒体本体（单条，out-of-line key 固定）

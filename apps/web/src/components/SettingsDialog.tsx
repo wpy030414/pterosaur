@@ -18,10 +18,11 @@ import { useSettingsDialog, confirmDialog } from '../store/ui.js'
 import { useSync } from '../store/sync.js'
 import { useSettings } from '../store/settings.js'
 import {
-  clearMediaCache,
-  mediaUsage,
-  type MediaUsage,
+  clearOfflineAudio,
+  offlineUsage,
+  type OfflineUsage,
 } from '../lib/mediaCache.js'
+import { useOfflinePrefs } from '../store/offlinePrefs.js'
 import { checkForUpdates, postToServiceWorker } from '../lib/pwa.js'
 import { pushEmptyLibrary } from '../lib/sync.js'
 import { resetAll } from '../lib/reset.js'
@@ -64,8 +65,10 @@ export function SettingsDialog() {
   const setLevel = useSettings((s) => s.setLevel)
   const background = useSettings((s) => s.background)
   const setBackground = useSettings((s) => s.setBackground)
+  const autoPrefetch = useOfflinePrefs((s) => s.autoPrefetch)
+  const setAutoPrefetch = useOfflinePrefs((s) => s.setAutoPrefetch)
 
-  const [usage, setUsage] = useState<MediaUsage | null>(null)
+  const [usage, setUsage] = useState<OfflineUsage | null>(null)
   const [quota, setQuota] = useState<number | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
   const [bgBusy, setBgBusy] = useState(false)
@@ -74,7 +77,7 @@ export function SettingsDialog() {
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const refresh = useCallback(async () => {
-    setUsage(await mediaUsage())
+    setUsage(await offlineUsage())
     try {
       if (navigator.storage?.estimate) {
         const { quota: q } = await navigator.storage.estimate()
@@ -104,11 +107,17 @@ export function SettingsDialog() {
 
   const total = usage?.bytes ?? 0
 
+  /**
+   * 清除**自动预取**的离线保存（保留用户显式保存的曲目）。
+   *
+   * 自动预取是「顺手下的」，属于应用替用户做的决定，清理它无需二次确认；
+   * 显式保存的曲目是用户花钱买的流量，只在「重置」里一并清掉。
+   */
   const handleClear = async () => {
     if (busy) return
     setBusy('clear')
     try {
-      await clearMediaCache()
+      await clearOfflineAudio(true)
       // 通知 SW 清空其内存中的元数据索引，避免清缓存后 LRU 仍按旧账目淘汰
       postToServiceWorker({ type: 'MEDIA_CACHE_CLEARED' })
       await refresh()
@@ -313,7 +322,20 @@ export function SettingsDialog() {
         </section>
 
         <section className="settings-dialog__section">
-          <h3 className="settings-dialog__section-title">缓存与数据</h3>
+          <h3 className="settings-dialog__section-title">离线保存</h3>
+          <p className="settings-dialog__desc">
+            播放时自动把队列中的相邻曲目存到本机，断网也能听。封面与在线播放的流量由浏览器
+            自行缓存，不在这里统计。
+          </p>
+          <label className="settings-dialog__check">
+            <input
+              type="checkbox"
+              checked={autoPrefetch}
+              onChange={(e) => setAutoPrefetch(e.target.checked)}
+              data-testid="auto-prefetch"
+            />
+            <span>播放时自动保存下一首</span>
+          </label>
           <div className="settings-dialog__stat">
             <span className="settings-dialog__stat-label">已占用</span>
             <span
@@ -327,8 +349,7 @@ export function SettingsDialog() {
             className="settings-dialog__breakdown"
             data-testid="cache-breakdown"
           >
-            歌曲 {formatBytes(usage?.audioBytes ?? 0)} · 封面{' '}
-            {formatBytes(usage?.imageBytes ?? 0)}
+            共 {usage?.count ?? 0} 首
             {quota ? ` · 浏览器配额 ${formatBytes(quota)}` : ''}
           </p>
           <div className="settings-dialog__btnrow">
@@ -344,7 +365,7 @@ export function SettingsDialog() {
               ) : (
                 <Trash2 size={15} />
               )}
-              清理缓存
+              清除自动保存
             </button>
             <button
               type="button"

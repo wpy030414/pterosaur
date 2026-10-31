@@ -19,8 +19,8 @@ import {
  * 拉取封面图片并以 `cover.<ext>` 写入 ZIP；成功时返回实际文件名（供 `meta.json` 引用），
  * 失败返回 null。
  *
- * 封面是网易云 CDN 上的公共静态资源、无条件返回 `access-control-allow-origin: *`
- * （图片直连的既有例外，见 ADR-013），故直接 `fetch` 取字节。任何失败都静默跳过——
+ * 封面是网易云 CDN 上的公共静态资源、无条件返回 `access-control-allow-origin: *`,
+ * 故直接 `fetch` 取字节（应用层不缓存封面，见 ADR-060）。任何失败都静默跳过——
  * 封面缺失不应让整次翻录失败。
  */
 async function addCoverToZip(

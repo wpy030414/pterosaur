@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAllAppCaches } from '../../src/lib/clearCaches.js'
-import { clearMediaCache } from '../../src/lib/mediaCache.js'
+import { clearOfflineAudio } from '../../src/lib/mediaCache.js'
 import {
   clearAllCaches as clearCacheStorage,
   postToServiceWorker,
 } from '../../src/lib/pwa.js'
 import { clearRegisteredCaches } from '../../src/lib/cacheRegistry.js'
 
-vi.mock('../../src/lib/mediaCache.js', () => ({ clearMediaCache: vi.fn() }))
+vi.mock('../../src/lib/mediaCache.js', () => ({ clearOfflineAudio: vi.fn() }))
 vi.mock('../../src/lib/pwa.js', () => ({
   clearAllCaches: vi.fn().mockResolvedValue(undefined),
   postToServiceWorker: vi.fn(),
@@ -18,14 +18,14 @@ vi.mock('../../src/lib/cacheRegistry.js', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(clearMediaCache).mockResolvedValue(undefined)
+  vi.mocked(clearOfflineAudio).mockResolvedValue(undefined)
   vi.mocked(clearCacheStorage).mockResolvedValue(undefined)
 })
 
 describe('clearAllAppCaches', () => {
   it('清空媒体池 + 通知 SW + Cache Storage + 登记过的内存缓存', async () => {
     await clearAllAppCaches()
-    expect(clearMediaCache).toHaveBeenCalledOnce()
+    expect(clearOfflineAudio).toHaveBeenCalledOnce()
     expect(postToServiceWorker).toHaveBeenCalledWith({
       type: 'MEDIA_CACHE_CLEARED',
     })
@@ -35,7 +35,7 @@ describe('clearAllAppCaches', () => {
   })
 
   it('媒体池清理抛错也不阻断其余清理', async () => {
-    vi.mocked(clearMediaCache).mockRejectedValue(new Error('idb'))
+    vi.mocked(clearOfflineAudio).mockRejectedValue(new Error('idb'))
     await expect(clearAllAppCaches()).resolves.toBeUndefined()
     expect(clearCacheStorage).toHaveBeenCalledOnce()
     expect(clearRegisteredCaches).toHaveBeenCalledOnce()

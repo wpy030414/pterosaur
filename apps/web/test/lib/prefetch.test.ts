@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { COVER_LARGE, COVER_SMALL, coverAt } from '@pterosaur/shared/image'
 import { keyOf, type Track } from '@pterosaur/shared/types'
 import {
-  PREFETCH_COVER_PXES,
+  OFFLINE_PREFETCH_RADIUS,
   canPrefetch,
   clearPrefetchRegistry,
   createPrefetchScheduler,
@@ -15,16 +14,13 @@ import {
 } from '../../src/lib/prefetch.js'
 import { audioKey } from '../../src/lib/mediaCache.js'
 import { postToServiceWorker } from '../../src/lib/pwa.js'
-import { preloadCover } from '../../src/lib/imageCache.js'
 import { prefetchLyric } from '../../src/lib/lyricCache.js'
 
 vi.mock('../../src/lib/pwa.js', () => ({ postToServiceWorker: vi.fn() }))
-vi.mock('../../src/lib/imageCache.js', () => ({ preloadCover: vi.fn() }))
 vi.mock('../../src/lib/lyricCache.js', () => ({
   prefetchLyric: vi.fn().mockResolvedValue(undefined),
 }))
 
-/** 使用网易云镜像主机，使 `coverAt` 能按尺寸改写出两个不同 URL。 */
 const NET_COVER = 'https://p1.music.126.net/abc/cover.jpg'
 
 function track(id: string, cover = NET_COVER): Track {
@@ -45,9 +41,14 @@ const Q5 = [track('1'), track('2'), track('3'), track('4'), track('5')]
 afterEach(() => vi.useRealTimers())
 
 describe('prefetchTargets', () => {
-  it('长队列取前后各 2 首、不含当前曲，顺序为 +1,-1,+2,-2', () => {
-    // index 2：+1→'4'，-1→'2'，+2→'5'，-2→'1'
-    expect(prefetchTargets(Q5, 2).map((t) => t.id)).toEqual([
+  it('默认只取前后各 1 首（离线保存占用户存储，不为两首之后预下整曲）', () => {
+    expect(OFFLINE_PREFETCH_RADIUS).toBe(1)
+    // index 2：+1→'4'，-1→'2'
+    expect(prefetchTargets(Q5, 2).map((t) => t.id)).toEqual(['4', '2'])
+  })
+
+  it('显式半径 2 时顺序为 +1,-1,+2,-2', () => {
+    expect(prefetchTargets(Q5, 2, 2).map((t) => t.id)).toEqual([
       '4',
       '2',
       '5',
@@ -56,25 +57,15 @@ describe('prefetchTargets', () => {
   })
 
   it('index 0 时向前回绕到队尾', () => {
-    // +1→'2'，-1→'5'，+2→'3'，-2→'4'
-    expect(prefetchTargets(Q5, 0).map((t) => t.id)).toEqual([
-      '2',
-      '5',
-      '3',
-      '4',
-    ])
+    // +1→'2'，-1→'5'
+    expect(prefetchTargets(Q5, 0).map((t) => t.id)).toEqual(['2', '5'])
   })
 
-  it('短队列回绕去重：len1→0，len2→1，len3→2，len4→3', () => {
+  it('短队列回绕去重：len1→0，len2→1，len3→2', () => {
     expect(prefetchTargets([track('1')], 0)).toEqual([])
     expect(prefetchTargets(Q5.slice(0, 2), 0).map((t) => t.id)).toEqual(['2'])
     expect(prefetchTargets(Q5.slice(0, 3), 0).map((t) => t.id)).toEqual([
       '2',
-      '3',
-    ])
-    expect(prefetchTargets(Q5.slice(0, 4), 0).map((t) => t.id)).toEqual([
-      '2',
-      '4',
       '3',
     ])
   })
@@ -151,7 +142,7 @@ describe('prefetchTrack', () => {
     vi.clearAllMocks()
   })
 
-  it('发 SW 消息 + 两档封面 + 歌词，重复调用不重发', () => {
+  it('发 SW 消息 + 歌词，重复调用不重发；不再预取封面（交给浏览器缓存）', () => {
     const t = track('9')
     prefetchTrack(t, 'exhigh')
 
@@ -161,15 +152,12 @@ describe('prefetchTrack', () => {
       id: '9',
       level: 'exhigh',
     })
-    expect(preloadCover).toHaveBeenCalledTimes(PREFETCH_COVER_PXES.length)
-    expect(preloadCover).toHaveBeenCalledWith(coverAt(t.cover, COVER_SMALL))
-    expect(preloadCover).toHaveBeenCalledWith(coverAt(t.cover, COVER_LARGE))
     expect(prefetchLyric).toHaveBeenCalledWith(t)
 
-    // 幂等：已预载不再重发
+    // 幂等：已预取不再重发
     prefetchTrack(t, 'exhigh')
     expect(postToServiceWorker).toHaveBeenCalledTimes(1)
-    expect(preloadCover).toHaveBeenCalledTimes(PREFETCH_COVER_PXES.length)
+    expect(prefetchLyric).toHaveBeenCalledTimes(1)
   })
 
   it('换档位后按新档重发', () => {

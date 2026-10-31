@@ -5,6 +5,24 @@ import {
 } from '@pterosaur/shared/types'
 import { extFromMime, safeRipName } from '@pterosaur/shared/rip'
 
+/**
+ * 把一段已取到的字节存成本机文件（浏览器下载）。
+ *
+ * 与 {@link downloadTrack} 分开：离线保存的「导出」直接持有 blob，不必再走一次网络
+ * （断网时也能导出）；文件名规则与下载一致。
+ */
+export function saveBlobAsFile(track: Track, blob: Blob, mime: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = safeFileName(track, extFromMime(mime))
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // 延迟释放，确保下载已开始
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 /** 将曲目名清洗为安全的文件名（命名工具与翻录共用，见 `@pterosaur/shared/rip`）。 */
 function safeFileName(track: Track, ext: string): string {
   return `${safeRipName(`${track.title} - ${track.artist}`)}.${ext}`
@@ -31,15 +49,5 @@ export async function downloadTrack(
       needLogin ? '该曲目暂不可下载' : `下载失败（${res.status}）`,
     )
   }
-  const blob = await res.blob()
-  const ext = extFromMime(res.headers.get('content-type'))
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = safeFileName(track, ext)
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  // 延迟释放，确保下载已开始
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  saveBlobAsFile(track, await res.blob(), res.headers.get('content-type') ?? '')
 }
