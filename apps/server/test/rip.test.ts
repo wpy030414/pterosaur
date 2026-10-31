@@ -1,16 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReadableStream as NodeWebReadableStream } from 'node:stream/web'
 import type { Track } from '@pterosaur/shared/types'
 import type { RipEvent } from '@pterosaur/shared/rip'
 import { createApp } from '../src/app.js'
 import { neteaseAdapter } from '../src/sources/netease.js'
 import {
-  _resetRipForTest,
+  createRipEngine,
   isAllowedCoverUrl,
-  lastResultSnapshot,
-  ripCapabilities,
   sanitizeVolumeLabel,
-  subscribeRip,
   validateBurnBody,
 } from '../src/rip.js'
 import { toCdPcm } from '../src/ffmpeg.js'
@@ -44,7 +41,9 @@ vi.mock('../src/imapi.js', async (importOriginal) => {
   }
 })
 
-const app = createApp()
+/** 本文件独占的刻录引擎：状态随实例隔离，无需跨用例重置。 */
+const rip = createRipEngine()
+const app = createApp({ rip })
 
 /** 回环 / 远端两种连接环境（getConnInfo 读 env.incoming.socket.remoteAddress）。 */
 const loopbackEnv = {
@@ -135,18 +134,17 @@ const burnRequest = (body: unknown, env: unknown) =>
 
 /** 等待任务到 done 终态（模拟刻录刻意放慢 ~0.5s，waitFor 默认 1s 太紧）。 */
 const waitDone = () =>
-  vi.waitFor(() => expect(lastResultSnapshot()?.status).toBe('done'), {
+  vi.waitFor(() => expect(rip.lastResultSnapshot()?.status).toBe('done'), {
     timeout: 8000,
   })
 
-beforeEach(() => {
-  _resetRipForTest()
-})
+/** 等待引擎回到空闲：任务终态与 `job` 释放之间有一小段异步窗口，新请求否则会 409。 */
+const waitIdle = () =>
+  vi.waitFor(() => expect(rip.jobId()).toBeNull(), { timeout: 8000 })
 
 afterEach(() => {
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
-  _resetRipForTest()
 })
 
 describe('validateBurnBody', () => {
@@ -234,8 +232,17 @@ describe('回环门控', () => {
     expect((await burnRequest(validBody(), remoteEnv)).status).toBe(403)
   })
 
+  it('非 Windows 且未开模拟刻录：/api/rip/burn 回 501（路由层平台门控）', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'linux' })
+    const songUrl = vi.spyOn(neteaseAdapter, 'songUrl')
+    const res = await burnRequest(validBody(), loopbackEnv)
+    expect(res.status).toBe(501)
+    expect(rip.jobId()).toBeNull()
+    expect(songUrl).not.toHaveBeenCalled()
+  })
+
   it('ripCapabilities：模拟环境下报告可用刻录机与 ffmpeg', async () => {
-    const caps = await ripCapabilities()
+    const caps = await rip.ripCapabilities()
     expect(caps.simulated).toBe(true)
     expect(caps.supported).toBe(true)
     expect(caps.recorders).toHaveLength(1)
@@ -258,11 +265,11 @@ describe('回环门控', () => {
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(202)
     await vi.waitFor(
       () => {
-        expect(lastResultSnapshot()?.status).toBe('error')
+        expect(rip.lastResultSnapshot()?.status).toBe('error')
       },
       { timeout: 8000 },
     )
-    expect(lastResultSnapshot()?.error).toContain('不支持数据刻录')
+    expect(rip.lastResultSnapshot()?.error).toContain('不支持数据刻录')
     expect(songUrl).not.toHaveBeenCalled()
   })
 })
@@ -274,7 +281,7 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
       .spyOn(neteaseAdapter, 'songUrl')
       .mockResolvedValue(['https://cdn.example/x.flac'])
     const events: RipEvent[] = []
-    subscribeRip((ev) => events.push(ev))
+    rip.subscribe((ev) => events.push(ev))
 
     const res = await burnRequest(validBody(), loopbackEnv)
     expect(res.status).toBe(202)
@@ -282,7 +289,8 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     expect(data.jobId).toMatch(/^burn-/)
 
     await waitDone()
-    const result = lastResultSnapshot()!
+    await waitIdle()
+    const result = rip.lastResultSnapshot()!
     expect(result.meta?.discType).toBe('data')
     expect(result.meta?.tracks[0].file).toBe('1 - 曲-a.flac')
     expect(result.meta?.cover).toEqual({
@@ -309,18 +317,19 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(202)
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(409)
     await waitDone()
+    await waitIdle()
   })
 
   it('单轨不可获取即 fail-fast（错误事件 + 终态 error）', async () => {
     stubFetch()
     vi.spyOn(neteaseAdapter, 'songUrl').mockResolvedValue([])
     const events: RipEvent[] = []
-    subscribeRip((ev) => events.push(ev))
+    rip.subscribe((ev) => events.push(ev))
 
     expect((await burnRequest(validBody(), loopbackEnv)).status).toBe(202)
     await vi.waitFor(
       () => {
-        expect(lastResultSnapshot()?.status).toBe('error')
+        expect(rip.lastResultSnapshot()?.status).toBe('error')
       },
       { timeout: 8000 },
     )
@@ -334,7 +343,7 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
       'https://cdn.example/x.flac',
     ])
     const events: RipEvent[] = []
-    subscribeRip((ev) => events.push(ev))
+    rip.subscribe((ev) => events.push(ev))
 
     const res = await burnRequest(
       validBody({ discType: 'audio', tracks: [track('a')] }),
@@ -342,7 +351,8 @@ describe('刻录任务（模拟刻录 + 假取流）', () => {
     )
     expect(res.status).toBe(202)
     await waitDone()
-    const result = lastResultSnapshot()!
+    await waitIdle()
+    const result = rip.lastResultSnapshot()!
     expect(result.meta?.discType).toBe('audio')
     expect(result.meta?.tracks[0].file).toBeUndefined()
     expect(result.meta?.cover).toBeUndefined()

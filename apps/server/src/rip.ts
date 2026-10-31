@@ -54,32 +54,12 @@ import {
  * - 暂存目录 `os.tmpdir()/pterosaur-burn-*`，无论成败均清理；启动时清扫 24h 残留。
  */
 
-/* ============================ 事件订阅（进程内） ============================ */
-
 type RipListener = (ev: RipEvent) => void
 
-const listeners = new Set<RipListener>()
+/** 终态保留时长：消除「订阅晚于任务结束」的竞态（SSE 快照帧回放）。 */
+const LAST_RESULT_TTL_MS = 60_000
 
-/** 订阅刻录事件；返回退订函数（幂等）。 */
-export function subscribeRip(cb: RipListener): () => void {
-  listeners.add(cb)
-  return () => {
-    listeners.delete(cb)
-  }
-}
-
-function broadcastRip(ev: RipEvent): void {
-  for (const cb of listeners) {
-    try {
-      cb(ev)
-    } catch {
-      /* 单个订阅者异常不影响其余 */
-    }
-  }
-}
-
-/* ============================ 单任务状态 ============================ */
-
+/** 进行中任务的内部状态（对外只经 {@link RipJobSnapshot} 暴露）。 */
 interface RipJobState {
   id: string
   phase: RipPhase
@@ -90,49 +70,131 @@ interface RipJobState {
   startedAt: number
 }
 
-let job: RipJobState | null = null
+/**
+ * 刻录任务引擎。**状态在实例里**（不落模块级单例），用 {@link createRipEngine} 按需创建：
+ * 单测可各自持有一份互不污染，生产由 `app` 持有一份。
+ *
+ * 并发安全由实例内部的「先占位再异步执行」保证：`startBurn` 同步置 `job`，
+ * 因此两条并发请求不会都看到空闲（无需路由层再查一次，也没有 TOCTOU 窗口）。
+ */
+export interface RipEngine {
+  startBurn(input: RunBurnInput): { id: string } | { busy: true }
+  jobSnapshot(): RipJobSnapshot | null
+  /** 当前任务 id（无任务为 null）；供测试 / 排障等待「上一任务已释放」。 */
+  jobId(): string | null
+  lastResultSnapshot(): RipLastResult | null
+  subscribe(cb: RipListener): () => void
+  ripCapabilities(): Promise<RipCapabilities>
+}
 
-/** 终态保留时长：消除「订阅晚于任务结束」的竞态（SSE 快照帧回放）。 */
-const LAST_RESULT_TTL_MS = 60_000
-let lastResult: { value: RipLastResult; expiresAt: number } | null = null
+export function createRipEngine(): RipEngine {
+  let job: RipJobState | null = null
+  let lastResult: { value: RipLastResult; expiresAt: number } | null = null
+  let capsCache: { at: number; value: RipCapabilities } | null = null
+  const listeners = new Set<RipListener>()
 
-/** 当前任务快照（无任务为 null）。 */
-export function jobSnapshot(): RipJobSnapshot | null {
-  if (!job) return null
+  const broadcast = (ev: RipEvent): void => {
+    for (const cb of listeners) {
+      try {
+        cb(ev)
+      } catch {
+        /* 单个订阅者异常不影响其余 */
+      }
+    }
+  }
+
+  const emitProgress = (
+    phase: RipPhase,
+    current: number,
+    total: number,
+    percent: number | null = null,
+  ): void => {
+    if (job) {
+      job.phase = phase
+      job.current = current
+      job.total = total
+      job.percent = percent
+    }
+    broadcast({ type: 'progress', phase, current, total, percent })
+  }
+
+  const snapshot = (): RipJobSnapshot | null =>
+    job
+      ? {
+          jobId: job.id,
+          phase: job.phase,
+          current: job.current,
+          total: job.total,
+          percent: job.percent,
+          discType: job.discType,
+          startedAt: job.startedAt,
+        }
+      : null
+
+  const lastSnapshot = (): RipLastResult | null => {
+    if (!lastResult) return null
+    if (Date.now() > lastResult.expiresAt) {
+      lastResult = null
+      return null
+    }
+    return lastResult.value
+  }
+
+  const capabilities = async (): Promise<RipCapabilities> => {
+    if (capsCache && Date.now() - capsCache.at < CAPS_TTL_MS)
+      return capsCache.value
+    const value = await probeCapabilities()
+    capsCache = { at: Date.now(), value }
+    return value
+  }
+
+  const startBurn = (input: RunBurnInput): { id: string } | { busy: true } => {
+    if (job) return { busy: true }
+    const id = `burn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    job = {
+      id,
+      phase: 'fetch',
+      current: 0,
+      total: input.tracks.length,
+      percent: null,
+      discType: input.discType,
+      startedAt: Date.now(),
+    }
+    void (async () => {
+      try {
+        const meta = await runJob(input, { emitProgress })
+        lastResult = {
+          value: { status: 'done', meta, at: Date.now() },
+          expiresAt: Date.now() + LAST_RESULT_TTL_MS,
+        }
+        broadcast({ type: 'done', meta })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '刻录失败'
+        lastResult = {
+          value: { status: 'error', error: message, at: Date.now() },
+          expiresAt: Date.now() + LAST_RESULT_TTL_MS,
+        }
+        broadcast({ type: 'error', phase: job?.phase ?? 'fetch', message })
+      } finally {
+        job = null
+      }
+    })()
+    return { id }
+  }
+
   return {
-    jobId: job.id,
-    phase: job.phase,
-    current: job.current,
-    total: job.total,
-    percent: job.percent,
-    discType: job.discType,
-    startedAt: job.startedAt,
+    startBurn,
+    jobSnapshot: snapshot,
+    jobId: () => job?.id ?? null,
+    lastResultSnapshot: lastSnapshot,
+    subscribe: (cb) => {
+      listeners.add(cb)
+      return () => {
+        listeners.delete(cb)
+      }
+    },
+    ripCapabilities: capabilities,
   }
-}
-
-/** 最近一次终态（过期或未产生为 null）。 */
-export function lastResultSnapshot(): RipLastResult | null {
-  if (!lastResult) return null
-  if (Date.now() > lastResult.expiresAt) {
-    lastResult = null
-    return null
-  }
-  return lastResult.value
-}
-
-function emitProgress(
-  phase: RipPhase,
-  current: number,
-  total: number,
-  percent: number | null = null,
-): void {
-  if (job) {
-    job.phase = phase
-    job.current = current
-    job.total = total
-    job.percent = percent
-  }
-  broadcastRip({ type: 'progress', phase, current, total, percent })
 }
 
 /* ============================ 校验与清洗（导出供单测） ============================ */
@@ -275,12 +337,9 @@ export function isAllowedCoverUrl(url: string): boolean {
 
 /** 能力探测缓存 TTL（统一登记在 `http.CACHE_TTL`）：短 TTL 兼顾「换盘后重新检测」。 */
 const CAPS_TTL_MS = CACHE_TTL.ripCapabilities
-let capsCache: { at: number; value: RipCapabilities } | null = null
 
-export async function ripCapabilities(): Promise<RipCapabilities> {
-  if (capsCache && Date.now() - capsCache.at < CAPS_TTL_MS)
-    return capsCache.value
-
+/** 探测一次刻录能力（不做缓存；缓存归 {@link RipEngine} 实例所有）。 */
+async function probeCapabilities(): Promise<RipCapabilities> {
   const platform = process.platform
   const simulated = isFakeBurn()
   const bin = await resolveFfmpegPath()
@@ -333,7 +392,6 @@ export async function ripCapabilities(): Promise<RipCapabilities> {
       }
     }
   }
-  capsCache = { at: Date.now(), value }
   return value
 }
 
@@ -346,34 +404,6 @@ export interface RunBurnInput {
   level: AudioLevel
   /** 服务端内容凭证（访客会话 ?? 缺省凭证），由路由解析传入。 */
   credential?: string
-}
-
-/**
- * 发起一次刻录（**立即返回**，任务后台执行；进度经 {@link subscribeRip} 广播）。
- * 已有任务在跑时返回 `{ busy: true }`（路由回 409）。
- */
-export function startBurn(
-  input: RunBurnInput,
-): { id: string } | { busy: true } {
-  if (job) return { busy: true }
-  const id = `burn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  job = {
-    id,
-    phase: 'fetch',
-    current: 0,
-    total: input.tracks.length,
-    percent: null,
-    discType: input.discType,
-    startedAt: Date.now(),
-  }
-  void (async () => {
-    try {
-      await runJob(input)
-    } finally {
-      job = null
-    }
-  })()
-  return { id }
 }
 
 /** 封面下载体积上限（COVER_RIP=3000 母带通常 1–2MB，30MB 已极宽裕）。 */
@@ -404,7 +434,27 @@ const FAKE_AUDIO_WAV: Buffer = (() => {
   return buf
 })()
 
-async function runJob(input: RunBurnInput): Promise<void> {
+/** `runJob` 的副作用出口：进度上报（阶段取自引擎当前任务快照）。 */
+interface RunJobHooks {
+  emitProgress: (
+    phase: RipPhase,
+    current: number,
+    total: number,
+    percent?: number | null,
+  ) => void
+}
+
+/**
+ * 执行一次刻录（**纯过程**：不读写任何模块状态，结果经返回值 / 抛出表达）。
+ *
+ * 分五步：探测介质 → 逐轨取流落盘（fail-fast）→（音频 CD）转码 → 组装元信息 →
+ * 写盘。进度只经 `hooks.emitProgress` 外送，便于逐阶段单测。
+ */
+async function runJob(
+  input: RunBurnInput,
+  hooks: RunJobHooks,
+): Promise<RipMeta> {
+  const emitProgress = hooks.emitProgress
   let stagingRoot: string | null = null
   try {
     stagingRoot = await mkdtemp(join(tmpdir(), 'pterosaur-burn-'))
@@ -536,19 +586,7 @@ async function runJob(input: RunBurnInput): Promise<void> {
         /* 细粒度事件保留给日志层；进度按阶段粒度广播即可 */
       },
     )
-
-    lastResult = {
-      value: { status: 'done', meta, at: Date.now() },
-      expiresAt: Date.now() + LAST_RESULT_TTL_MS,
-    }
-    broadcastRip({ type: 'done', meta })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '刻录失败'
-    lastResult = {
-      value: { status: 'error', error: message, at: Date.now() },
-      expiresAt: Date.now() + LAST_RESULT_TTL_MS,
-    }
-    broadcastRip({ type: 'error', phase: job?.phase ?? 'fetch', message })
+    return meta
   } finally {
     if (stagingRoot)
       await rm(stagingRoot, { recursive: true, force: true }).catch(() => {})
@@ -612,10 +650,4 @@ export async function sweepStaleBurnDirs(
 
 /* ============================ 测试辅助 ============================ */
 
-/** 重置模块级状态（单测用）。 */
-export function _resetRipForTest(): void {
-  job = null
-  lastResult = null
-  capsCache = null
-  listeners.clear()
-}
+// 引擎状态已归实例所有：单测各自 `createRipEngine()` 即天然隔离，无需重置钩子。

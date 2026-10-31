@@ -29,14 +29,7 @@ import {
   fetchAudioCandidate,
 } from './audioFetch.js'
 import { isFakeBurn } from './imapi.js'
-import {
-  jobSnapshot,
-  lastResultSnapshot,
-  ripCapabilities,
-  startBurn,
-  subscribeRip,
-  validateBurnBody,
-} from './rip.js'
+import { createRipEngine, validateBurnBody, type RipEngine } from './rip.js'
 import {
   cacheKey,
   clearCookies,
@@ -155,7 +148,15 @@ async function streamHandler(c: Context): Promise<Response> {
   })
 }
 
-export function createApp() {
+/**
+ * 组装应用。
+ *
+ * `rip` 可由调用方注入（单测据此持有自己的刻录引擎实例、与其它 app 天然隔离）；
+ * 缺省新建一份——生产由 `index.ts` 调用，全进程一份。
+ */
+export function createApp({
+  rip = createRipEngine(),
+}: { rip?: RipEngine } = {}) {
   const app = new Hono()
 
   // 同源部署；开发期由 Vite 代理转发，这里放开 CORS 便于本地联调。
@@ -669,7 +670,7 @@ export function createApp() {
   app.get('/api/rip/capabilities', async (c) => {
     if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
     try {
-      return c.json(ok(await ripCapabilities()))
+      return c.json(ok(await rip.ripCapabilities()))
     } catch (e) {
       return c.json(
         fail(e instanceof Error ? e.message : '刻录能力探测失败'),
@@ -681,7 +682,9 @@ export function createApp() {
   /** 当前刻录任务快照与最近终态（SSE 断线的兜底轮询）。 */
   app.get('/api/rip/status', (c) => {
     if (!requireLoopback(c)) return c.json(fail('仅支持本机访问'), 403)
-    return c.json(ok({ job: jobSnapshot(), last: lastResultSnapshot() }))
+    return c.json(
+      ok({ job: rip.jobSnapshot(), last: rip.lastResultSnapshot() }),
+    )
   })
 
   /**
@@ -693,7 +696,7 @@ export function createApp() {
     return sseChannel(
       c,
       (stream) => {
-        const unsubscribe = subscribeRip((ev) => {
+        const unsubscribe = rip.subscribe((ev) => {
           void stream
             .writeSSE({ event: 'message', data: JSON.stringify(ev) })
             .catch(() => {
@@ -704,8 +707,8 @@ export function createApp() {
       },
       (): RipEvent => ({
         type: 'state',
-        job: jobSnapshot(),
-        last: lastResultSnapshot(),
+        job: rip.jobSnapshot(),
+        last: rip.lastResultSnapshot(),
       }),
     )
   })
@@ -724,10 +727,11 @@ export function createApp() {
       return c.json(fail('当前平台不支持直刻（仅 Windows）'), 501)
     const adapter = adapterOf(validated.value.tracks[0].source)
     if (!adapter) return c.json(fail('未知音源'), 404)
-    const started = startBurn({
+    const started = rip.startBurn({
       ...validated.value,
       credential: credentialOf(c, adapter),
     })
+    // 单任务：并发由引擎同步占位保证（见 rip.createRipEngine），此处无 TOCTOU
     if ('busy' in started) return c.json(fail('已有刻录任务进行中'), 409)
     return c.json(ok({ jobId: started.id }), 202)
   })
