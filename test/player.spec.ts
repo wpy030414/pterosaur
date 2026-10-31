@@ -1171,7 +1171,8 @@ test.describe('离线保存', () => {
     await page.evaluate(() => navigator.serviceWorker?.ready)
     await page.reload()
 
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
