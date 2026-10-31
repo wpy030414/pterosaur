@@ -22,7 +22,6 @@ import {
   offlineUsage,
   type OfflineUsage,
 } from '../lib/mediaCache.js'
-import { useOfflinePrefs } from '../store/offlinePrefs.js'
 import { checkForUpdates, postToServiceWorker } from '../lib/pwa.js'
 import { pushEmptyLibrary } from '../lib/sync.js'
 import { resetAll } from '../lib/reset.js'
@@ -54,7 +53,7 @@ function modeOf(level: AudioLevel): AudioLevel {
 }
 
 /**
- * 设置弹窗：缓存管理（查看占用 / 清理）与检查更新（注销 PWA + 强制刷新）。
+ * 设置弹窗：离线保存占用（查看 / 清除自动保存）与检查更新（注销 PWA + 强制刷新）。
  *
  * 由 {@link useSettingsDialog} store 驱动，挂载在 App 顶层，顶栏齿轮按钮打开。
  */
@@ -65,11 +64,8 @@ export function SettingsDialog() {
   const setLevel = useSettings((s) => s.setLevel)
   const background = useSettings((s) => s.background)
   const setBackground = useSettings((s) => s.setBackground)
-  const autoPrefetch = useOfflinePrefs((s) => s.autoPrefetch)
-  const setAutoPrefetch = useOfflinePrefs((s) => s.setAutoPrefetch)
 
   const [usage, setUsage] = useState<OfflineUsage | null>(null)
-  const [quota, setQuota] = useState<number | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
   const [bgBusy, setBgBusy] = useState(false)
   const [bgError, setBgError] = useState(false)
@@ -78,14 +74,6 @@ export function SettingsDialog() {
 
   const refresh = useCallback(async () => {
     setUsage(await offlineUsage())
-    try {
-      if (navigator.storage?.estimate) {
-        const { quota: q } = await navigator.storage.estimate()
-        setQuota(q ?? null)
-      }
-    } catch {
-      /* 配额信息不可用时忽略 */
-    }
   }, [])
 
   // 打开时刷新用量、聚焦弹窗；Esc 关闭
@@ -323,19 +311,6 @@ export function SettingsDialog() {
 
         <section className="settings-dialog__section">
           <h3 className="settings-dialog__section-title">离线保存</h3>
-          <p className="settings-dialog__desc">
-            播放时自动把队列中的相邻曲目存到本机，断网也能听。封面与在线播放的流量由浏览器
-            自行缓存，不在这里统计。
-          </p>
-          <label className="settings-dialog__check">
-            <input
-              type="checkbox"
-              checked={autoPrefetch}
-              onChange={(e) => setAutoPrefetch(e.target.checked)}
-              data-testid="auto-prefetch"
-            />
-            <span>播放时自动保存下一首</span>
-          </label>
           <div className="settings-dialog__stat">
             <span className="settings-dialog__stat-label">已占用</span>
             <span
@@ -345,13 +320,6 @@ export function SettingsDialog() {
               {formatBytes(total)}
             </span>
           </div>
-          <p
-            className="settings-dialog__breakdown"
-            data-testid="cache-breakdown"
-          >
-            共 {usage?.count ?? 0} 首
-            {quota ? ` · 浏览器配额 ${formatBytes(quota)}` : ''}
-          </p>
           <div className="settings-dialog__btnrow">
             <button
               type="button"

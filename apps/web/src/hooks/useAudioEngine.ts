@@ -12,6 +12,7 @@ import {
   releaseSavedUrls,
 } from '../lib/offlineAudio.js'
 import { audioEl } from './audioElement.js'
+import { useOffline } from '../store/offline.js'
 import {
   createWatchdog,
   isPlaybackHealthy,
@@ -419,10 +420,14 @@ export function useAudioEngine(): void {
     }
   }, [])
 
-  // 切歌即记录到「最近播放」
+  // 切歌即记录到「最近播放」，并**强制保存离线**（播放过 = 不再重下；离线保存同时是
+  // 浏览器的「持久化」入口）。保存失败不打扰播放：错误留在 offline store 里。
+  const saveOnPlay = useOffline((s) => s.saveOnPlay)
   useEffect(() => {
-    if (current) useLibrary.getState().addRecent(current)
-  }, [current])
+    if (!current) return
+    useLibrary.getState().addRecent(current)
+    saveOnPlay(current, levelRef.current)
+  }, [current, saveOnPlay])
 
   // 文档标题
   useEffect(() => {

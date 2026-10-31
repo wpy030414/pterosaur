@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { keyOf } from '@pterosaur/shared/types'
 import { usePlayerQueue } from '../store/playerQueue.js'
 import { usePlaybackSession } from '../store/playbackSession.js'
-import { useOfflinePrefs } from '../store/offlinePrefs.js'
 import { useSettings } from '../store/settings.js'
 import { audioEl } from './audioElement.js'
 import {
@@ -42,14 +41,9 @@ export function usePlaylistPrefetch(): void {
   const index = usePlayerQueue((s) => s.index)
   const buffering = usePlaybackSession((s) => s.buffering)
   const level = useSettings((s) => s.level)
-  const autoPrefetch = useOfflinePrefs((s) => s.autoPrefetch)
   const currentKey = current ? keyOf(current) : ''
 
   useEffect(() => {
-    if (!autoPrefetch) {
-      scheduler.cancel()
-      return
-    }
     const targets = prefetchTargets(queue, index)
     if (!targets.length) {
       scheduler.cancel()
@@ -57,5 +51,5 @@ export function usePlaylistPrefetch(): void {
     }
     scheduler.schedule(targets, level)
     return () => scheduler.cancel()
-  }, [currentKey, queue, index, level, buffering, autoPrefetch])
+  }, [currentKey, queue, index, level, buffering])
 }

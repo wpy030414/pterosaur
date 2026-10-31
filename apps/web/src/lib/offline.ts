@@ -23,14 +23,8 @@ import {
  *   请求，见 ADR-060），也不经过浏览器缓存写入之外的任何中间层；
  * - 自动预取走 SW 的消息通道（`lib/prefetch.ts` → `PREFETCH_AUDIO`），两者写的是同一份池。
  *
- * 集合并发用 {@link saveTracks}：并发上限小（移动端友好）、逐首限速，可取消。取消后已完成
- * 的曲目保留（已保存的就不该白删），只是停止后续下载。
+ * 播放即保存（`saveOnPlay`）与显式保存走同一条 `saveTrackOffline`：幂等、失败静默。
  */
-
-/** 并发上限：同时只下两首，避免把带宽 / 上游风控一起打满。 */
-export const SAVE_CONCURRENCY = 2
-/** 相邻两首之间的间隔（毫秒）：给上游与浏览器留出喘息。 */
-export const SAVE_GAP_MS = 400
 
 /** 一次下载的结果。 */
 export type SaveOutcome =
@@ -86,62 +80,6 @@ async function markExplicit(track: Track, level: AudioLevel): Promise<void> {
     'explicit',
     saved.meta.lastAccess,
   )
-}
-
-/** 集合并发的进度快照。 */
-export interface SaveProgress {
-  /** 目标总数。 */
-  total: number
-  /** 已处理（成功 / 失败 / 跳过）数。 */
-  done: number
-  /** 成功保存数。 */
-  saved: number
-  /** 因需登录而跳过数。 */
-  needLogin: number
-  /** 失败数。 */
-  failed: number
-}
-
-/** 保存一个集合（歌单 / 专辑 / 我喜欢）。返回最终进度；`signal` 中止后停止后续下载。 */
-export async function saveTracks(
-  tracks: readonly Track[],
-  level: AudioLevel,
-  onProgress?: (p: SaveProgress) => void,
-  signal?: AbortSignal,
-): Promise<SaveProgress> {
-  const progress: SaveProgress = {
-    total: tracks.length,
-    done: 0,
-    saved: 0,
-    needLogin: 0,
-    failed: 0,
-  }
-  const report = () => onProgress?.({ ...progress })
-  let next = 0
-
-  const worker = async (): Promise<void> => {
-    while (!signal?.aborted) {
-      const i = next++
-      const track = tracks[i]
-      if (!track) return
-      const outcome = await saveTrackOffline(track, level)
-      if (outcome.kind === 'saved') progress.saved++
-      else if (outcome.kind === 'needLogin') progress.needLogin++
-      else progress.failed++
-      progress.done++
-      report()
-      if (SAVE_GAP_MS > 0) {
-        await new Promise((r) => setTimeout(r, SAVE_GAP_MS))
-      }
-    }
-  }
-
-  const workers = Array.from(
-    { length: Math.min(SAVE_CONCURRENCY, tracks.length) },
-    () => worker(),
-  )
-  await Promise.all(workers)
-  return { ...progress }
 }
 
 /** 单个集合的离线状态：全部保存 / 部分保存 / 未保存。 */

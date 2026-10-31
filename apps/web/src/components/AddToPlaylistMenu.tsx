@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Check, Download, Loader2, HardDriveDownload } from 'lucide-react'
+import { Plus, Check, Download, Loader2 } from 'lucide-react'
 import type { Track } from '@pterosaur/shared/types'
 import { keyOf } from '@pterosaur/shared/types'
 import { useLibrary } from '../store/library.js'
 import { useSettings } from '../store/settings.js'
 import { downloadTrack } from '../lib/download.js'
-import { useOffline } from '../store/offline.js'
 import './AddToPlaylistMenu.css'
 
 interface AddToPlaylistMenuProps {
@@ -20,7 +19,9 @@ interface AddToPlaylistMenuProps {
 }
 
 /**
- * 「添加到歌单」下拉菜单：保存离线 / 下载到本地 + 加入/移出已有本地歌单。
+ * 「添加到歌单」下拉菜单：下载到本地 + 加入/移出已有本地歌单。
+ *
+ * 「离线保存」不再是选项——**播放过的曲目自动保存**（见 ADR-060）。
  *
  * 点击某歌单一次为加入，再点一次为从中移除（切换态）。
  * 采用受控浮层 + 点击外部关闭；菜单锚定在触发按钮附近。
@@ -33,8 +34,6 @@ export function AddToPlaylistMenu({
   const [open, setOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const saveTrackOffline = useOffline((s) => s.saveTrack)
-  const saveMessage = useOffline((s) => s.error ?? s.lastMessage)
   const playlists = useLibrary((s) => s.playlists)
   const addToPlaylist = useLibrary((s) => s.addToPlaylist)
   const removeFromPlaylist = useLibrary((s) => s.removeFromPlaylist)
@@ -57,16 +56,6 @@ export function AddToPlaylistMenu({
       window.removeEventListener('keydown', onKey)
     }
   }, [open])
-
-  /**
-   * 保存离线：写进应用自己的 IndexedDB，断网也能播；与「下载到本地」（写到磁盘文件）
-   * 是两件事，故并列而不合并（见 ADR-060）。
-   */
-  const handleSaveOffline = async () => {
-    if (downloading) return
-    setDownloadError(null)
-    await saveTrackOffline(track, level)
-  }
 
   const handleDownload = async () => {
     if (downloading) return
@@ -102,18 +91,6 @@ export function AddToPlaylistMenu({
             type="button"
             role="menuitem"
             className="atp__item"
-            onClick={handleSaveOffline}
-            disabled={downloading}
-            data-testid="save-offline"
-          >
-            <HardDriveDownload size={16} />
-            <span>保存离线</span>
-          </button>
-
-          <button
-            type="button"
-            role="menuitem"
-            className="atp__item"
             onClick={handleDownload}
             disabled={downloading}
           >
@@ -125,9 +102,7 @@ export function AddToPlaylistMenu({
             <span>{downloading ? '正在下载…' : '下载到本地'}</span>
           </button>
 
-          {(downloadError || saveMessage) && (
-            <div className="atp__error">{downloadError ?? saveMessage}</div>
-          )}
+          {downloadError && <div className="atp__error">{downloadError}</div>}
 
           {playlists.length > 0 && (
             <>

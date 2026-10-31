@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Track } from '@pterosaur/shared/types'
 import {
-  SAVE_GAP_MS,
   collectionState,
   removeOffline,
   saveTrackOffline,
-  saveTracks,
 } from '../../src/lib/offline.js'
 
 const track = (id: string): Track => ({
@@ -120,59 +118,6 @@ describe('saveTrackOffline', () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonRes(500) as never)
     expect((await saveTrackOffline(track('1'))).kind).toBe('failed')
     expect(store.saveAudio).not.toHaveBeenCalled()
-  })
-})
-
-describe('saveTracks', () => {
-  it('逐首保存并汇总进度（成功 / 需登录 / 失败分开计数）', async () => {
-    vi.useFakeTimers()
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonRes(200) as never)
-      .mockResolvedValueOnce(jsonRes(403) as never)
-      .mockRejectedValueOnce(new Error('boom'))
-
-    const onProgress = vi.fn()
-    const p = saveTracks(
-      [track('1'), track('2'), track('3')],
-      'exhigh',
-      onProgress,
-      undefined,
-    )
-    await vi.advanceTimersByTimeAsync(SAVE_GAP_MS * 4)
-    expect(await p).toMatchObject({
-      total: 3,
-      done: 3,
-      saved: 1,
-      needLogin: 1,
-      failed: 1,
-    })
-    expect(onProgress).toHaveBeenCalledTimes(3)
-    expect(onProgress.mock.calls.at(-1)?.[0]).toMatchObject({ done: 3 })
-    vi.useRealTimers()
-  })
-
-  it('取消后停止后续下载，已完成的保留', async () => {
-    vi.useFakeTimers()
-    vi.mocked(fetch).mockImplementation(() =>
-      Promise.resolve(jsonRes(200) as never),
-    )
-    const ctrl = new AbortController()
-    // 并发上限 2：前两首立即处理，其余在间隔里等待
-    const p = saveTracks(
-      [track('1'), track('2'), track('3'), track('4')],
-      'exhigh',
-      undefined,
-      ctrl.signal,
-    )
-    await vi.advanceTimersByTimeAsync(1)
-    ctrl.abort()
-    // 中止后不再安排新的间隔等待，promise 应在本轮收敛
-    await vi.advanceTimersByTimeAsync(SAVE_GAP_MS * 3)
-    const result = await p
-    // 只剩在途的 2 首收尾，排在后面的 2 首不再开始
-    expect(result.done).toBe(2)
-    expect(store.saveAudio).toHaveBeenCalledTimes(result.saved)
-    vi.useRealTimers()
   })
 })
 

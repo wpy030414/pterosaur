@@ -361,11 +361,11 @@ test.describe('搜索与播放', () => {
     await page.getByTestId('search-input').press('Enter')
     await expect(page).toHaveURL(/\/search\?q=/)
 
-    // 结果行应出现
-    await expect(page.locator('.track-row').first()).toBeVisible({
+    // 歌曲分区用 SongRow（ADR-050），结果出现即视为成功
+    await expect(page.locator('.song-row').first()).toBeVisible({
       timeout: 15000,
     })
-    const rows = await page.locator('.track-row').count()
+    const rows = await page.locator('.song-row').count()
     expect(rows).toBeGreaterThan(0)
   })
 
@@ -373,11 +373,11 @@ test.describe('搜索与播放', () => {
     page,
   }) => {
     await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
-    await expect(page.locator('.track-row').first()).toBeVisible({
+    await expect(page.locator('.song-row').first()).toBeVisible({
       timeout: 15000,
     })
     const firstBefore = await page
-      .locator('.col-title__name')
+      .locator('.song-row__title')
       .first()
       .textContent()
 
@@ -396,18 +396,19 @@ test.describe('搜索与播放', () => {
     await page.getByTestId('search-input').fill('周杰伦 晴天')
     await page.getByTestId('search-input').press('Enter')
     await expect(page).toHaveURL(/\/search\?/)
-    await expect(page.locator('.track-row').first()).toBeVisible({
+    await expect(page.locator('.song-row__title').first()).toBeVisible({
       timeout: 20000,
     })
     const firstAfter = await page
-      .locator('.col-title__name')
+      .locator('.song-row__title')
       .first()
       .textContent()
     expect(firstAfter).not.toBe(firstBefore)
   })
 
   test('点击结果行开始真实播放（audio 未暂停且时间前进）', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -438,7 +439,8 @@ test.describe('搜索与播放', () => {
   })
 
   test('播放/暂停按钮切换播放状态', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -466,7 +468,8 @@ test.describe('搜索与播放', () => {
   })
 
   test('下一首切换当前曲目', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -489,7 +492,8 @@ test.describe('搜索与播放', () => {
 
 test.describe('全屏播放页与歌词', () => {
   test('展开播放页显示歌词并可 Esc 关闭', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -513,7 +517,8 @@ test.describe('全屏播放页与歌词', () => {
   })
 
   test('沉浸页的专辑 / 艺术家可点击跳转', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -542,7 +547,8 @@ test.describe('全屏播放页与歌词', () => {
   })
 
   test('首行 / 末行歌词同样垂直居中', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -589,7 +595,8 @@ test.describe('全屏播放页与歌词', () => {
   })
 
   test('共享元素：展开 / 收起时封面持名互斥', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -629,7 +636,8 @@ test.describe('全屏播放页与歌词', () => {
     page.on('pageerror', (e) => errors.push(e.message))
     await page.emulateMedia({ reducedMotion: 'reduce' })
 
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -646,7 +654,8 @@ test.describe('全屏播放页与歌词', () => {
 
 test.describe('播放队列', () => {
   test('打开队列面板显示当前队列曲目', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -675,7 +684,8 @@ test.describe('播放队列', () => {
 
 test.describe('资料库与收藏', () => {
   test('收藏曲目后出现在「我喜欢的音乐」并持久化', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -945,7 +955,8 @@ test.describe('搜索分栏与艺术家 / 专辑跳转', () => {
 
 test.describe('队列面板毛玻璃', () => {
   test('队列面板具备 backdrop-filter 毛玻璃', async ({ page }) => {
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -1162,7 +1173,7 @@ test.describe('后端 API 契约', () => {
 })
 
 test.describe('离线保存', () => {
-  test('「保存离线」后音频写入 IndexedDB，断网仍可播放', async ({
+  test('播放过的曲目自动保存到 IndexedDB，断网仍可播放', async ({
     page,
     context,
   }) => {
@@ -1176,9 +1187,8 @@ test.describe('离线保存', () => {
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
-    // 播放后从底部播放岛的「保存离线」按钮显式保存当前曲
+    // 播放即保存：点行之后无需任何额外操作，曲目应自行写入离线保存
     await page.locator('.track-row').first().click()
-    await page.getByTestId('save-offline-button').click()
 
     await expect
       .poll(
@@ -1288,9 +1298,8 @@ test.describe('离线保存', () => {
       await route.continue()
     })
 
-    await page.goto('/')
-
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -1340,7 +1349,8 @@ test.describe('弱网韧性', () => {
     // 拦截音频流并保持挂起（模拟弱网：请求发出但迟迟无响应）
     await context.route('**/stream/**', () => new Promise(() => {}))
 
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })
@@ -1373,7 +1383,8 @@ test.describe('弱网韧性', () => {
   }) => {
     await context.route('**/stream/**', (route) => route.abort('failed'))
 
-    await page.goto('/search?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    // 搜索页的歌曲分区用 SongRow（ADR-050），下钻类别页才是 TrackList
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
     await expect(page.locator('.track-row').first()).toBeVisible({
       timeout: 15000,
     })

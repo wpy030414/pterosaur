@@ -4,7 +4,6 @@ import { AppRouter } from './components/AppRouter.js'
 import App from './App.js'
 import { useLibrary } from './store/library.js'
 import { usePlayerQueue } from './store/playerQueue.js'
-import { useOfflinePrefs } from './store/offlinePrefs.js'
 import './styles/global.css'
 
 const rootEl = document.getElementById('root')
@@ -53,11 +52,6 @@ async function bootstrap(): Promise<void> {
       () => usePlayerQueue.persist.rehydrate(),
       'playerQueue',
       '空队列',
-    ),
-    rehydrate(
-      () => useOfflinePrefs.persist.rehydrate(),
-      'offlinePrefs',
-      '默认偏好',
     ),
   ])
 

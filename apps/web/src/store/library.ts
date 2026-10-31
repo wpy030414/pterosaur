@@ -63,10 +63,18 @@ export const useLibrary = create<LibraryStore>()(
         get().favorites.some((t) => keyOf(t) === keyOf(track)),
 
       addRecent: (track) =>
-        set((s) => {
-          const rest = s.recent.filter((t) => keyOf(t) !== keyOf(track))
-          return { recent: [track, ...rest].slice(0, MAX_RECENT) }
-        }),
+        set((s) =>
+          // 多数情况下刚播完切下一首，同一个 key 必然排在首位——此时不产生新快照，
+          // 免得每次切歌都让 library 落盘一次（播放即保存后切歌会有额外写）
+          s.recent[0] && keyOf(s.recent[0]) === keyOf(track)
+            ? s
+            : {
+                recent: [
+                  track,
+                  ...s.recent.filter((t) => keyOf(t) !== keyOf(track)),
+                ].slice(0, MAX_RECENT),
+              },
+        ),
 
       clearRecent: () => set({ recent: [] }),
 

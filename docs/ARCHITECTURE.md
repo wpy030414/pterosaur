@@ -112,7 +112,7 @@ Pterosaur 分三层：浏览器前端（React SPA）、同源 Hono 后端（API 
 
 1. 用户在搜索结果或任意列表点击曲目行 → `TrackList` 调 `player.playTracks(tracks, i)`，写入队列与当前曲目。
 2. `useAudioEngine` 侦测 `current` 变化 → 设 `audio.src = /stream/:source/:id` → `audio.play()`。
-3. 浏览器请求 `/stream/:source/:id`，**不经 SW**：后端按源分派适配器解析真实地址（带缓存、https 改写）按 Range 转发上游 CDN，并下放 `Cache-Control: private, max-age=…, immutable` + `?t=` 价签。**玩由浏览器原生 HTTP 缓存**：同一 URL 内的 Range 请求可直接命中、可 seek、可续传；地址一变 `t` 就变、URL 随之不同（见 ADR-060）。离线时 `useAudioEngine` 改播已「保存离线」的 `blob:`。
+3. 浏览器请求 `/stream/:source/:id`，**不经 SW**：后端按源分派适配器解析真实地址（带缓存、https 改写）按 Range 转发上游 CDN，并下放 `Cache-Control: private, max-age=…, immutable` + `?t=` 价签。**播放由浏览器原生 HTTP 缓存**：同一 URL 内的 Range 请求可直接命中、可 seek、可续传；地址一变 `t` 就变、URL 随之不同（见 ADR-060）。离线时 `useAudioEngine` 改播已保存（播放即保存）的 `blob:`。
 4. `audio` 的 durationchange/ended/error 等事件回写 store（进度、自然结束推进、播放受限提示）；`waiting`/`stalled` 与 `canplay` 回写缓冲态，弱网停滞由看门狗恢复（见 ADR-021）。
 
 **封面图片：**
@@ -141,7 +141,7 @@ Pterosaur 分三层：浏览器前端（React SPA）、同源 Hono 后端（API 
 3. 身份接口（`/api/auth/status`、`/api/user/playlists`）仍只用访客 cookie——匿名访客依旧显示「未登录」，登录后以本人凭证优先。
 
 **离线保存：**
-IndexedDB 的 `media` / `mediaMeta` 只装**已保存的整曲**（`min(16GB, 配额×0.9)` + LRU），条目在 `offlineMeta` 里记来源：`auto`（队列预取）或 `explicit`（用户点「保存离线」）。两条写入路径——用户显式保存走 `lib/offline.ts`（`fetch('/stream/…')` 整段取回 → 写 IDB，不经 SW）；队列预取走 `PREFETCH_AUDIO` 消息由 SW 下载写入。播放时在线永远直连流地址，`offline` 事件且当前曲已保存时才改播 `blob:`（`lib/offlineAudio.ts` 管 object URL），恢复在线切回。设置里可关「播放时自动保存下一首」，「清除自动保存」只删 `auto` 条目（见 ADR-060）。
+IndexedDB 的 `media` / `mediaMeta` 只装**已保存的整曲**（`min(16GB, 配额×0.9)` + LRU），条目在 `offlineMeta` 里记来源：`auto`（播放即保存 / 队列预取）或 `explicit`（导出时保留）。**播放即保存**：`useAudioEngine` 在 `current` 变化时调 `saveOnPlay`，经 `lib/offline.ts` 的 `fetch('/stream/…')` 整段取回写 IDB（不经 SW、失败静默）；队列预取另走 `PREFETCH_AUDIO` 消息由 SW 下载写入。这样浏览器的**持久存储**授予与淘汰策略才会覆盖音频（只有用户主动产生内容时才会给持久配额）。播放时在线永远直连流地址，`offline` 事件且当前曲已保存时才改播 `blob:`（`lib/offlineAudio.ts` 管 object URL），恢复在线切回。设置里可关「播放时自动保存下一首」，「清除自动保存」只删 `auto` 条目（见 ADR-060）。
 
 **队列离线预取（前后各 1 首）：**
 `hooks/usePlaylistPrefetch` 订阅当前曲 / 队列 / 下标 / 音质档位与自动保存开关；在网络良好（`navigator.onLine` + Network Information API，非省流）、当前曲未缓冲且 `readyState ≥ 3` 时，经 `lib/prefetch.ts` 的调度器（`requestIdleCallback` 串行、`settle` 防抖、曲间留隙）把队列**前后各 1 首**下载进离线保存，并预热歌词内存缓存；**不再预取封面**。`current`/`queue`/`index`/`level` 变化即取消重排；登录 / 登出清缓存（ADR-034）时同步清空页面去重表（见 ADR-060）。
@@ -195,7 +195,7 @@ IndexedDB 的 `media` / `mediaMeta` 只装**已保存的整曲**（`min(16GB, �
 - **后端持久化边界**：后端**默认为无状态**——除音频地址的短期 LRU 缓存（重启即恢复）外不保存业务状态。**两个可选例外**：(1) ADR-014 的缺省凭证（`.env`）；(2) ADR-016/038 的云同步——开启后服务端按**访客本人的活动账号** `<source>-<账号id>` 把 library 持久化到 `<DATA_DIR>/sync.db`（嵌入式 SQLite，见 ADR-038）。云同步使「多实例水平扩展」不再成立（SQLite 不共享），且 `.data/` 不入库。
 - **云同步边界**：`/api/sync/library`（读 / 写）与 `/api/sync/events`（SSE）均为**身份接口**——身份只取访客本人 cookie，**绝不回退缺省凭证**；未登录 401。冲突策略为**云端权威**（进入即以云端覆盖本地，云端为空则以本地为准并上传；`rev` / `updatedAt` 由服务端指派），仅在「开关开启 且 已登录 且 账号与开启时绑定一致」时激活；多设备经 SSE 近实时同步（见 ADR-038）。
 - **重置边界**：设置「重置」清空**本机**全部内容（IDB store + Cache Storage + SW 注册 + Web Storage）并整页刷新，**不清登录 cookie**（故仍登录）；因 SW 常驻持有 IDB 连接、`deleteDatabase` 会被阻塞，故以逐 store `clear()` 实现。若云同步已开启，先推送空 library 清空云端副本（顺序不可颠倒）。
-- **音频缓存边界**：播放只经浏览器原生 HTTP 缓存——后端 `/stream` 下放 `private, max-age=…, immutable`，寿命 = min(地址缓存剩余寿命, 上游声明的寿命 − 60s)，`?t=` 价签把「解析结果的过期时刻」编进 URL，保证同一份解析结果在有效期内 URL 稳定、可命中。跨会话再听同一曲大概率回源；「随时重听不耗流量」由用户显式「保存离线」覆盖（见 ADR-060）。
+- **音频缓存边界**：播放只经浏览器原生 HTTP 缓存——后端 `/stream` 下放 `private, max-age=…, immutable`，寿命 = min(地址缓存剩余寿命, 上游声明的寿命 − 60s)，`?t=` 价签把「解析结果的过期时刻」编进 URL，保证同一份解析结果在有效期内 URL 稳定、可命中。跨会话再听同一曲大概率回源；「随时重听不耗流量」由**播放即保存**覆盖——听过的曲目已在离线保存里（见 ADR-060）。
 - **封面缓存边界**：封面**不进应用层缓存**，由浏览器 HTTP 缓存按 CDN 的 `Cache-Control` 自理；`canonicalNeteaseImage` 只用于「已解码 URL」登记表与沉浸页背景的同图比较（见 ADR-060 / ADR-020 / ADR-058）。
 - **共享类型边界**：`shared/` 不得引入 DOM 或 Node 专有 API，确保浏览器与 Node 两侧都能编译。
 - **静态托管边界**：生产必须运行 Node 后端（`pnpm start`），不能当纯静态站点部署——音频代理与登录都依赖它。
@@ -211,6 +211,6 @@ IndexedDB 的 `media` / `mediaMeta` 只装**已保存的整曲**（`min(16GB, �
 - **播放韧性边界**：网络差时引擎把故障显式化并自愈——`waiting`/`stalled` 置 `buffering`（播放键显示加载态）；**未起播**由 12s 起播超时兜底，**已在播的停滞**由看门狗（静默 5s 判定、退避 10/15/20s、最多 3 次）以 `load()` + 回拨位置恢复，预算耗尽则**暂停并提示、不自动切歌**；`ended` 时若 `audio.duration` 比元数据时长短 >10s 且 >10%，判为「截断流」走同一恢复而非切歌。元素的 `error` 事件无法区分网络失败与 VIP 受限，故一律给中性提示；「离线且未保存」由引擎在换源时直接给明确提示（见 ADR-021 / ADR-060）。
 - **SW 边界**：Service Worker **不拦截任何请求**（没有 `fetch` 处理器），只做两件事：(1) 响应页面消息 `PREFETCH_AUDIO`，主动整段下载某曲写进**离线保存**（命中 / 在途即 no-op；403 静默；单飞——新请求 abort 旧的；SW 自身的 `fetch()` 不经其 fetch 事件，故不递归）；(2) 应用外壳（仅生产）Workbox 运行时缓存，7 天过期。dev 环境不注册 SW（见 ADR-060）。
 - **离线保存边界**：IDB `media` / `mediaMeta` 只装整曲，容量 `min(16GB, 配额 * 0.9)` + LRU，容量只在**写入**时校验（单飞下载后按 LRU 淘汰再落盘）；条目来源记在 `offlineMeta`（`auto` / `explicit`），「清除自动保存」只删 `auto`；登录 / 退出清空全部离线保存（ADR-034）。播放侧在线永远走流地址，只有 `offline` 事件且当前曲已保存才改播 `blob:`。
-- **预取边界**：队列离线预取只取**前后各 1 首**，且只在**网络良好且播放侧空闲**时进行——`onLine` + 非省流 + 非慢速类型、`!buffering` 且当前曲 `readyState ≥ 3`、设置里开着「播放时自动保存下一首」；经 `requestIdleCallback`（退化 `setTimeout`）**串行**、`settle` 防抖、曲间留隙，避免与当前曲首缓冲抢带宽。音频经 SW 消息写入离线保存，歌词入内存，**不预取封面**。目标是「很可能播到」的曲目，故 403 静默、失败本会话不重试、清缓存时须同步清页面去重表（见 ADR-060）。
+- **预取边界**：队列离线预取只取**前后各 1 首**，且只在**网络良好且播放侧空闲**时进行——`onLine` + 非省流 + 非慢速类型、`!buffering` 且当前曲 `readyState ≥ 3`；经 `requestIdleCallback`（退化 `setTimeout`）**串行**、`settle` 防抖、曲间留隙，避免与当前曲首缓冲抢带宽。音频经 SW 消息写入离线保存，歌词入内存，**不预取封面**。目标是「很可能播到」的曲目，故 403 静默、失败本会话不重试、清缓存时须同步清页面去重表（见 ADR-060）。
 - **播放顺序边界**：`shuffle` 是对队列的一次性 Fisher–Yates 洗牌；此后 `next`/`prev` 与自然结束推进一律**顺序游走**（`index±1`，越界按 `repeat` 回绕/停止），不再每次随机——保证整列不重复、手动切歌与自然推进一致、且顺序可预测（见 ADR-036）。
 - **直刻边界**：翻录的「实体分发」把数据真实写入**后端所在设备**的光驱，故 (1) 仅 Windows（IMAPI2 COM），介质只接受空白 CD-R / CD-RW；(2) 仅**同机（回环）访问**开放——前端按 `location.hostname` 判定（主门控），后端对 `/api/rip/*` 按连接对端地址判定（fail-closed）；同机 nginx 反代下后者退化为纵深防御，**勿将本服务暴露至公网**；(3) 音频 CD 超 79 分钟（含每轨 2s gap）**拒绝**、不做分盘；数据 CD 超介质容量在写入前中止；(4) 刻录由后端取流（访客会话 ?? 缺省凭证，与数字链路的浏览器会话有别），单轨失败 **fail-fast**（防半成品盘）；(5) 刻录阶段拿不到真实百分比（IMAPI 晚绑定 COM 不可订阅事件）→ 前端渲染不确定进度；(6) 暂存于 `os.tmpdir()/pterosaur-burn-*`，成败均清、启动清扫 24h 残留（见 ADR-048）。

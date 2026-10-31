@@ -194,9 +194,9 @@ test.describe('设置弹窗', () => {
     await page.getByTestId('settings-button').click()
     await expect(page.getByRole('dialog', { name: '设置' })).toBeVisible()
 
-    // 总量与分项
+    // 只展示「已占用」一个数，不再有分项 / 配额说明
     await expect(page.getByTestId('cache-total')).not.toHaveText('0 B')
-    await expect(page.getByTestId('cache-breakdown')).toContainText('共')
+    await expect(page.getByTestId('cache-breakdown')).toHaveCount(0)
 
     // 清理（无需二次确认，点击即生效）
     await page.getByTestId('clear-cache').click()
