@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { SearchX } from 'lucide-react'
 import { api } from '../api/client.js'
-import { useAsync } from '../hooks/useAsync.js'
+import { usePaginatedQuery } from '../hooks/usePaginatedQuery.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
-import type { MusicSource, SearchResults } from '@pterosaur/shared/types'
+import type {
+  Album,
+  Artist,
+  MusicSource,
+  Playlist,
+  SearchResults,
+  Track,
+} from '@pterosaur/shared/types'
 import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
-import { dedupeByKey } from '../lib/dedupe.js'
 import { TrackList } from '../components/TrackList.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { CassetteCard } from '../components/CassetteCard.js'
@@ -20,13 +26,6 @@ import {
   isSearchCategory,
   type SearchCategory,
 } from '../lib/searchCategory.js'
-
-const EMPTY_RESULTS: SearchResults = {
-  songs: [],
-  artists: [],
-  albums: [],
-  playlists: [],
-}
 
 /**
  * 独立类别页（`/search/:category?q=`）。
@@ -77,113 +76,31 @@ function CategoryBody({
   const pageSize = SEARCH_PAGE_SIZE[cat]
   const navigate = useViewNavigate()
 
-  /** 已累积的该类结果（首屏 + 续页），按类别从 `SearchResults` 里取对应数组。 */
-  const [items, setItems] = useState<SearchResults>(EMPTY_RESULTS)
-  const pageRef = useRef(1)
-  const moreRef = useRef(false)
-  /** 单飞锁：`moreRef` / state 在背靠背触发时都是旧值，用 ref 同步锁防重复取同一页。 */
-  const inflightRef = useRef(false)
-  const [appending, setAppending] = useState(false)
-
-  const { data, loading, error, reload } = useAsync<SearchResults>(
-    () =>
-      q
-        ? api.searchAll(source, q, pageSize, undefined, meta.apiType)
-        : Promise.resolve(EMPTY_RESULTS),
-    [q, cat, source],
-    EMPTY_RESULTS,
-    q ? `search-cat:${cat}:${q}` : undefined,
-  )
-
-  /**
-   * 首屏（或换词 / 换类别）就绪 → **重置**累积列表与分页游标。
-   */
-  useEffect(() => {
-    const d = data ?? EMPTY_RESULTS
-    const key = listKey(cat)
-    const raw =
-      key === 'songs'
-        ? d.songs
-        : key === 'artists'
-          ? d.artists
-          : key === 'albums'
-            ? d.albums
-            : d.playlists
-    setItems({
-      songs: key === 'songs' ? dedupeByKey(raw as typeof d.songs, keyOf) : [],
-      artists:
-        key === 'artists' ? dedupeByKey(raw as typeof d.artists, keyOf) : [],
-      albums:
-        key === 'albums' ? dedupeByKey(raw as typeof d.albums, keyOf) : [],
-      playlists:
-        key === 'playlists'
-          ? dedupeByKey(raw as typeof d.playlists, keyOf)
-          : [],
-    })
-    pageRef.current = 1
-    moreRef.current = countOf(cat, d) >= pageSize
-    inflightRef.current = false
-  }, [data, cat, pageSize])
-
-  const loadMore = useCallback(async () => {
-    if (!moreRef.current || inflightRef.current) return
-    inflightRef.current = true
-    setAppending(true)
-    const next = pageRef.current + 1
-    try {
-      const res = await api.searchAll(source, q, pageSize, next, meta.apiType)
-      setItems((prev) => ({
-        songs:
-          cat === 'songs'
-            ? dedupeByKey([...prev.songs, ...res.songs], keyOf)
-            : prev.songs,
-        artists:
-          cat === 'artists'
-            ? dedupeByKey([...prev.artists, ...res.artists], keyOf)
-            : prev.artists,
-        albums:
-          cat === 'albums'
-            ? dedupeByKey([...prev.albums, ...res.albums], keyOf)
-            : prev.albums,
-        playlists:
-          cat === 'cassette' || cat === 'playlists'
-            ? dedupeByKey([...prev.playlists, ...res.playlists], keyOf)
-            : prev.playlists,
-      }))
-      moreRef.current = countOf(cat, res) >= pageSize
-      pageRef.current = next
-    } catch {
-      // 续取失败：停止继续加载，保留已展示的结果
-      moreRef.current = false
-    } finally {
-      inflightRef.current = false
-      setAppending(false)
-    }
-  }, [q, cat, source, pageSize, meta.apiType])
-
-  // 滚动哨兵：进入视口即为该类续取下一页
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  const [canLoadMore, setCanLoadMore] = useState(false)
-  useEffect(() => {
-    setCanLoadMore(moreRef.current)
-  }, [items])
-  useEffect(() => {
-    if (!canLoadMore) return
-    const el = sentinelRef.current
-    if (!el || typeof IntersectionObserver === 'undefined') return
-    const root = document.querySelector('.app-content')
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) void loadMore()
-      },
-      { root, rootMargin: '300px' },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [canLoadMore, loadMore])
+  // 分页累积规则统一在 usePaginatedQuery（首屏 / 续页 / 去重 / 单飞锁 / 哨兵）。
+  // 上游每批返回四类字段、`type` 短路时其余为空，故只取本类别的那一份。
+  const {
+    items,
+    loading,
+    appending,
+    error,
+    hasMore,
+    page,
+    sentinelRef,
+    reload,
+  } = usePaginatedQuery<CatalogItem>({
+    fetchPage: async (p) => {
+      if (!q) return []
+      const r = await api.searchAll(source, q, pageSize, p, meta.apiType)
+      return itemsOf(cat, r)
+    },
+    pageSize,
+    deps: [q, cat, source],
+    keyOf: catalogKeyOf,
+    enabled: Boolean(q),
+  })
 
   const isBusy = loading
-  const isEmpty = !isBusy && !error && countOf(cat, items) === 0
+  const isEmpty = !isBusy && !error && items.length === 0
 
   return (
     <div className="browse">
@@ -205,7 +122,7 @@ function CategoryBody({
 
             {!isEmpty && (
               <div className="section__more">
-                {canLoadMore && (
+                {hasMore && (
                   <div
                     ref={sentinelRef}
                     className="section__sentinel"
@@ -213,7 +130,7 @@ function CategoryBody({
                   />
                 )}
                 {appending && <Loading text="加载中…" />}
-                {!canLoadMore && !appending && pageRef.current > 1 && (
+                {!hasMore && !appending && page > 1 && (
                   <p className="section__end">没有更多了</p>
                 )}
               </div>
@@ -225,42 +142,34 @@ function CategoryBody({
   )
 }
 
-/** 类别 → `SearchResults` 里对应的数组字段名。 */
-function listKey(
-  cat: SearchCategory,
-): 'songs' | 'artists' | 'albums' | 'playlists' {
+/**
+ * 分页结果的判别联合：**类型与类别绑定**，渲染分支按 `kind` 收窄，
+ * 无需 `as` 强转（此前用 `SearchResults` 四字段平铺 + 强转，类型与类别不一致时编译器无法发现）。
+ */
+type CatalogItem =
+  | { kind: 'songs'; item: Track }
+  | { kind: 'artists'; item: Artist }
+  | { kind: 'albums'; item: Album }
+  | { kind: 'playlists'; item: Playlist }
+
+/** 按类别把一页结果包装成判别联合（全仓唯一的类别 → 字段映射）。 */
+function itemsOf(cat: SearchCategory, r: SearchResults): CatalogItem[] {
   switch (cat) {
     case 'songs':
-      return 'songs'
+      return r.songs.map((item) => ({ kind: 'songs', item }))
     case 'artists':
-      return 'artists'
+      return r.artists.map((item) => ({ kind: 'artists', item }))
     case 'albums':
-      return 'albums'
+      return r.albums.map((item) => ({ kind: 'albums', item }))
     // 磁带的「视频」在接口上就是歌单（Playlist），见 lib/searchCategory
     case 'cassette':
     case 'playlists':
-      return 'playlists'
+      return r.playlists.map((item) => ({ kind: 'playlists', item }))
   }
 }
 
-/**
- * 取某一类别的结果数组，只关心**条数**（判断本页是否满页、即还有没有下一批）。
- *
- * 返回形状恒含四个字段、`type` 短路时其余为 `[]`，故这里按 `listKey` 直接取长度，
- * 不引入联合类型转换。
- */
-function countOf(cat: SearchCategory, r: SearchResults): number {
-  switch (listKey(cat)) {
-    case 'songs':
-      return r.songs.length
-    case 'artists':
-      return r.artists.length
-    case 'albums':
-      return r.albums.length
-    case 'playlists':
-      return r.playlists.length
-  }
-}
+/** 判别联合的身份键。 */
+const catalogKeyOf = (i: CatalogItem): string => keyOf(i.item)
 
 /** 按类别派发结果渲染形态。 */
 function CategoryList({
@@ -269,14 +178,15 @@ function CategoryList({
   navigate,
 }: {
   cat: SearchCategory
-  items: SearchResults
+  items: CatalogItem[]
   navigate: ReturnType<typeof useViewNavigate>
 }) {
   const meta = SEARCH_CATEGORY_META[cat]
 
+  const songs = items.flatMap((i) => (i.kind === 'songs' ? [i.item] : []))
   if (cat === 'songs') {
-    return items.songs.length ? (
-      <TrackList tracks={items.songs} emptyText="没有找到相关歌曲" />
+    return songs.length ? (
+      <TrackList tracks={songs} emptyText="没有找到相关歌曲" />
     ) : (
       <Empty
         text="没有找到相关歌曲"
@@ -286,9 +196,10 @@ function CategoryList({
   }
 
   if (cat === 'artists') {
-    return items.artists.length ? (
+    const artists = items.flatMap((i) => (i.kind === 'artists' ? [i.item] : []))
+    return artists.length ? (
       <div className="card-grid">
-        {items.artists.map((a) => (
+        {artists.map((a) => (
           <ArtistCard
             key={keyOf(a)}
             artist={a}
@@ -306,9 +217,10 @@ function CategoryList({
   }
 
   if (cat === 'albums') {
-    return items.albums.length ? (
+    const albums = items.flatMap((i) => (i.kind === 'albums' ? [i.item] : []))
+    return albums.length ? (
       <div className="card-grid">
-        {items.albums.map((album) => (
+        {albums.map((album) => (
           <AlbumCard
             key={keyOf(album)}
             album={album}
@@ -322,7 +234,10 @@ function CategoryList({
   }
 
   // 歌单与磁带共用 Playlist 形状；磁带用 16:9 磁带卡
-  if (!items.playlists.length) {
+  const playlists = items.flatMap((i) =>
+    i.kind === 'playlists' ? [i.item] : [],
+  )
+  if (!playlists.length) {
     return (
       <Empty
         text={
@@ -333,7 +248,7 @@ function CategoryList({
   }
   return (
     <div className="card-grid">
-      {items.playlists.map((p) =>
+      {playlists.map((p) =>
         cat === 'cassette' ? (
           <CassetteCard
             key={keyOf(p)}
