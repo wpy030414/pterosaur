@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import type { MusicSource } from '@pterosaur/shared/types'
 import { api } from '../api/client.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
 
 /**
  * 卡片上「播放」按钮的集合播放动作。
@@ -10,7 +10,7 @@ import { usePlayer } from '../store/player.js'
  * 拉取失败时保持当前播放不变（静默）。
  */
 export function usePlayCollection() {
-  const playTracks = usePlayer((s) => s.playTracks)
+  const playTracks = playerCommands.playTracks
 
   const playPlaylist = useCallback(
     async (source: MusicSource, id: string) => {

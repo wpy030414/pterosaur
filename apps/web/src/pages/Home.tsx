@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
 import type { Album, Playlist, Track } from '@pterosaur/shared/types'
@@ -39,7 +39,7 @@ const HOT_LIMIT = 24
 export function Home() {
   const navigate = useViewNavigate()
   const recent = useLibrary((s) => s.recent)
-  const playTracks = usePlayer((s) => s.playTracks)
+  const playTracks = playerCommands.playTracks
   const status = useAuth((s) => s.status)
   // 推荐跟随活动账号（未登录用缺省源）。
   const source = activeMusicSource(status) ?? DEFAULT_SOURCE

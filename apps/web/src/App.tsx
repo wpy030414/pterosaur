@@ -25,7 +25,7 @@ import { usePresence } from './hooks/usePresence.js'
 import { supportsViewTransition } from './lib/viewTransition.js'
 import { audioEl } from './hooks/audioElement.js'
 import { useAuth } from './store/auth.js'
-import { usePlayer } from './store/player.js'
+import { usePlayerUi } from './store/playerUi.js'
 import './styles/app.css'
 
 /*
@@ -90,7 +90,7 @@ const NP_EXIT_MS = 420
 function NowPlayingLayer() {
   // VT 能力在组件内自算（supportsViewTransition 是纯读函数，无副作用）
   const vt = useMemo(supportsViewTransition, [])
-  const expanded = usePlayer((s) => s.expanded)
+  const expanded = usePlayerUi((s) => s.expanded)
   // hooks 规则：无条件调用；仅在无 VT 时取用其字段
   const presence = usePresence(expanded, NP_EXIT_MS)
   // VT 路径下同步挂载/卸载（含 reduced-motion），使其进入 View Transition 快照；

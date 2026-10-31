@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { AlertCircle, X } from 'lucide-react'
-import { usePlayer } from '../store/player.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
 import { useAuth } from '../store/auth.js'
 import './PlayErrorToast.css'
 
@@ -9,10 +9,10 @@ import './PlayErrorToast.css'
  * 提供「登录解锁」入口，5 秒后自动消失。
  */
 export function PlayErrorToast() {
-  const playError = usePlayer((s) => s.playError)
-  const playErrorNeedLogin = usePlayer((s) => s.playErrorNeedLogin)
-  const playErrorSource = usePlayer((s) => s.playErrorSource)
-  const setPlayError = usePlayer((s) => s.setPlayError)
+  const playError = usePlaybackSession((s) => s.playError)
+  const playErrorNeedLogin = usePlaybackSession((s) => s.playErrorNeedLogin)
+  const playErrorSource = usePlaybackSession((s) => s.playErrorSource)
+  const setPlayError = usePlaybackSession((s) => s.setPlayError)
   const status = useAuth((s) => s.status)
   const openModal = useAuth((s) => s.openModal)
 

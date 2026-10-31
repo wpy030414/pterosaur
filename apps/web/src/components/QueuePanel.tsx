@@ -1,6 +1,7 @@
 import { X, Trash2, Play } from 'lucide-react'
 import { keyOf } from '@pterosaur/shared/types'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
 import { useQueuePanel } from '../store/ui.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
@@ -13,11 +14,11 @@ import './QueuePanel.css'
 export function QueuePanel() {
   const open = useQueuePanel((s) => s.queueOpen)
   const setOpen = useQueuePanel((s) => s.setQueueOpen)
-  const queue = usePlayer((s) => s.queue)
-  const index = usePlayer((s) => s.index)
-  const playIndex = usePlayer((s) => s.playIndex)
-  const removeAt = usePlayer((s) => s.removeAt)
-  const clearQueue = usePlayer((s) => s.clearQueue)
+  const queue = usePlayerQueue((s) => s.queue)
+  const index = usePlayerQueue((s) => s.index)
+  const playIndex = playerCommands.playIndex
+  const removeAt = playerCommands.removeAt
+  const clearQueue = playerCommands.clearQueue
 
   return (
     <>

@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react'
-import { usePlayer } from '../store/player.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
 
 /**
  * 全局单例 `<audio>` 元素引用。
@@ -25,5 +25,5 @@ export function seekTo(sec: number): void {
       /* 元数据未就绪时忽略 */
     }
   }
-  usePlayer.getState().seek(clamped)
+  usePlaybackSession.getState().seek(clamped)
 }

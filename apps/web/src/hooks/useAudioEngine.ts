@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { keyOf } from '@pterosaur/shared/types'
 import { COVER_LARGE } from '@pterosaur/shared/image'
-import { usePlayer, audioSrc, advanceOnEnd } from '../store/player.js'
+import { advanceOnEnd, audioSrc, playerCommands } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
 import { useLibrary } from '../store/library.js'
 import { useSettings } from '../store/settings.js'
 import { audioEl } from './audioElement.js'
@@ -27,7 +29,8 @@ const PLAY_START_TIMEOUT_MS = 12_000
  * 进度 seek 由 {@link seekTo} 命令式处理，本引擎只单向回写播放位置。
  */
 export function useAudioEngine(): void {
-  const getState = () => usePlayer.getState()
+  // 引擎只读写「播放瞬时状态」；队列推进等跨 store 动作走命令层
+  const getState = () => usePlaybackSession.getState()
   // 弱网停滞看门狗：事件 effect 创建，换曲 effect 复位（经 ref 互通）
   const watchdogRef = useRef<Watchdog | null>(null)
   // 重载豁免位：load()（弱网恢复 / 换档）会派发一次 pause，需豁免其回写；跨 effect 经 ref 互通
@@ -36,7 +39,7 @@ export function useAudioEngine(): void {
   const loadedKeyRef = useRef('')
 
   // current / level 变化 -> 换源（同曲换档时保留播放位置）
-  const current = usePlayer((s) => s.current)
+  const current = usePlaybackSession((s) => s.current)
   const level = useSettings((s) => s.level)
   useEffect(() => {
     const audio = audioEl.current
@@ -81,7 +84,7 @@ export function useAudioEngine(): void {
   }, [current, level])
 
   // isPlaying -> play/pause
-  const isPlaying = usePlayer((s) => s.isPlaying)
+  const isPlaying = usePlaybackSession((s) => s.isPlaying)
   useEffect(() => {
     const audio = audioEl.current
     if (!audio || !current) return
@@ -123,8 +126,8 @@ export function useAudioEngine(): void {
   }, [isPlaying, current])
 
   // volume / muted
-  const volume = usePlayer((s) => s.volume)
-  const muted = usePlayer((s) => s.muted)
+  const volume = usePlayerQueue((s) => s.volume)
+  const muted = usePlayerQueue((s) => s.muted)
   useEffect(() => {
     const audio = audioEl.current
     if (!audio) return
@@ -195,7 +198,8 @@ export function useAudioEngine(): void {
         }
         return
       }
-      const { index, queue, repeat } = s
+      // 队列推进的输入来自 playerQueue（顺序游走 / repeat 决定下一首）
+      const { index, queue, repeat } = usePlayerQueue.getState()
       const nextIndex = advanceOnEnd(index, queue.length, repeat)
       if (nextIndex === null) {
         // 顺序播放到尾 → 停止并标记结束
@@ -211,7 +215,7 @@ export function useAudioEngine(): void {
           s.setPlayError('播放中断')
         })
       } else {
-        s.playIndex(nextIndex)
+        playerCommands.playIndex(nextIndex)
       }
     }
 
@@ -347,7 +351,11 @@ export function useAudioEngine(): void {
     const s = getState()
     navigator.mediaSession.setActionHandler('play', () => s.setPlaying(true))
     navigator.mediaSession.setActionHandler('pause', () => s.setPlaying(false))
-    navigator.mediaSession.setActionHandler('previoustrack', () => s.prev())
-    navigator.mediaSession.setActionHandler('nexttrack', () => s.next())
+    navigator.mediaSession.setActionHandler('previoustrack', () =>
+      playerCommands.prev(),
+    )
+    navigator.mediaSession.setActionHandler('nexttrack', () =>
+      playerCommands.next(),
+    )
   }, [current])
 }

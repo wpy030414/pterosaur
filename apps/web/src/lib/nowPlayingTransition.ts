@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom'
-import { usePlayer } from '../store/player.js'
+import { usePlayerUi } from '../store/playerUi.js'
 import {
   supportsViewTransition,
   prefersReducedMotion,
@@ -36,7 +36,7 @@ let active: ViewTransitionLike | null = null
  * @param next 目标状态（true 展开，false 收起）
  */
 export function startNowPlayingTransition(next: boolean): void {
-  const setExpanded = () => usePlayer.getState().setExpanded(next)
+  const setExpanded = () => usePlayerUi.getState().setExpanded(next)
 
   if (!supportsViewTransition() || prefersReducedMotion()) {
     flushSync(setExpanded)

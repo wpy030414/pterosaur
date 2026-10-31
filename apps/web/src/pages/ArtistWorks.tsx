@@ -2,7 +2,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
 import type { Album, Artist, Track } from '@pterosaur/shared/types'
 import {
   DEFAULT_SOURCE,
@@ -73,7 +73,7 @@ export function ArtistWorksPage({ kind }: { kind: WorksKind }) {
   const id = params.id ?? ''
   const name = search.get('name') ?? undefined
   const navigate = useViewNavigate()
-  const playTracks = usePlayer((s) => s.playTracks)
+  const playTracks = playerCommands.playTracks
   const copy = COPY[kind]
 
   const { data, loading, error, reload } = useAsync<ArtistDetail>(

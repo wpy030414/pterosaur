@@ -13,7 +13,10 @@ import {
   Loader2,
   Star,
 } from 'lucide-react'
-import { usePlayer, currentPlayMode } from '../store/player.js'
+import { playerCommands, currentPlayMode } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
+import { usePlayerUi } from '../store/playerUi.js'
 import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
 import { startNowPlayingTransition } from '../lib/nowPlayingTransition.js'
@@ -28,23 +31,20 @@ import { PLAY_MODE_META } from './playMode.js'
 import './PlayerBar.css'
 
 export function PlayerBar() {
-  const current = usePlayer((s) => s.current)
-  const isPlaying = usePlayer((s) => s.isPlaying)
-  const position = usePlayer((s) => s.position)
-  const duration = usePlayer((s) => s.duration)
-  const volume = usePlayer((s) => s.volume)
-  const muted = usePlayer((s) => s.muted)
-  const repeat = usePlayer((s) => s.repeat)
-  const shuffle = usePlayer((s) => s.shuffle)
-  const buffering = usePlayer((s) => s.buffering)
-  const toggle = usePlayer((s) => s.toggle)
-  const next = usePlayer((s) => s.next)
-  const prev = usePlayer((s) => s.prev)
-  const setVolume = usePlayer((s) => s.setVolume)
-  const toggleMute = usePlayer((s) => s.toggleMute)
-  const cyclePlayMode = usePlayer((s) => s.cyclePlayMode)
+  const current = usePlaybackSession((s) => s.current)
+  const isPlaying = usePlaybackSession((s) => s.isPlaying)
+  const position = usePlaybackSession((s) => s.position)
+  const duration = usePlaybackSession((s) => s.duration)
+  const buffering = usePlaybackSession((s) => s.buffering)
+  const volume = usePlayerQueue((s) => s.volume)
+  const muted = usePlayerQueue((s) => s.muted)
+  const repeat = usePlayerQueue((s) => s.repeat)
+  const shuffle = usePlayerQueue((s) => s.shuffle)
+  const setVolume = usePlayerQueue((s) => s.setVolume)
+  const toggleMute = usePlayerQueue((s) => s.toggleMute)
+  const { toggle, next, prev, cyclePlayMode } = playerCommands
   // 订阅 expanded：展开态下需让本侧封面让出 `view-transition-name: np-cover`（见 PlayerBar.css）
-  const expanded = usePlayer((s) => s.expanded)
+  const expanded = usePlayerUi((s) => s.expanded)
 
   const favorites = useLibrary((s) => s.favorites)
   const toggleFavorite = useLibrary((s) => s.toggleFavorite)

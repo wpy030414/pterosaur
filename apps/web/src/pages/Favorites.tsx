@@ -1,6 +1,7 @@
 import { Play, Shuffle, Star } from 'lucide-react'
 import { useLibrary } from '../store/library.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
 import { TrackList } from '../components/TrackList.js'
 import { IconButton } from '../components/IconButton.js'
 import { RipButton } from '../components/RipButton.js'
@@ -15,8 +16,8 @@ import { ripDialog } from '../store/ui.js'
  */
 export function FavoritesPage() {
   const favorites = useLibrary((s) => s.favorites)
-  const playTracks = usePlayer((s) => s.playTracks)
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+  const playTracks = playerCommands.playTracks
+  const toggleShuffle = playerCommands.toggleShuffle
   const level = useSettings((s) => s.level)
 
   // 翻录进度：从全局 store 认领「我喜欢的音乐」那份（切走再回自动恢复）
@@ -26,7 +27,7 @@ export function FavoritesPage() {
 
   const handlePlay = (shuffle = false) => {
     if (!favorites.length) return
-    if (shuffle && !usePlayer.getState().shuffle) toggleShuffle()
+    if (shuffle && !usePlayerQueue.getState().shuffle) toggleShuffle()
     playTracks(
       favorites,
       shuffle ? Math.floor(Math.random() * favorites.length) : 0,

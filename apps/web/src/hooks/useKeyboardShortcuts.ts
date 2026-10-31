@@ -1,5 +1,8 @@
 import { useEffect } from 'react'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
+import { usePlayerUi } from '../store/playerUi.js'
 import { seekTo } from './audioElement.js'
 import { startNowPlayingTransition } from '../lib/nowPlayingTransition.js'
 
@@ -28,8 +31,7 @@ export function useKeyboardShortcuts(onFocusSearch?: () => void): void {
 
       // Esc 总是生效（关闭浮层）
       if (e.key === 'Escape') {
-        const s = usePlayer.getState()
-        if (s.expanded) {
+        if (usePlayerUi.getState().expanded) {
           // 与点击关闭一致：走共享元素转场（不支持时内部自动降级）
           startNowPlayingTransition(false)
           return
@@ -38,48 +40,50 @@ export function useKeyboardShortcuts(onFocusSearch?: () => void): void {
 
       if (isTyping) return
 
-      const s = usePlayer.getState()
+      // 三类状态各取所需：瞬时状态、队列偏好、跨 store 命令
+      const playback = usePlaybackSession.getState()
+      const prefs = usePlayerQueue.getState()
       switch (e.key) {
         case ' ':
         case 'k':
           e.preventDefault()
-          s.toggle()
+          playerCommands.toggle()
           break
         case 'ArrowRight':
           e.preventDefault()
-          seekTo(s.position + 5)
+          seekTo(playback.position + 5)
           break
         case 'ArrowLeft':
           e.preventDefault()
-          seekTo(Math.max(0, s.position - 5))
+          seekTo(Math.max(0, playback.position - 5))
           break
         case 'ArrowUp':
           e.preventDefault()
-          s.setVolume(Math.min(1, s.volume + 0.05))
+          prefs.setVolume(Math.min(1, prefs.volume + 0.05))
           break
         case 'ArrowDown':
           e.preventDefault()
-          s.setVolume(Math.max(0, s.volume - 0.05))
+          prefs.setVolume(Math.max(0, prefs.volume - 0.05))
           break
         case 'm':
         case 'M':
-          s.toggleMute()
+          prefs.toggleMute()
           break
         case 's':
         case 'S':
-          s.toggleShuffle()
+          playerCommands.toggleShuffle()
           break
         case 'r':
         case 'R':
-          s.cycleRepeat()
+          prefs.cycleRepeat()
           break
         case 'n':
         case 'N':
-          s.next()
+          playerCommands.next()
           break
         case 'p':
         case 'P':
-          s.prev()
+          playerCommands.prev()
           break
         case '/':
           e.preventDefault()

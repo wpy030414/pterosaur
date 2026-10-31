@@ -21,7 +21,7 @@ import { AppLink } from '../components/AppLink.js'
 import { Rail } from '../components/Rail.js'
 import { RailMore } from '../components/RailMore.js'
 import { SongRow } from '../components/SongRow.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
 import {
   CASSETTE_SOURCE,
   SEARCH_PAGE_SIZE,
@@ -237,7 +237,7 @@ function SearchLanding({ source }: { source: MusicSource }) {
 
 function SearchResults({ q, source }: { q: string; source: MusicSource }) {
   const navigate = useViewNavigate()
-  const playTracks = usePlayer((st) => st.playTracks)
+  const playTracks = playerCommands.playTracks
 
   // 音乐四类（歌曲 / 艺术家 / 专辑 / 歌单）一次取齐；磁带走 CASSETTE_SOURCE（B 站），
   // 两者并行，各自的分区只管自己那条结果。

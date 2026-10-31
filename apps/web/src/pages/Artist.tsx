@@ -4,7 +4,7 @@ import { Play, Star, Info } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import type { Album, Artist, Track } from '@pterosaur/shared/types'
 import {
@@ -71,7 +71,7 @@ export function ArtistPage() {
   // 名字供「无按-id 取艺术家」能力的源按名搜索（当前网易云忽略它）
   const name = search.get('name') ?? undefined
   const navigate = useViewNavigate()
-  const playTracks = usePlayer((s) => s.playTracks)
+  const playTracks = playerCommands.playTracks
   const savedArtists = useLibrary((s) => s.savedArtists)
   const toggleSaveArtist = useLibrary((s) => s.toggleSaveArtist)
   const isSaved = savedArtists.some((a) => a.source === source && a.id === id)

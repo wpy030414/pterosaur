@@ -3,7 +3,7 @@ import { Play, Star } from 'lucide-react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import { ripDialog } from '../store/ui.js'
 import type { Album, Track } from '@pterosaur/shared/types'
@@ -39,7 +39,7 @@ export function AlbumPage() {
     : DEFAULT_SOURCE
   const id = params.id ?? ''
   const navigate = useViewNavigate()
-  const playTracks = usePlayer((s) => s.playTracks)
+  const playTracks = playerCommands.playTracks
   const level = useSettings((s) => s.level)
   const savedAlbums = useLibrary((s) => s.savedAlbums)
   const toggleSaveAlbum = useLibrary((s) => s.toggleSaveAlbum)

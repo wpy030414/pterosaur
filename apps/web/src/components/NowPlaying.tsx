@@ -9,7 +9,10 @@ import {
   Loader2,
   Star,
 } from 'lucide-react'
-import { usePlayer, currentPlayMode } from '../store/player.js'
+import { currentPlayMode, playerCommands } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
+import { usePlayerUi } from '../store/playerUi.js'
 import { useLibrary } from '../store/library.js'
 import { useQueuePanel } from '../store/ui.js'
 import { useSettings } from '../store/settings.js'
@@ -61,18 +64,18 @@ const BG_FADE_SETTLE_MS = 480
  * 常驻挂载，由 `open`/`exiting` 驱动进入 / 退出动画；Esc 关闭。
  */
 export function NowPlaying({ open, exiting }: NowPlayingProps) {
-  const current = usePlayer((s) => s.current)
-  const isPlaying = usePlayer((s) => s.isPlaying)
-  const position = usePlayer((s) => s.position)
-  const duration = usePlayer((s) => s.duration)
-  const repeat = usePlayer((s) => s.repeat)
-  const shuffle = usePlayer((s) => s.shuffle)
-  const buffering = usePlayer((s) => s.buffering)
-  const toggle = usePlayer((s) => s.toggle)
-  const next = usePlayer((s) => s.next)
-  const prev = usePlayer((s) => s.prev)
-  const cyclePlayMode = usePlayer((s) => s.cyclePlayMode)
-  const setExpanded = usePlayer((s) => s.setExpanded)
+  const current = usePlaybackSession((s) => s.current)
+  const isPlaying = usePlaybackSession((s) => s.isPlaying)
+  const position = usePlaybackSession((s) => s.position)
+  const duration = usePlaybackSession((s) => s.duration)
+  const repeat = usePlayerQueue((s) => s.repeat)
+  const shuffle = usePlayerQueue((s) => s.shuffle)
+  const buffering = usePlaybackSession((s) => s.buffering)
+  const toggle = playerCommands.toggle
+  const next = playerCommands.next
+  const prev = playerCommands.prev
+  const cyclePlayMode = playerCommands.cyclePlayMode
+  const setExpanded = usePlayerUi((s) => s.setExpanded)
   const navigate = useViewNavigate()
 
   /** 跳转到专辑 / 艺术家页：先收起沉浸页，否则整屏浮层会盖住目标页面。 */

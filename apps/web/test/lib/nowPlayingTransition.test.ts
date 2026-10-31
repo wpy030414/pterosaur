@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startNowPlayingTransition } from '../../src/lib/nowPlayingTransition.js'
-import { usePlayer } from '../../src/store/player.js'
+import { usePlayerUi } from '../../src/store/playerUi.js'
 
 /**
  * mock 出 View Transitions 的最小行为：捕获回调并异步执行（模拟 UA 拍完旧快照后更新）。
@@ -49,7 +49,7 @@ function setReducedMotion(reduce: boolean): void {
 }
 
 beforeEach(() => {
-  usePlayer.setState({ expanded: false })
+  usePlayerUi.setState({ expanded: false })
   delete root().dataset.npVt
   setReducedMotion(false)
 })
@@ -66,7 +66,7 @@ describe('startNowPlayingTransition', () => {
     delete (document as unknown as { startViewTransition?: unknown })
       .startViewTransition
     startNowPlayingTransition(true)
-    expect(usePlayer.getState().expanded).toBe(true)
+    expect(usePlayerUi.getState().expanded).toBe(true)
     expect(root().dataset.npVt).toBeUndefined()
   })
 
@@ -76,7 +76,7 @@ describe('startNowPlayingTransition', () => {
 
     startNowPlayingTransition(true)
 
-    expect(usePlayer.getState().expanded).toBe(true)
+    expect(usePlayerUi.getState().expanded).toBe(true)
     expect(spy).not.toHaveBeenCalled()
     expect(root().dataset.npVt).toBeUndefined()
   })
@@ -90,13 +90,13 @@ describe('startNowPlayingTransition', () => {
     expect(root().dataset.npVt).toBe('open')
     expect(spy).toHaveBeenCalledOnce()
 
-    await vi.waitFor(() => expect(usePlayer.getState().expanded).toBe(true))
+    await vi.waitFor(() => expect(usePlayerUi.getState().expanded).toBe(true))
     await vi.waitFor(() => expect(root().dataset.npVt).toBeUndefined())
   })
 
   it('收起走同一路径：标记为 close', () => {
     installFakeVT()
-    usePlayer.setState({ expanded: true })
+    usePlayerUi.setState({ expanded: true })
     startNowPlayingTransition(false)
     expect(root().dataset.npVt).toBe('close')
   })
@@ -110,7 +110,7 @@ describe('startNowPlayingTransition', () => {
     expect(list).toHaveLength(2)
     expect(list[0].skipTransition).toHaveBeenCalledOnce()
     // 被 skip 的旧转场结束后不清除标记（标记归新转场所有）
-    await vi.waitFor(() => expect(usePlayer.getState().expanded).toBe(false))
+    await vi.waitFor(() => expect(usePlayerUi.getState().expanded).toBe(false))
     await vi.waitFor(() => expect(root().dataset.npVt).toBeUndefined())
   })
 })

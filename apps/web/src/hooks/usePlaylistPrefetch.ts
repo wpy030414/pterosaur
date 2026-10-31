@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { keyOf } from '@pterosaur/shared/types'
-import { usePlayer } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
 import { useSettings } from '../store/settings.js'
 import { audioEl } from './audioElement.js'
 import {
@@ -28,16 +29,16 @@ const scheduler = createPrefetchScheduler({
     canPrefetch({
       online: navigator.onLine,
       connection: getConnection(),
-      buffering: usePlayer.getState().buffering,
+      buffering: usePlaybackSession.getState().buffering,
       readyState: audioEl.current?.readyState ?? 0,
     }),
 })
 
 export function usePlaylistPrefetch(): void {
-  const current = usePlayer((s) => s.current)
-  const queue = usePlayer((s) => s.queue)
-  const index = usePlayer((s) => s.index)
-  const buffering = usePlayer((s) => s.buffering)
+  const current = usePlaybackSession((s) => s.current)
+  const queue = usePlayerQueue((s) => s.queue)
+  const index = usePlayerQueue((s) => s.index)
+  const buffering = usePlaybackSession((s) => s.buffering)
   const level = useSettings((s) => s.level)
   const currentKey = current ? keyOf(current) : ''
 

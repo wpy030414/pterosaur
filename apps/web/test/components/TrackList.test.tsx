@@ -3,7 +3,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import { TrackList } from '../../src/components/TrackList.js'
-import { usePlayer } from '../../src/store/player.js'
+import { usePlayerQueue } from '../../src/store/playerQueue.js'
+import { usePlaybackSession } from '../../src/store/playbackSession.js'
+import { usePlayerUi } from '../../src/store/playerUi.js'
 import { useLibrary } from '../../src/store/library.js'
 import type { Track } from '@pterosaur/shared/types'
 import { expandGroups } from '../../src/lib/cassette.js'
@@ -51,21 +53,25 @@ function renderList(ui: ReactElement) {
 }
 
 beforeEach(() => {
-  usePlayer.setState({
-    current: null,
+  usePlayerQueue.setState({
     queue: [],
     index: -1,
     baseQueue: [],
-    isPlaying: false,
-    position: 0,
-    duration: 0,
     volume: 0.8,
     muted: false,
     repeat: 'all',
     shuffle: false,
-    playError: null,
-    expanded: false,
   })
+  usePlaybackSession.setState({
+    current: null,
+    isPlaying: false,
+    position: 0,
+    duration: 0,
+    playError: null,
+    playbackEnded: false,
+    buffering: false,
+  })
+  usePlayerUi.setState({ expanded: false })
   useLibrary.setState({
     favorites: [],
     recent: [],
@@ -102,11 +108,10 @@ describe('TrackList', () => {
   it('点击行以该列表为队列播放', () => {
     renderList(<TrackList tracks={SONGS} />)
     fireEvent.click(screen.getByText('第二首'))
-    const s = usePlayer.getState()
-    expect(s.current?.id).toBe('2')
-    expect(s.queue).toHaveLength(3)
-    expect(s.index).toBe(1)
-    expect(s.isPlaying).toBe(true)
+    expect(usePlaybackSession.getState().current?.id).toBe('2')
+    expect(usePlayerQueue.getState().queue).toHaveLength(3)
+    expect(usePlayerQueue.getState().index).toBe(1)
+    expect(usePlaybackSession.getState().isPlaying).toBe(true)
   })
 
   it('点击红心收藏曲目', () => {
@@ -126,12 +131,8 @@ describe('TrackList', () => {
   })
 
   it('当前播放曲目行高亮', () => {
-    usePlayer.setState({
-      current: SONGS[1],
-      queue: SONGS,
-      index: 1,
-      isPlaying: true,
-    })
+    usePlayerQueue.setState({ queue: SONGS, index: 1 })
+    usePlaybackSession.setState({ current: SONGS[1], isPlaying: true })
     const { container } = renderList(<TrackList tracks={SONGS} />)
     const activeRows = container.querySelectorAll('.track-row--current')
     expect(activeRows).toHaveLength(1)
@@ -148,9 +149,9 @@ describe('TrackList', () => {
   it('点击当前正在播放的曲目会暂停', () => {
     renderList(<TrackList tracks={SONGS} />)
     fireEvent.click(screen.getByText('第一首'))
-    expect(usePlayer.getState().isPlaying).toBe(true)
+    expect(usePlaybackSession.getState().isPlaying).toBe(true)
     fireEvent.click(screen.getByText('第一首'))
-    expect(usePlayer.getState().isPlaying).toBe(false)
+    expect(usePlaybackSession.getState().isPlaying).toBe(false)
   })
 
   it('含 B 站分P 条目时：队列按分P 展开，起点为被点视频的首个分P', async () => {
@@ -167,14 +168,14 @@ describe('TrackList', () => {
     renderList(<TrackList tracks={list} />)
     fireEvent.click(screen.getByText('某合集'))
     await waitFor(() =>
-      expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([
+      expect(usePlayerQueue.getState().queue.map((t) => t.id)).toEqual([
         'a',
         'BV1:1',
         'BV1:2',
         'b',
       ]),
     )
-    expect(usePlayer.getState().current?.id).toBe('BV1:1')
+    expect(usePlaybackSession.getState().current?.id).toBe('BV1:1')
   })
 
   it('点击艺术家名跳转艺术家页，且不触发行播放', () => {
@@ -188,7 +189,7 @@ describe('TrackList', () => {
     // 桌面列与移动端副标题各有一个链接，点第一个即可
     fireEvent.click(screen.getAllByRole('button', { name: '某艺术家' })[0])
     expect(screen.getByTestId('loc')).toHaveTextContent('/artist/netease/9')
-    expect(usePlayer.getState().current).toBeNull()
+    expect(usePlaybackSession.getState().current).toBeNull()
   })
 
   it('多艺术家各自可点击跳转', () => {
@@ -211,7 +212,7 @@ describe('TrackList', () => {
     renderList(<TrackList tracks={t} />)
     fireEvent.click(screen.getByRole('button', { name: '某专辑' }))
     expect(screen.getByTestId('loc')).toHaveTextContent('/album/netease/77')
-    expect(usePlayer.getState().current).toBeNull()
+    expect(usePlaybackSession.getState().current).toBeNull()
   })
 
   it('艺术家单独成列（紧随标题列），而非标题下方的副标题', () => {

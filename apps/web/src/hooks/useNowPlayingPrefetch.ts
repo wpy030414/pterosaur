@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { coverAt, COVER_LARGE } from '@pterosaur/shared/image'
-import { usePlayer } from '../store/player.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
 import { prefetchLyric } from '../lib/lyricCache.js'
 import { preloadCover } from '../lib/imageCache.js'
 
@@ -12,7 +12,7 @@ import { preloadCover } from '../lib/imageCache.js'
  * StrictMode 下 effect 双跑，预载函数天然幂等。
  */
 export function useNowPlayingPrefetch(): void {
-  const current = usePlayer((s) => s.current)
+  const current = usePlaybackSession((s) => s.current)
   useEffect(() => {
     if (!current) return
     preloadCover(coverAt(current.cover, COVER_LARGE))

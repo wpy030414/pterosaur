@@ -6,7 +6,9 @@ import {
   formatCollectionSummary,
   keyOf,
 } from '@pterosaur/shared/types'
-import { usePlayer } from '../store/player.js'
+import { playerCommands } from '../store/player.js'
+import { usePlayerQueue } from '../store/playerQueue.js'
+import { usePlaybackSession } from '../store/playbackSession.js'
 import { useLibrary } from '../store/library.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
@@ -66,11 +68,11 @@ export function TrackList({
   onPlayRow,
   showSummary = false,
 }: TrackListProps) {
-  const queue = usePlayer((s) => s.queue)
-  const current = usePlayer((s) => s.current)
-  const isPlaying = usePlayer((s) => s.isPlaying)
-  const playTracks = usePlayer((s) => s.playTracks)
-  const toggle = usePlayer((s) => s.toggle)
+  const queue = usePlayerQueue((s) => s.queue)
+  const current = usePlaybackSession((s) => s.current)
+  const isPlaying = usePlaybackSession((s) => s.isPlaying)
+  const playTracks = playerCommands.playTracks
+  const toggle = playerCommands.toggle
 
   const favorites = useLibrary((s) => s.favorites)
   const toggleFavorite = useLibrary((s) => s.toggleFavorite)
@@ -109,7 +111,7 @@ export function TrackList({
     if (isSameQueue(queue, list)) {
       const i = queue.findIndex((t) => keyOf(t) === keyOf(target))
       if (i >= 0) {
-        usePlayer.getState().playIndex(i)
+        playerCommands.playIndex(i)
         return
       }
     }

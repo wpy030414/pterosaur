@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
 import { act, fireEvent, render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NowPlaying } from '../../src/components/NowPlaying.js'
-import { usePlayer } from '../../src/store/player.js'
+import { usePlayerQueue } from '../../src/store/playerQueue.js'
+import { usePlaybackSession } from '../../src/store/playbackSession.js'
 import { useSettings } from '../../src/store/settings.js'
 import { api } from '../../src/api/client.js'
 import { clearCoverRegistry } from '../../src/lib/imageCache.js'
@@ -74,7 +75,8 @@ function lastImage() {
 /** 设置当前曲目并冲刷 effect / 微任务。 */
 async function play(t: Track) {
   await act(async () => {
-    usePlayer.setState({ current: t, index: 0, queue: [t], baseQueue: [t] })
+    usePlayerQueue.setState({ index: 0, queue: [t], baseQueue: [t] })
+    usePlaybackSession.setState({ current: t })
   })
 }
 
@@ -114,11 +116,13 @@ beforeEach(() => {
   vi.mocked(api.quality).mockResolvedValue(null)
   useSettings.setState({ level: 'exhigh', background: null })
   stubMobileMedia(false)
-  usePlayer.setState({
-    current: null,
+  usePlayerQueue.setState({
     queue: [],
     index: -1,
     baseQueue: [],
+  })
+  usePlaybackSession.setState({
+    current: null,
     isPlaying: false,
     position: 0,
     duration: 0,

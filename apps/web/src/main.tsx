@@ -4,7 +4,8 @@ import { AppRouter } from './components/AppRouter.js'
 import type { MusicSource } from '@pterosaur/shared/types'
 import App from './App.js'
 import { useLibrary } from './store/library.js'
-import { usePlayer } from './store/player.js'
+import { usePlaybackSession } from './store/playbackSession.js'
+import { usePlayerQueue } from './store/playerQueue.js'
 import './styles/global.css'
 
 const rootEl = document.getElementById('root')
@@ -40,7 +41,7 @@ function listenServiceWorkerMessages(): void {
   navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
     const data = event.data as { type?: string; source?: MusicSource } | null
     if (data?.type === 'STREAM_NEED_LOGIN') {
-      usePlayer
+      usePlaybackSession
         .getState()
         .setPlayError('该曲目暂不可播放', true, data.source ?? null)
     }
@@ -50,15 +51,30 @@ function listenServiceWorkerMessages(): void {
 /**
  * 引导应用。
  *
- * library 持久化已迁移到异步的 IndexedDB，hydration 不再同步完成；在首帧前手动 `rehydrate()`，
- * 使收藏/最近等页面首次渲染即带数据，避免空态闪烁。IDB 不可用时降级为空库继续渲染。
+ * library 与播放队列的持久化都在异步的 IndexedDB：hydration 不再同步完成，
+ * 在首帧前手动 `rehydrate()`，使收藏 / 最近 / 队列首次渲染即带数据，避免空态闪烁。
+ * 两者互不依赖，并行恢复；任一失败都降级为空数据继续渲染。
  */
 async function bootstrap(): Promise<void> {
-  try {
-    await useLibrary.persist.rehydrate()
-  } catch (err) {
-    console.warn('[library] 从 IndexedDB 恢复失败，将以空库启动', err)
+  const rehydrate = async (
+    run: () => Promise<void> | void,
+    label: string,
+    fallback: string,
+  ) => {
+    try {
+      await run()
+    } catch (err) {
+      console.warn(`[${label}] 从 IndexedDB 恢复失败，将以${fallback}启动`, err)
+    }
   }
+  await Promise.all([
+    rehydrate(() => useLibrary.persist.rehydrate(), 'library', '空库'),
+    rehydrate(
+      () => usePlayerQueue.persist.rehydrate(),
+      'playerQueue',
+      '空队列',
+    ),
+  ])
 
   createRoot(rootEl as HTMLElement).render(
     <StrictMode>
