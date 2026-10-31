@@ -2,29 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pickPlaybackSrc } from '../../src/lib/offlineAudio.js'
 
 /**
- * 离线播放的选源规则（纯函数部分）。真正的 `<audio>` / IDB 交互由 e2e 覆盖，
- * 这里锁定「离线且已保存才用 blob」这一条语义。
+ * 播放选源规则（纯函数部分）。真正的 `<audio>` / IDB 交互由 e2e 覆盖，
+ * 这里锁定「已保存就优先本地」这一条语义。
  */
 describe('pickPlaybackSrc', () => {
   const stream = '/stream/netease/1?level=exhigh'
   const blob = 'blob:local-1'
 
-  it('在线：永远用流地址（浏览器 HTTP 缓存负责省流）', () => {
-    expect(pickPlaybackSrc(true, null, stream)).toBe(stream)
-    expect(pickPlaybackSrc(true, blob, stream)).toBe(stream)
+  it('已保存：无论在线与否都优先本地（省服务器与流量）', () => {
+    expect(pickPlaybackSrc(blob, stream)).toBe(blob)
   })
 
-  it('离线且已保存：用本地 blob', () => {
-    expect(pickPlaybackSrc(false, blob, stream)).toBe(blob)
-  })
-
-  it('离线未保存：仍返回流地址（交由上层给出明确提示，而不是静默失败）', () => {
-    expect(pickPlaybackSrc(false, null, stream)).toBe(stream)
+  it('未保存：用流地址', () => {
+    expect(pickPlaybackSrc(null, stream)).toBe(stream)
+    expect(pickPlaybackSrc(undefined, stream)).toBe(stream)
+    expect(pickPlaybackSrc('', stream)).toBe(stream)
   })
 
   it('没有当前曲（流地址为空）时原样返回空', () => {
-    expect(pickPlaybackSrc(false, blob, '')).toBe('')
-    expect(pickPlaybackSrc(true, null, '')).toBe('')
+    expect(pickPlaybackSrc(blob, '')).toBe('')
+    expect(pickPlaybackSrc(null, '')).toBe('')
   })
 })
 

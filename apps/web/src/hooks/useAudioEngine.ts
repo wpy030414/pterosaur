@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { keyOf, type AudioLevel } from '@pterosaur/shared/types'
 import { COVER_LARGE } from '@pterosaur/shared/image'
 import { advanceOnEnd, audioSrc, playerCommands } from '../store/player.js'
@@ -22,6 +22,12 @@ import {
 
 /** 起播超时（毫秒）：弱网下 play() 长期既不 resolve 也不 reject 时的兜底。 */
 const PLAY_START_TIMEOUT_MS = 12_000
+
+/**
+ * 本地副本起播兜底（毫秒）：播放 `blob:` 需要先把整曲从 IndexedDB 读出来，慢盘 / 大文件
+ * 时可能迟迟没有元数据。超时仍无 `loadedmetadata` 就退回流地址（断网时无路可退）。
+ */
+const LOCAL_START_TIMEOUT_MS = 3_000
 
 /**
  * 全局唯一的 `<audio>` 引擎。
@@ -49,27 +55,36 @@ export function useAudioEngine(): void {
   /** 最近一次换源所用的音质档位（离线 / 在线切换时重建流地址要用同一个档）。 */
   const levelRef = useRef<AudioLevel>('exhigh')
 
+  /** 本地副本起播兜底计时器：超时仍无元数据就退回流地址（见 `loadSource`）。 */
+  const localFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearLocalFallback = () => {
+    if (localFallbackRef.current !== null) {
+      clearTimeout(localFallbackRef.current)
+      localFallbackRef.current = null
+    }
+  }
+
   /**
-   * 换源：在线时 `src` 是 `/stream/...`（浏览器 HTTP 缓存负责省流，见 ADR-060）；
-   * 离线且已保存时换成 `blob:`（由 `lookupSavedAudio` 建好）。
+   * 换源：**已保存就用本地 `blob:`**（在线亦然，省服务器与流量，见 ADR-060），否则用流地址。
    * 同曲换档 / 在线离线切换都保留播放位置。
+   *
+   * 本地起播兜底：读整曲需要先把字节从 IndexedDB 取出，慢盘 / 大文件时可能迟迟没有元数据。
+   * 超过 {@link LOCAL_START_TIMEOUT_MS} 仍未就绪就退回流地址；断网时无路可退，只能等。
    */
-  const loadSource = (
-    streamSrc: string,
-    sameTrack: boolean,
-    offline: boolean,
-  ) => {
+  const loadSource = (streamSrc: string, sameTrack: boolean) => {
     const audio = audioEl.current
     if (!audio) return
     const key = loadedKeyRef.current
     const saved =
-      offline && savedSrcRef.current?.key === key
-        ? savedSrcRef.current.url
-        : null
-    const src = pickPlaybackSrc(!offline, saved, streamSrc)
+      savedSrcRef.current?.key === key ? savedSrcRef.current.url : null
+    const src = pickPlaybackSrc(saved, streamSrc)
     getState().setBuffering(Boolean(src))
     watchdogRef.current?.reset()
     if (!src) {
+      // 停播：槽位已清空，保留「正在播放」会让后续点播放误判成「同一首 → 切换」
+      clearLocalFallback()
+      loadedKeyRef.current = ''
       audio.removeAttribute('src')
       audio.load()
       return
@@ -78,10 +93,28 @@ export function useAudioEngine(): void {
       ? src
       : new URL(src, window.location.origin).href
     if (audio.src === abs) return
+    clearLocalFallback()
+    if (src.startsWith('blob:') && navigator.onLine) {
+      const fallbackSrc = streamSrc
+      localFallbackRef.current = setTimeout(() => {
+        localFallbackRef.current = null
+        // 期间若已切到别的源 / 已就绪，就不插手
+        if (audio.src !== abs || audio.readyState >= 1) return
+        console.warn('[audio] 本地副本起播超时，退回流地址')
+        savedSrcRef.current = null
+        audio.src = new URL(fallbackSrc, window.location.origin).href
+        audio.load()
+        if (getState().isPlaying) {
+          void audio.play().catch(() => {
+            /* 交回 error / 看门狗兜底 */
+          })
+        }
+      }, LOCAL_START_TIMEOUT_MS)
+    }
     const resumeAt = sameTrack ? audio.currentTime : 0
     audio.src = abs
     if (sameTrack) {
-      // 同曲换档 / 离线切换：重载并保留位置（与弱网恢复同一手法），并豁免 load 触发的 pause
+      // 同曲换档：重载并保留位置（与弱网恢复同一手法），并豁免 load 触发的 pause
       recoveringRef.current = true
       audio.load()
       const seekBack = () => {
@@ -104,9 +137,12 @@ export function useAudioEngine(): void {
   }
 
   // current / level 变化 -> 换源（同曲换档时保留播放位置）
+  //
+  // 必须 useLayoutEffect 且排在「播放态」effect 之前：两处都对同一个 React 提交起反应，
+  // 普通 effect 的执行顺序会把盘给 play() 先于 load() 落到媒体元素上。
   const current = usePlaybackSession((s) => s.current)
   const level = useSettings((s) => s.level)
-  useEffect(() => {
+  useLayoutEffect(() => {
     levelRef.current = level
     if (!current) {
       loadedKeyRef.current = ''
@@ -124,11 +160,10 @@ export function useAudioEngine(): void {
     loadedKeyRef.current = key
     let cancelled = false
 
-    const offline = !navigator.onLine
     const apply = (savedUrl: string | null) => {
       if (cancelled) return
       savedSrcRef.current = savedUrl ? { key, url: savedUrl } : null
-      loadSource(audioSrc(current, level), sameTrack, !navigator.onLine)
+      loadSource(audioSrc(current, level), sameTrack)
       // 离线且未保存：明确告知，而不是让 <audio> 报一个含糊的「播放出错」
       if (!navigator.onLine && !savedUrl) {
         getState().setPlaying(false)
@@ -136,24 +171,24 @@ export function useAudioEngine(): void {
       }
     }
 
-    if (offline) {
-      // 离线：先查本地副本，查到才播
-      void lookupSavedAudio(current.source, current.id, level)
-        .then(apply)
-        .catch(() => apply(null))
-    } else {
-      apply(null)
-    }
+    // 先查本地副本（已保存就优先本地，在线亦然）；查不到再走流地址
+    void lookupSavedAudio(current.source, current.id, level)
+      .then(apply)
+      .catch(() => apply(null))
     return () => {
       cancelled = true
     }
   }, [current, level])
 
-  // 在线 ⇄ 离线：同一曲也要换源（流地址 ↔ blob），并保留播放位置
+  // 断网时若当前曲有本地副本，立刻切过去；恢复在线后**保持播放本地**（不切回网络）
   useEffect(() => {
     const onOffline = () => {
       const { current: cur } = getState()
       if (!cur) return
+      const audio = audioEl.current
+      if (!audio) return
+      // 已在播本地副本：无需再切
+      if (audio.src.startsWith('blob:')) return
       const key = keyOf(cur)
       void lookupSavedAudio(cur.source, cur.id, levelRef.current)
         .then((url) => {
@@ -164,21 +199,30 @@ export function useAudioEngine(): void {
           }
           getState().setPlayError(null)
           savedSrcRef.current = { key, url }
-          loadSource(audioSrc(cur, levelRef.current), true, true)
+          loadSource(audioSrc(cur, levelRef.current), true)
         })
         .catch(() => {})
     }
     const onOnline = () => {
-      const { current: cur } = getState()
-      if (!cur) return
+      // 本地副本若还持有就继续播它（省一次服务器请求）；只是清掉残留的离线提示
       if (getState().playError === '该曲目未离线保存，暂时无法播放') {
         getState().setPlayError(null)
       }
-      loadSource(audioSrc(cur, levelRef.current), true, false)
     }
     const onClear = () => {
+      // 正在播的 blob: 即将失效：先切回流地址再释放（离线时只能停）
+      const { current: cur } = getState()
+      const audio = audioEl.current
+      const wasLocal = !!audio && audio.src.startsWith('blob:')
       releaseSavedUrls()
       savedSrcRef.current = null
+      if (!cur || !wasLocal) return
+      if (navigator.onLine) {
+        loadSource(audioSrc(cur, levelRef.current), true)
+      } else {
+        getState().setPlaying(false)
+        getState().setPlayError('该曲目未离线保存，暂时无法播放')
+      }
     }
     window.addEventListener('offline', onOffline)
     window.addEventListener('online', onOnline)
@@ -207,10 +251,32 @@ export function useAudioEngine(): void {
     ) {
       audio.load()
     }
+    // 换源 effect 调过 load() 后，媒体管线回到 HAVE_NOTHING，此刻 play() 会被 load
+    // 算法吸收——只发一次 play 事件随即 emptied/loadstart，之后没有任何东西重新发起播放。
+    const playbackStarted = () => !audio.error && audio.readyState >= 1
     // 起播超时兜底：弱网下 play() 可能长时间不 settle，超时后回到暂停态并提示，
     // 避免 UI 停在「播放中」而实际无声（迟到的 resolve 会因 isPlaying 已为 false 被暂停）
     let timer = 0
-    const started = audio.play()
+    const startPlay = () => {
+      started = audio.play()
+    }
+    let started: Promise<void>
+    if (!playbackStarted()) {
+      started = new Promise<void>((resolve, reject) => {
+        const onReady = () => {
+          try {
+            audio.removeEventListener('loadedmetadata', onReady)
+            startPlay()
+            resolve()
+          } catch (e) {
+            reject(e)
+          }
+        }
+        audio.addEventListener('loadedmetadata', onReady, { once: true })
+      })
+    } else {
+      started = audio.play()
+    }
     timer = window.setTimeout(() => {
       getState().setPlaying(false)
       getState().setPlayError('网络不稳定，请稍后再试')
@@ -257,6 +323,8 @@ export function useAudioEngine(): void {
 
     const onDuration = () => {
       if (disposed) return
+      // 元数据到了（含本地副本）：撤掉「本地起播超时」兜底
+      clearLocalFallback()
       const d = audio.duration
       if (Number.isFinite(d)) getState().setDuration(d)
     }
@@ -330,6 +398,23 @@ export function useAudioEngine(): void {
     const onError = () => {
       if (disposed) return
       const s = getState()
+      // 本地副本读失败（IDB 被清 / 文件损坏）：在线时退回流地址，别让整首放不出来
+      if (
+        audio.error &&
+        audio.src.startsWith('blob:') &&
+        navigator.onLine &&
+        s.current
+      ) {
+        savedSrcRef.current = null
+        clearLocalFallback()
+        audio.src = new URL(
+          audioSrc(s.current, levelRef.current),
+          window.location.origin,
+        ).href
+        audio.load()
+        if (s.isPlaying) void audio.play().catch(() => {})
+        return
+      }
       s.setPlaying(false)
       s.setBuffering(false)
       const err = audio.error
@@ -405,6 +490,7 @@ export function useAudioEngine(): void {
 
     return () => {
       disposed = true
+      clearLocalFallback()
       cancelAnimationFrame(rafId)
       watchdogRef.current = null
       audio.removeEventListener('durationchange', onDuration)

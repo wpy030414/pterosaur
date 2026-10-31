@@ -3,30 +3,29 @@ import { audioKey, getSaved, removeSaved } from './mediaCache.js'
 import { registerCacheCleaner } from './cacheRegistry.js'
 
 /**
- * 离线播放：断网时把**已离线保存**的整曲交给 `<audio>` 播放。
+ * 本地副本播放：**只要某曲已离线保存，播放就优先走本地**（在线亦然，ADR-060 修订）。
  *
- * 在线时播放永远直连 `/stream`（浏览器 HTTP 缓存负责省流，见 ADR-060）；只有 `offline`
- * 事件到来、且当前曲已保存，才换成 `blob:` 地址。恢复在线后释放对象 URL、切回流地址。
+ * 听过一遍的曲目再播不应再向服务器要一次音频——省的是带宽、后端取流与上游风控的压力。
+ * 代价是失去 Range 流式起播（要等 IndexedDB 把整曲读成 `blob:`），故 `useAudioEngine`
+ * 为「起播迟迟不来」准备了回退到流地址的兜底。断网时本地副本是唯一可行来源。
  *
- * 本模块不持有播放器状态：切换由 `useAudioEngine` 订阅 online/offline 完成，这里只提供
- * 「查得到就给出 URL」与「释放」两件事，外加一个可单测的纯函数 {@link pickPlaybackSrc}。
+ * 本模块不持有播放器状态：这里只提供「查得到就给出 URL」与「释放」两件事，外加一个
+ * 可单测的纯函数 {@link pickPlaybackSrc}。
  */
 
 /** 已创建的 object URL（按缓存 key 去重，重复命中复用同一个 URL）。 */
 const objects = new Map<string, string>()
 
 /**
- * 选择播放源：**离线且已保存**才用本地 blob，其余一律走流地址。
+ * 选择播放源：**已保存就用本地 `blob:`**（无论在线与否），否则用流地址。
  * `stream` 为空（没有当前曲）时原样返回空。
  */
 export function pickPlaybackSrc(
-  online: boolean,
-  savedUrl: string | null,
+  savedUrl: string | null | undefined,
   stream: string,
 ): string {
   if (!stream) return ''
-  if (!online && savedUrl) return savedUrl
-  return stream
+  return savedUrl ? savedUrl : stream
 }
 
 /**

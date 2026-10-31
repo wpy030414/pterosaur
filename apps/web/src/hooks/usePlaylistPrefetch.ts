@@ -37,19 +37,22 @@ const scheduler = createPrefetchScheduler({
 
 export function usePlaylistPrefetch(): void {
   const current = usePlaybackSession((s) => s.current)
+  const isPlaying = usePlaybackSession((s) => s.isPlaying)
   const queue = usePlayerQueue((s) => s.queue)
   const index = usePlayerQueue((s) => s.index)
   const buffering = usePlaybackSession((s) => s.buffering)
   const level = useSettings((s) => s.level)
   const currentKey = current ? keyOf(current) : ''
 
+  // 暂停时不预取：既省流量，也让「播放即保存」成为离线保存的主要写入路径
+  //（否则一停顿就会把 ±1 两首也下下来，与用户实际在听的预期不符）。
   useEffect(() => {
-    const targets = prefetchTargets(queue, index)
+    const targets = isPlaying ? prefetchTargets(queue, index) : []
     if (!targets.length) {
       scheduler.cancel()
       return
     }
     scheduler.schedule(targets, level)
     return () => scheduler.cancel()
-  }, [currentKey, queue, index, level, buffering])
+  }, [currentKey, queue, index, level, buffering, isPlaying])
 }

@@ -1251,6 +1251,88 @@ test.describe('离线保存', () => {
     await context.setOffline(false)
   })
 
+  test('听过的曲目再播放走本地副本，不再请求 /stream', async ({
+    page,
+    context,
+  }) => {
+    const streamRequests: string[] = []
+    await context.route('**/stream/**', async (route) => {
+      streamRequests.push(route.request().url())
+      await route.continue()
+    })
+
+    await page.goto('/search/songs?q=' + encodeURIComponent(FREE_SONG_KEYWORD))
+    await expect(page.locator('.track-row').first()).toBeVisible({
+      timeout: 15000,
+    })
+    const title =
+      (await page.locator('.col-title__name').first().textContent()) ?? ''
+
+    // 第一次播放：走网络，并「播放即保存」落进 IndexedDB
+    await page.locator('.track-row').first().click()
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ db }) =>
+              new Promise<number>((resolve) => {
+                const req = indexedDB.open(db)
+                req.onsuccess = () => {
+                  const d = req.result
+                  if (!d.objectStoreNames.contains('mediaMeta')) {
+                    d.close()
+                    resolve(0)
+                    return
+                  }
+                  const c = d
+                    .transaction('mediaMeta', 'readonly')
+                    .objectStore('mediaMeta')
+                    .count()
+                  c.onsuccess = () => {
+                    d.close()
+                    resolve(c.result)
+                  }
+                  c.onerror = () => {
+                    d.close()
+                    resolve(0)
+                  }
+                }
+                req.onerror = () => resolve(0)
+              }),
+            { db: IDB_DB },
+          ),
+        { timeout: 30000, intervals: [500] },
+      )
+      .toBeGreaterThan(0)
+
+    // 暂停——顺便让「点行恢复」比「刷新页面」更能代表真实的重听场景
+    await page.getByTestId('play-toggle').click()
+    await expect
+      .poll(async () => (await audioState(page)).paused, { timeout: 5000 })
+      .toBe(true)
+
+    // 刷新后重听：全页重载 + 同一行再点一次。刷新后若本地副本没被读出来，就会重新打 /stream
+    await page.reload()
+    await expect(page.locator('.track-row').first()).toBeVisible({
+      timeout: 15000,
+    })
+    const before = streamRequests.length
+
+    await page.locator('.track-row').first().click()
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const a = document.querySelector('audio')
+            return a?.src ?? ''
+          }),
+        { timeout: 15000 },
+      )
+      .toMatch(/^blob:/)
+    expect(streamRequests.length).toBe(before)
+    await expect(page.locator('.playerbar__title')).toContainText(title)
+  })
+
   test('未命中缓存时 seek 型 Range 请求透传上游（206 而非 200 全量）', async ({
     page,
     request,
