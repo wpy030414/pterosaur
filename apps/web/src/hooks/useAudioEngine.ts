@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { keyOf } from '@pterosaur/shared/types'
+import { keyOf, type AudioLevel } from '@pterosaur/shared/types'
 import { COVER_LARGE } from '@pterosaur/shared/image'
 import { advanceOnEnd, audioSrc, playerCommands } from '../store/player.js'
 import { usePlayerQueue } from '../store/playerQueue.js'
@@ -43,8 +43,10 @@ export function useAudioEngine(): void {
   // 已加载曲目的 `source:id`，用于区分「换曲」（重置进度）与「同曲换档」（保留进度）
   const loadedKeyRef = useRef('')
 
-  /** 已确认的本地副本地址（离线时优先用它）；在线时为 null。 */
+  /** 当前曲的本地副本地址（离线时优先用它）；在线 / 未保存时为 null。 */
   const savedSrcRef = useRef<{ key: string; url: string } | null>(null)
+  /** 最近一次换源所用的音质档位（离线 / 在线切换时重建流地址要用同一个档）。 */
+  const levelRef = useRef<AudioLevel>('exhigh')
 
   /**
    * 换源：在线时 `src` 是 `/stream/...`（浏览器 HTTP 缓存负责省流，见 ADR-060）；
@@ -104,8 +106,10 @@ export function useAudioEngine(): void {
   const current = usePlaybackSession((s) => s.current)
   const level = useSettings((s) => s.level)
   useEffect(() => {
+    levelRef.current = level
     if (!current) {
       loadedKeyRef.current = ''
+      savedSrcRef.current = null
       getState().setBuffering(false)
       const audio = audioEl.current
       if (audio) {
@@ -150,7 +154,7 @@ export function useAudioEngine(): void {
       const { current: cur } = getState()
       if (!cur) return
       const key = keyOf(cur)
-      void lookupSavedAudio(cur.source, cur.id, level)
+      void lookupSavedAudio(cur.source, cur.id, levelRef.current)
         .then((url) => {
           if (!url) {
             getState().setPlaying(false)
@@ -159,7 +163,7 @@ export function useAudioEngine(): void {
           }
           getState().setPlayError(null)
           savedSrcRef.current = { key, url }
-          loadSource(audioSrc(cur, level), true, true)
+          loadSource(audioSrc(cur, levelRef.current), true, true)
         })
         .catch(() => {})
     }
@@ -169,9 +173,12 @@ export function useAudioEngine(): void {
       if (getState().playError === '该曲目未离线保存，暂时无法播放') {
         getState().setPlayError(null)
       }
-      loadSource(audioSrc(cur, level), true, false)
+      loadSource(audioSrc(cur, levelRef.current), true, false)
     }
-    const onClear = () => releaseSavedUrls()
+    const onClear = () => {
+      releaseSavedUrls()
+      savedSrcRef.current = null
+    }
     window.addEventListener('offline', onOffline)
     window.addEventListener('online', onOnline)
     window.addEventListener('offline-audio-cleared', onClear)
@@ -180,6 +187,7 @@ export function useAudioEngine(): void {
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline-audio-cleared', onClear)
     }
+    // 换档由换源 effect 处理（它同时更新 levelRef）；这里只需在档位变化时重挂监听
   }, [level])
 
   // isPlaying -> play/pause
