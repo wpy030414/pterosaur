@@ -161,10 +161,16 @@ export function createApp({
   const app = new Hono()
   app.onError(onError)
 
-  // 同源部署；开发期由 Vite 代理转发，这里放开 CORS 便于本地联调。
+  // 同源部署；开发期由 Vite 代理转发（同源），本无需 CORS。保留一段宽松策略仅为
+  // 本地联调便利，但**不能**用 `origin:'*'` + `credentials:true`——那是浏览器明令拒绝的
+  // 组合（此类请求根本不会带上 cookie，却又被迫走预检）。故按请求 Origin 回显。
   app.use(
     '/api/*',
-    cors({ origin: '*', allowHeaders: ['Content-Type'], credentials: true }),
+    cors({
+      origin: (origin) => origin || undefined,
+      allowHeaders: ['Content-Type'],
+      credentials: true,
+    }),
   )
 
   app.get('/api/health', (c) => c.json(ok({ status: 'ok', time: Date.now() })))
