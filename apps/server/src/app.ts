@@ -28,10 +28,12 @@ import {
   audioContentTypeFromUrl,
   fetchAudioCandidate,
 } from './audioFetch.js'
+import { upstreamExpiresAt } from './sources/http.js'
 import { isFakeBurn } from './imapi.js'
 import { createRipEngine, validateBurnBody, type RipEngine } from './rip.js'
 import { failure, onError } from './errors.js'
 import {
+  CACHE_TTL,
   cacheKey,
   clearCookies,
   cached,
@@ -48,7 +50,9 @@ import {
   requireIdentity,
   requireLoopback,
   sourceQuery,
+  streamTokenOf,
   syncKey,
+  urlAnchorCache,
   urlCache,
 } from './http.js'
 
@@ -58,6 +62,12 @@ export { dataCache, DATA_CACHE_TTL_MS } from './http.js'
 /** `/api/search/all` 允许的 `type` 取值（与返回字段一一对应）。 */
 const SEARCH_TYPES = new Set(['songs', 'artists', 'albums', 'playlists'])
 type SearchType = 'songs' | 'artists' | 'albums' | 'playlists'
+
+/**
+ * `/stream` 下放给浏览器的缓存寿命下限：低于它（地址即将过期 / 上游 no-store）就不续命
+ * 地址缓存，免得一次「差一点就过期」的请求把解析结果又拖长一整段。
+ */
+const MIN_BROWSER_CACHE_MS = 30_000
 
 /**
  * 注册 `/api/<name>/:source/:id` 与其 2 段式别名 `/api/<name>/:id`
@@ -89,12 +99,28 @@ async function streamHandler(c: Context): Promise<Response> {
   const cookie = credentialOf(c, adapter)
 
   const key = `${source}|${id}|${level}|${credentialKey(cookie)}`
-  let urls = urlCache.get(key)
+  // 地址缓存条目的过期时刻（ms）：命中时取 LRU 记录的剩余寿命，未命中则从此刻起算。
+  // 它是「价签」`?t=` 的来源——同一份解析结果在过期前始终得到同一个 `t`。
+  const now = Date.now()
+  // 记录「价签锚点」：解析结果对应的有效时刻。以毫秒整数存，避免从 LRU 的剩余寿命反推
+  // （反推会带出浮点与淘汰时刻的偏差，`t` 在两次请求间漂移）。
+  const anchorKey = `${key}|expiresAt`
+  const hit = urlCache.get(key)
+  let urls = hit
+  // 未命中时按「刚刚解析、寿命满格」计，而不是读回 LRU 的剩余寿命——后者把 LRU 的
+  // 定时淘汰与解析时刻混为一谈，会让 `t` 依赖「距上次清理过了多久」而在两次请求间漂移，
+  // 浏览器缓存随之整段失效。
+  let expiresAt =
+    (hit && urlAnchorCache.get(anchorKey)) || now + CACHE_TTL.audioUrl
   if (!urls) {
     const resolved = await adapter.songUrl(id, cookie, level)
     if (resolved.length) {
+      // `expiresAt` 在解析**之前**取定：LRU 的 ttl 从这里起算，价签与之同源
       urls = resolved
-      urlCache.set(key, resolved)
+      urlCache.set(key, resolved, { ttl: Math.max(0, expiresAt - now) })
+      urlAnchorCache.set(anchorKey, expiresAt, {
+        ttl: Math.max(0, expiresAt - now),
+      })
     }
   }
 
@@ -139,7 +165,33 @@ async function streamHandler(c: Context): Promise<Response> {
   const contentRange = upstream.headers.get('content-range')
   if (contentRange) headers.set('Content-Range', contentRange)
   headers.set('Accept-Ranges', 'bytes')
-  headers.set('Cache-Control', 'no-store')
+
+  // —— 浏览器 HTTP 缓存（见 ADR-060）——
+  // 播放器只从浏览器原生 HTTP 缓存受益（SW 合成的响应无法支撑可 seek 的媒体流），
+  // 故由本路由主动下放缓存语义：`private`（单用户会话，不落共享缓存）+ 有限 `max-age`。
+  //
+  // 寿命 = min(自己的地址缓存剩余寿命, 上游声明的可用寿命)。**默认 `immutable`**：同一
+  // URL 下的字节不会变（地址一变，`t` 就变，URL 随之不同）；只有上游明确说 `no-store`
+  // 时才退回 `no-cache`（每次回源校验，但不再禁止客户端留存）。
+  //
+  // `?t=` 是「价签」：回访时，若地址仍在该有效期外而未过期，把地址缓存的寿命延长到 t 所指
+  // 时点，免得一次「定格」让后续 URL 在每次请求间漂移、浏览器缓存整段失效。
+  const upstreamTtl = upstreamExpiresAt(upstream, now)
+  if (upstreamTtl !== null) expiresAt = Math.min(expiresAt, upstreamTtl)
+  const ttl = Math.max(0, expiresAt - now)
+  const token = streamTokenOf(expiresAt)
+  const stale = ttl <= MIN_BROWSER_CACHE_MS
+  const continueTtl = c.req.query('t') === token
+  if (!stale && (hit || continueTtl)) {
+    urlCache.set(key, urls, { ttl })
+    urlAnchorCache.set(anchorKey, expiresAt, { ttl })
+  }
+  const maxAge = Math.max(0, Math.floor(ttl / 1000))
+  headers.set(
+    'Cache-Control',
+    stale ? 'private, no-cache' : `private, max-age=${maxAge}, immutable`,
+  )
+  headers.set('ETag', `"${token}"`)
 
   const status = upstream.status === 206 ? 206 : 200
   // HEAD 请求不返回 body

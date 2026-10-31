@@ -56,6 +56,42 @@ export function isTransientError(err: UpstreamError): boolean {
   return err.code === 0 || err.code >= 500 || err.code === 429
 }
 
+/** 上游声明缓存寿命时预留的提前量：避免客户端卡在「刚好过期」的边缘回源。 */
+export const STREAM_EXPIRY_MARGIN_MS = 60_000
+
+/**
+ * 从上游响应头推断「该地址可复用到何时」（毫秒时间戳）；上游未声明寿命时返回 `null`。
+ *
+ * 只认 `Cache-Control` 的 `max-age` 与 `Expires`，取两者较早者再减 {@link STREAM_EXPIRY_MARGIN_MS}。
+ * `no-cache` / `private` 等指令不改变「地址本身仍有效」的事实，忽略；`no-store` 表示上游
+ * 不希望被缓存——返回 `now`（立刻到期），把它当成「无可复用寿命」。
+ *
+ * 调用方再与自身地址缓存的 TTL 取较早者，决定实际下发给浏览器的 `max-age`。
+ */
+export function upstreamExpiresAt(res: Response, now: number): number | null {
+  const cc = res.headers.get('cache-control')?.toLowerCase() ?? ''
+  const directives = cc.split(',').map((s) => s.trim())
+  if (directives.some((d) => d === 'no-store' || d.startsWith('no-store='))) {
+    return now
+  }
+
+  let expiresAt: number | null = null
+  const maxAge = directives
+    .map((d) => /^max-age=(\d+)$/.exec(d))
+    .find((m) => m !== null)
+  if (maxAge) expiresAt = now + Number(maxAge[1]) * 1000
+
+  const expiresHeader = res.headers.get('expires')
+  if (expiresHeader) {
+    const parsed = Date.parse(expiresHeader)
+    if (Number.isFinite(parsed)) {
+      expiresAt = expiresAt === null ? parsed : Math.min(expiresAt, parsed)
+    }
+  }
+  if (expiresAt === null) return null
+  return expiresAt - STREAM_EXPIRY_MARGIN_MS
+}
+
 export interface UpstreamOptions {
   /** 默认 `BROWSER_UA`。 */
   userAgent?: string

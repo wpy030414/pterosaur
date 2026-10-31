@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
+  STREAM_EXPIRY_MARGIN_MS,
   UpstreamError,
   businessError,
   codecName,
@@ -9,6 +10,7 @@ import {
   parseSampleRate,
   sessionCookieHeader,
   toHttps,
+  upstreamExpiresAt,
   upstreamJson,
 } from '../../src/sources/http.js'
 
@@ -163,5 +165,58 @@ describe('sources/http parseSampleRate（fMP4 init segment）', () => {
     expect(parseSampleRate(mp4('iso5', 44100, 'opus'))).toBeUndefined()
     expect(parseSampleRate(new Uint8Array([0, 0, 0, 0]))).toBeUndefined()
     expect(parseSampleRate(new Uint8Array(0))).toBeUndefined()
+  })
+})
+
+describe('sources/http upstreamExpiresAt（/stream 下放缓存的寿命依据）', () => {
+  const NOW = 1_700_000_000_000
+  const res = (headers: Record<string, string>) =>
+    new Response(null, { status: 200, headers })
+
+  it('上游未声明寿命 → null（由调用方用自己的 TTL）', () => {
+    expect(upstreamExpiresAt(res({}), NOW)).toBeNull()
+    expect(
+      upstreamExpiresAt(res({ 'cache-control': 'public' }), NOW),
+    ).toBeNull()
+  })
+
+  it('只认 max-age 与 Expires，并扣掉提前量', () => {
+    expect(
+      upstreamExpiresAt(res({ 'cache-control': 'public, max-age=600' }), NOW),
+    ).toBe(NOW + 600_000 - STREAM_EXPIRY_MARGIN_MS)
+    expect(
+      upstreamExpiresAt(
+        res({ expires: new Date(NOW + 900_000).toUTCString() }),
+        NOW,
+      ),
+    ).toBe(NOW + 900_000 - STREAM_EXPIRY_MARGIN_MS)
+  })
+
+  it('两者并存取较早者', () => {
+    expect(
+      upstreamExpiresAt(
+        res({
+          'cache-control': 'max-age=1200',
+          expires: new Date(NOW + 300_000).toUTCString(),
+        }),
+        NOW,
+      ),
+    ).toBe(NOW + 300_000 - STREAM_EXPIRY_MARGIN_MS)
+  })
+
+  it('no-store → 立刻到期（不再复用）', () => {
+    expect(
+      upstreamExpiresAt(res({ 'cache-control': 'no-store, max-age=600' }), NOW),
+    ).toBe(NOW)
+  })
+
+  it('过期 / 无法解析的 Expires 不算数', () => {
+    expect(upstreamExpiresAt(res({ expires: 'not-a-date' }), NOW)).toBeNull()
+    expect(
+      upstreamExpiresAt(
+        res({ expires: new Date(NOW - 10_000).toUTCString() }),
+        NOW,
+      ),
+    ).toBe(NOW - 10_000 - STREAM_EXPIRY_MARGIN_MS)
   })
 })

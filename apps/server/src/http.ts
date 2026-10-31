@@ -27,6 +27,17 @@ export function fail(error: string, needLogin = false): ApiResult<never> {
 /* ============================ 缓存 ============================ */
 
 /**
+ * 音频地址「价签」：把该地址解析结果的过期时刻编成稳定字符串，作为 `/stream` 的 `?t=`。
+ *
+ * 它是**缓存键的一部分**而非签名：过期时刻变了，URL 就变了，浏览器 HTTP 缓存自然失效、
+ * 必须重新走一次后端（再解析出新地址）。`t` 只编码后端自己的判定，客户端无法伪造出
+ * 「更久的缓存」——伪造 `t` 同样只是让后端按新解析结果应答。见 ADR-060。
+ */
+export function streamTokenOf(expiresAt: number): string {
+  return expiresAt.toString(36)
+}
+
+/**
  * 后端**唯一**的 LRU 缓存工厂：容量 / TTL 在此集中登记，新增缓存不许再随手
  * `new LRUCache(...)`（散落的 TTL 与键格式曾出现「同类数据两套口径」）。
  * TTL 单位毫秒；`ttl: 0` 表示不按时间过期、只受容量淘汰。
@@ -51,6 +62,15 @@ export const CACHE_TTL = {
 
 /** 音频地址缓存：`源|id|档位|凭证指纹` -> **有序候选 https 地址**（首个优先）。 */
 export const urlCache = cacheOf<string[]>(2000, CACHE_TTL.audioUrl)
+
+/**
+ * 音频地址的「价签锚点」：`地址缓存键|expiresAt` -> 该解析结果的过期时刻（毫秒整数）。
+ *
+ * 与 `urlCache` 同容量 / 同 TTL 并成对写入；地址缓存被 LRU 淘汰后自然失配（命中地址却
+ * 取不到锚点时回落到满格寿命，不会吐出过期的 `t`）。不读 `LRUCache.getRemainingTTL()`
+ * 反推：那会带出浮点与定时淘汰的偏差，`/stream` 的 `?t=` 随之漂移、浏览器缓存整段失效。
+ */
+export const urlAnchorCache = cacheOf<number>(2000, CACHE_TTL.audioUrl)
 
 /** 音质查询缓存：`源|id|档位|凭证指纹` -> 实际音质（只缓存成功结果），与地址缓存同口径。 */
 export const qualityCache = cacheOf<AudioQuality>(2000, CACHE_TTL.audioUrl)

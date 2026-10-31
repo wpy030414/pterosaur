@@ -302,6 +302,106 @@ describe('源段与缺省源', () => {
     expect(songUrlMock).toHaveBeenCalledTimes(2)
     fetchMock.mockRestore()
   })
+
+  describe('/stream 下放浏览器 HTTP 缓存（ADR-060）', () => {
+    /** 让上游与解析都成功，并返回「本次请求实际打到的上游地址」。 */
+    function stubUpstream(headers: Record<string, string> = {}) {
+      vi.spyOn(neteaseAdapter, 'songUrl').mockResolvedValue([
+        'https://cdn.example/a.mp3',
+      ])
+      const tried: string[] = []
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        tried.push(input instanceof Request ? input.url : String(input))
+        return new Response('bytes', {
+          status: 200,
+          headers: { 'content-type': 'audio/mpeg', ...headers },
+        })
+      })
+      return tried
+    }
+
+    it('响应头是可缓存的 private + 有限 max-age，不再是 no-store', async () => {
+      stubUpstream()
+      const res = await app.request('/stream/netease/cache-1')
+      const cc = res.headers.get('cache-control') ?? ''
+      expect(cc).toContain('private')
+      expect(cc).toMatch(/max-age=\d+/)
+      expect(cc).toContain('immutable')
+      expect(cc).not.toContain('no-store')
+      expect(Number(/max-age=(\d+)/.exec(cc)?.[1])).toBeGreaterThan(0)
+      expect(res.headers.get('etag')).toMatch(/^"[0-9a-z]+"$/)
+    })
+
+    it('首解析与紧随其后的命中给出**相同**的 `t`，且不重复解析', async () => {
+      const songUrlMock = vi
+        .spyOn(neteaseAdapter, 'songUrl')
+        .mockResolvedValue(['https://cdn.example/a.mp3'])
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () =>
+          new Response('bytes', {
+            status: 200,
+            headers: { 'content-type': 'audio/mpeg' },
+          }),
+      )
+      const first = await app.request('/stream/netease/cache-2')
+      const t1 = first.headers.get('etag')?.replaceAll('"', '')
+      const second = await app.request('/stream/netease/cache-2')
+      const t2 = second.headers.get('etag')?.replaceAll('"', '')
+      // `t` 精确到秒：首解析以「解析时刻 + 15 分钟」为准，紧随的命中取回同一时点
+      expect(t1).toBeTruthy()
+      expect(t2).toBe(t1)
+      expect(songUrlMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('上游声明更短的寿命时，下放的 max-age 不比它长', async () => {
+      stubUpstream({ 'cache-control': 'public, max-age=120' })
+      const res = await app.request('/stream/netease/cache-3')
+      const maxAge = Number(
+        /max-age=(\d+)/.exec(res.headers.get('cache-control') ?? '')?.[1],
+      )
+      // 120s 再扣 60s 提前量 = 60s，必然短于自身 15 分钟的 TTL
+      expect(maxAge).toBeLessThanOrEqual(60)
+    })
+
+    it('上游 no-store：退回 no-cache（可留存但每次回源校验），不再声称 immutable', async () => {
+      stubUpstream({ 'cache-control': 'no-store' })
+      const res = await app.request('/stream/netease/cache-4')
+      const cc = res.headers.get('cache-control') ?? ''
+      expect(cc).toContain('no-cache')
+      expect(cc).not.toContain('immutable')
+      expect(cc).not.toContain('max-age')
+    })
+
+    it('带对了 `t` 的请求续命解析缓存；带错了不续命', async () => {
+      // 用一个本轮新起的 app：urlCache 是模块级单例，别的用例可能已填过同 key，
+      // 而这里要断言「解析是否被重新调用」，必须从干净状态起算。
+      const fresh = createApp()
+      const songUrlMock = vi
+        .spyOn(neteaseAdapter, 'songUrl')
+        .mockResolvedValue(['https://cdn.example/a.mp3'])
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () =>
+          new Response('bytes', {
+            status: 200,
+            headers: { 'content-type': 'audio/mpeg' },
+          }),
+      )
+
+      // 上游未声明寿命 → 寿命 = 自身 TTL（15 分钟），即便带错 `t` 也仍在有效期内
+      const first = await fresh.request('/stream/netease/renew-1')
+      const t = first.headers.get('etag')?.replaceAll('"', '') ?? ''
+      expect(t).not.toBe('')
+
+      // 正确 `t`：延长到同一时点，不触发重新解析
+      await fresh.request(`/stream/netease/renew-1?t=${t}`)
+      expect(songUrlMock).toHaveBeenCalledTimes(1)
+
+      // 错误 `t`：不续命、但也不影响本轮应答
+      const wrong = await fresh.request('/stream/netease/renew-1?t=bogus')
+      expect(wrong.status).toBe(200)
+      expect(songUrlMock).toHaveBeenCalledTimes(1)
+    })
+  })
 })
 
 describe('搜索分页（page / type）', () => {
