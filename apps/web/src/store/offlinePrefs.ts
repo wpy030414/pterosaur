@@ -24,6 +24,9 @@ export const useOfflinePrefs = create<
       name: OFFLINE_PREFS_KEY,
       storage: offlinePrefsStorage,
       partialize: (s): OfflinePrefs => ({ autoPrefetch: s.autoPrefetch }),
+      // 与 library / playerQueue 一致：IDB 是异步的，首帧前由 main.tsx 手动 rehydrate，
+      // 避免「默认开」与「用户关掉」在启动瞬间闪烁。
+      skipHydration: true,
     },
   ),
 )
