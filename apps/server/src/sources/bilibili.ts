@@ -37,10 +37,22 @@ import {
   type Track,
 } from '@pterosaur/shared/types'
 import type { QrCheckResult, SourceAdapter } from './types.js'
+import {
+  BROWSER_UA,
+  businessError,
+  credentialFingerprint,
+  isTransientError,
+  parseSampleRate,
+  probeFirstCandidate,
+  sessionCookieHeader,
+  upstreamJson,
+} from './http.js'
+
+// 采样率解析器已上提到公共层；此处再导出，保持既有导入路径
+export { parseSampleRate }
 
 /** 浏览器 UA（B 站对非浏览器 UA 较敏感）。 */
-const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const UA = BROWSER_UA
 
 /** 调接口 / 取字节必需的上游来源页（否则直链 403）。 */
 const REFERER = 'https://www.bilibili.com'
@@ -70,45 +82,30 @@ interface BiliResponse<T> {
 }
 
 /**
- * 解析失败自动重试：只要**任何**一次请求失败（网络错误 / 非 2xx / 上游非 0 业务码）就按固定
- * 333ms 间隔重试，**与具体错误码无关**——以免把「播放出错，请检查网络后重试」这类失败透给用户。
+ * 瞬时故障的重试参数：只对网络错误 / 超时 / 5xx / 429 重试（业务码与 4xx 立即抛，
+ * 见 {@link bGet}），**首次 + 5 次重试 = 最多 6 次请求**。
  */
 const MAX_RETRIES = 5
 const RETRY_DELAY_MS = 333
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms))
-
 /**
- * 带重试的 GET。
+ * 带分类重试的 GET。
  *
- * 网络错误 / 非 2xx / `code !== 0` **一律重试**（不区分具体错误码），最多 {@link MAX_RETRIES} 次；
- * 仍失败则抛出，由各调用点降级（`parts`/`songUrl` 返空、`searchSongs` 交由路由回 502）。
+ * 只对**瞬时故障**重试（网络错误 / 超时 / 5xx / 429），最多 {@link MAX_RETRIES} 次；
+ * 业务码失败（如风控 `v_voucher`、`-352`）与其它 4xx **立即抛出**——从前对所有码无差别
+ * 重试 5 次，等于对风控反复补刀。仍失败则抛出，由各调用点降级
+ * （`parts`/`songUrl` 返空、`searchSongs` 交由路由回 502）。
  */
 async function bGet<T>(url: string, cookie?: string): Promise<BiliResponse<T>> {
-  let lastErr: Error = new Error('bilibili 请求失败')
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) await sleep(RETRY_DELAY_MS)
-    try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': UA,
-          Referer: REFERER,
-          ...(cookie ? { Cookie: cookie } : {}),
-        },
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = (await res.json()) as BiliResponse<T>
-      if (json.code !== 0) {
-        lastErr = new Error(`bilibili code ${json.code}`)
-        continue
-      }
-      return json
-    } catch (e) {
-      lastErr = e instanceof Error ? e : new Error(String(e))
-    }
-  }
-  throw lastErr
+  const json = await upstreamJson<BiliResponse<T>>(url, {
+    referer: REFERER,
+    cookie,
+    attempts: MAX_RETRIES + 1,
+    retryDelayMs: RETRY_DELAY_MS,
+    retryOn: isTransientError,
+  })
+  if (json.code !== 0) throw businessError(json.code, 'bilibili')
+  return json
 }
 
 /** 进程内缓存 buvid3（匿名反爬标识，实测 6h 内有效），避免每个请求都去取。 */
@@ -388,59 +385,9 @@ function codecName(a: BiliAudio): string | undefined {
   return undefined
 }
 
-/* ============================ 采样率探测（fMP4 init segment） ============================ */
-
-/** MP4 box 树中需继续下钻的容器 box（init segment 的采样率深藏在 `moov/…/stbl/stsd` 里）。 */
-const MP4_CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl'])
-/** AudioSampleEntry 标准布局的音频格式（采样率字段偏移一致）；FLAC 轨走扩展布局，不在此路径。 */
-const MP4_AUDIO_FORMATS = new Set(['mp4a', 'ac-3', 'ec-3'])
-
-/**
- * 从 fMP4 init segment（文件头部若干 KB）解析音频采样率（Hz）；解析不出返回 `undefined`。
- *
- * B 站 `playurl` **不回报采样率**（`dash.audio[]` 只有 id/bandwidth/mime/codecs），而共享
- * `AudioQuality.sr` 有展示位——唯一诚实的取法是读文件头：音频 DASH 直链是完整 fMP4，
- * `ftyp + moov` 在最前面，采样率就在 `stsd` 首个 sample entry（AudioSampleEntry，ISO 14496-12：
- * box 头 8 字节 + SampleEntry 8 字节 + 保留 8 字节后，第 24 字节偏移处的 16.16 定点采样率）。
- * 纯函数（递归走 box 树），导出供单测。
- */
-export function parseSampleRate(bytes: Uint8Array): number | undefined {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const typeAt = (p: number): string =>
-    String.fromCharCode(bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3])
-
-  const find = (start: number, end: number): number | undefined => {
-    let pos = start
-    while (pos + 8 <= end) {
-      const size = view.getUint32(pos)
-      const type = typeAt(pos + 4)
-      const boxEnd = size === 0 ? end : pos + size // size=0：box 延伸到缓冲区末尾
-      if (boxEnd > end || boxEnd < pos + 8) return undefined // 脏数据：整段放弃
-      if (type === 'stsd') {
-        // 头 8 + version/flags 4 + entry_count 4 → 首个 sample entry
-        const entry = pos + 16
-        if (entry + 36 > boxEnd) return undefined
-        if (!MP4_AUDIO_FORMATS.has(typeAt(entry + 4))) return undefined
-        const sr = view.getUint32(entry + 8 + 24) >>> 16
-        return sr > 0 ? sr : undefined
-      }
-      if (MP4_CONTAINERS.has(type)) {
-        const hit = find(pos + 8, boxEnd)
-        if (hit !== undefined) return hit
-      }
-      pos = boxEnd
-    }
-    return undefined
-  }
-
-  return find(0, bytes.byteLength)
-}
-
 /** 采样率探测的进程内缓存（`<曲目id>#<音频流id>` → Hz），避免每次展示音质都回源头。 */
 const sampleRateCache = new Map<string, number>()
 const SAMPLE_RATE_CACHE_MAX = 500
-/** 探测一次取多少字节：音频 init segment（ftyp+moov）实测 < 4KB，取 32KB 裕量充足。 */
-const PROBE_BYTES = 32 * 1024
 
 /**
  * 拉取音频直链头部（Range 前缀），解析 init segment 得采样率（Hz）。
@@ -451,25 +398,16 @@ async function probeSampleRate(
   urls: string[],
   cookie?: string,
 ): Promise<number | undefined> {
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': UA,
-          Referer: REFERER,
-          Range: `bytes=0-${PROBE_BYTES - 1}`,
-          ...(cookie ? { Cookie: cookie } : {}),
-        },
-        signal: AbortSignal.timeout(5000),
-      })
-      if (!res.ok) continue
-      const hit = parseSampleRate(new Uint8Array(await res.arrayBuffer()))
-      if (hit !== undefined) return hit
-    } catch {
-      /* 试下一个候选 */
-    }
-  }
-  return undefined
+  return probeFirstCandidate(
+    urls,
+    {
+      'User-Agent': UA,
+      Referer: REFERER,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    parseSampleRate,
+    5000,
+  )
 }
 
 /** 解析给定档位**实际**得到的音频流参数（供沉浸页顶部如实展示）：取选中音频条的实测码率与编解码。 */
@@ -605,12 +543,6 @@ const viewCache = new LRUCache<string, BiliViewData>({
   max: 200,
   ttl: 2 * 60 * 60 * 1000,
 })
-
-/** 凭证指纹（`sha1` 前 12 位），与 `app.ts` 的 `credentialKey` 同法。 */
-function credentialFingerprint(cred?: string): string {
-  if (!cred) return 'anon'
-  return createHash('sha1').update(cred).digest('hex').slice(0, 12)
-}
 
 /**
  * 取一个视频的 `view` 数据（标题 / 封面 / UP 主 / `pages[]` / 简介 / 统计），带 {@link viewCache}。
@@ -1118,16 +1050,7 @@ export async function qrLoginUrl(key: string): Promise<string> {
 export function cookieHeaderFromSetCookies(
   cookies?: string[],
 ): string | undefined {
-  if (!cookies?.length) return undefined
-  const parts: string[] = []
-  for (const c of cookies) {
-    const kv = c.split(';')[0]?.trim()
-    if (!kv) continue
-    const name = kv.slice(0, kv.indexOf('='))
-    if ((BILIBILI_SESSION_COOKIE_NAMES as readonly string[]).includes(name))
-      parts.push(kv)
-  }
-  return parts.length ? parts.join('; ') : undefined
+  return sessionCookieHeader(cookies, BILIBILI_SESSION_COOKIE_NAMES)
 }
 
 /** 从 URL 查询串里取**原始（未解码）**参数值——`SESSDATA` 含 `%2C`，解码会破坏其值。 */

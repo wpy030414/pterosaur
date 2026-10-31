@@ -446,7 +446,7 @@ describe('登录 cookie 收敛（保持原始编码，修「刷新掉登录」�
   })
 })
 
-describe('bGet 匿名解析重试', () => {
+describe('bGet 匿名解析重试（按故障类别）', () => {
   /** 最小响应替身：避开 jsdom 是否提供 `Response` 的环境差异。 */
   const jsonRes = (body: unknown) => ({
     ok: true,
@@ -475,21 +475,41 @@ describe('bGet 匿名解析重试', () => {
     expect(n).toBe(3)
   })
 
-  it('上游返回非 0 业务码 → 同样重试（与具体错误码无关）', async () => {
+  it('瞬时 HTTP 故障（5xx / 429）→ 重试', async () => {
+    vi.useFakeTimers()
+    const statuses = [503, 429]
+    vi.stubGlobal('fetch', (input: unknown) => {
+      if (String(input).includes('/finger/spi'))
+        return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'buvid' } }))
+      const status = statuses.shift()
+      if (status)
+        return Promise.resolve({
+          ok: false,
+          status,
+          json: () => Promise.resolve({}),
+        })
+      return Promise.resolve(jsonRes({ code: 0, data: { result: [] } }))
+    })
+    const p = searchSongs('x')
+    await vi.advanceTimersByTimeAsync(1200)
+    await expect(p).resolves.toEqual([])
+    expect(statuses).toHaveLength(0)
+  })
+
+  it('上游风控业务码（-412）→ 立即抛出、不重试（避免放大风控）', async () => {
     vi.useFakeTimers()
     let n = 0
     vi.stubGlobal('fetch', (input: unknown) => {
       if (String(input).includes('/finger/spi'))
         return Promise.resolve(jsonRes({ code: 0, data: { b_3: 'buvid' } }))
       n++
-      if (n <= 2)
-        return Promise.resolve(jsonRes({ code: -412, message: '风控' }))
-      return Promise.resolve(jsonRes({ code: 0, data: { result: [] } }))
+      return Promise.resolve(jsonRes({ code: -412, message: '风控' }))
     })
-    const p = searchSongs('x')
-    await vi.advanceTimersByTimeAsync(1200)
-    await expect(p).resolves.toEqual([])
-    expect(n).toBe(3)
+    const p = searchSongs('x').catch((e: unknown) => e)
+    await vi.advanceTimersByTimeAsync(2000) // 若仍会重试，这段时间足够跑满 5 次
+    const err = await p
+    expect(err).toBeInstanceOf(Error)
+    expect(n).toBe(1)
   })
 
   it('持续失败 → 重试至上限后抛错（首次 + 5 次重试 = 6 次请求）', async () => {

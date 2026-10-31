@@ -23,6 +23,7 @@ import {
   NETEASE_WEB_UA,
 } from './neteaseDevice.js'
 import type { SourceAdapter } from './types.js'
+import { codecName, makeQuality, sessionCookieHeader, toHttps } from './http.js'
 
 const require = createRequire(import.meta.url)
 
@@ -68,15 +69,7 @@ export const SESSION_COOKIE_NAMES = ['MUSIC_U', '__csrf', 'MUSIC_A', 'NMTID']
 export function cookieHeaderFromSetCookies(
   cookies: string[] | undefined,
 ): string | undefined {
-  if (!cookies?.length) return undefined
-  const parts: string[] = []
-  for (const c of cookies) {
-    const kv = c.split(';')[0]?.trim()
-    if (!kv) continue
-    const name = kv.slice(0, kv.indexOf('='))
-    if (SESSION_COOKIE_NAMES.includes(name)) parts.push(kv)
-  }
-  return parts.length ? parts.join('; ') : undefined
+  return sessionCookieHeader(cookies, SESSION_COOKIE_NAMES)
 }
 
 /** 网易云返回的原始曲目结构（部分字段）。 */
@@ -133,8 +126,7 @@ interface RawPlaylist {
 
 /** 把封面/图片地址统一改写为 https。 */
 function https(url?: string): string {
-  if (!url) return ''
-  return url.replace(/^http:\/\//, 'https://')
+  return url ? toHttps(url) : ''
 }
 
 /** 封面/头像基准尺寸（产出大图，前端按使用场景经 `coverAt` 降到小图；见 shared/image）。 */
@@ -605,12 +597,39 @@ export async function songUrl(
   cookie?: string,
   level: AudioLevel = DEFAULT_AUDIO_LEVEL,
 ): Promise<string[]> {
+  const { url } = await resolveAudio(id, cookie, level)
+  return url ? [url] : []
+}
+
+/** 一次 `song_url_v1` 的解析结果：地址 + 上游如实回报的流参数。 */
+interface ResolvedAudio {
+  url?: string
+  quality?: AudioQuality
+}
+
+/**
+ * 解析播放地址与流参数（{@link songUrl} 与 {@link audioQuality} 共用）。
+ * 上游失败一律降级为空结果，由路由回 403 / 音质接口返回 null。
+ */
+async function resolveAudio(
+  id: string,
+  cookie: string | undefined,
+  level: AudioLevel,
+): Promise<ResolvedAudio> {
   try {
     const res = await api.song_url_v1({ id, level, cookie })
-    const url: string | null = res?.body?.data?.[0]?.url ?? null
-    return url ? [https(url)] : []
+    const d = res?.body?.data?.[0]
+    if (!d?.url) return {}
+    return {
+      url: https(d.url),
+      quality: makeQuality(
+        codecName(d.type ?? d.encodeType, d.url),
+        d.br,
+        d.sr,
+      ),
+    }
   } catch {
-    return []
+    return {}
   }
 }
 
@@ -626,29 +645,7 @@ export async function audioQuality(
   cookie?: string,
   level: AudioLevel = DEFAULT_AUDIO_LEVEL,
 ): Promise<AudioQuality | null> {
-  try {
-    const res = await api.song_url_v1({ id, level, cookie })
-    const d = res?.body?.data?.[0]
-    if (!d?.url) return null
-    const br = typeof d.br === 'number' && d.br > 0 ? d.br : undefined
-    const sr = typeof d.sr === 'number' && d.sr > 0 ? d.sr : undefined
-    return { codec: codecName(d.type ?? d.encodeType, d.url), br, sr }
-  } catch {
-    return null
-  }
-}
-
-/** 由网易云回报的 `type` / `encodeType`（缺失时回退直链后缀）归一为编解码显示名。 */
-function codecName(raw: unknown, url: string): string | undefined {
-  // 上游字段可能是任意 JSON 值：只接受标量，其余视为缺失
-  const s = (
-    typeof raw === 'string' || typeof raw === 'number' ? String(raw) : ''
-  )
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-  if (s) return s.toUpperCase()
-  const ext = url.split('?')[0].split('.').pop()?.toLowerCase()
-  return ext && /^[a-z0-9]{2,4}$/.test(ext) ? ext.toUpperCase() : undefined
+  return (await resolveAudio(id, cookie, level)).quality ?? null
 }
 
 /** 曲目详情（用于补全搜索未覆盖的元数据）。 */
