@@ -125,8 +125,9 @@
 }
 
 /* 「详情」「收藏」：与播放同形的圆形图标按钮，不带文字。
- * 毛玻璃材质（与侧栏 / 队列面板同一套），直接压在通栏大图上，能透出背后头像的模糊色，
- * 比实色中性面更贴合「浮在大图上」的位置。「-webkit-」在前、标准属性在后（见 ADR-009）。 */
+ * 透明底 + 描边（毛玻璃与侧栏 / 队列面板一起改实色后，压在大图上的浓色玻璃已成一块暗斑），
+ * 直接透出头像本身的颜色；描边保证在深浅两种头像上都看得见按钮轮廓。
+ * 悬停时给一层极淡的白色填充回应，仍不做模糊。 */
 .artist-action {
   display: flex;
   align-items: center;
@@ -134,18 +135,17 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--glass-overlay);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  background: transparent;
   border: 1px solid var(--separator-strong);
   color: var(--text);
   transition:
-    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
     transform var(--dur-fast) var(--ease);
 }
 
-/* 悬停：提亮描边并轻微抬高「玻璃」——用更高 alpha 的同色档，而不是换成实色中性面 */
 .artist-action:hover {
+  background: var(--bg-hover);
   border-color: var(--text-tertiary);
   transform: scale(1.06);
 }

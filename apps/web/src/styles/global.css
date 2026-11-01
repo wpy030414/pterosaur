@@ -61,9 +61,21 @@ ol {
   list-style: none;
 }
 
+/*
+ * 选中文本：底色取强调色（深色主题为近白、浅色主题为近黑），文字取与之配对的反色
+ * （深色主题近黑、浅色主题白，见 `--accent-contrast`）。写 `::selection` 时文字色全程被它接管，
+ * 故不能照着「选中时文字变黑」写死 #fff——浅色主题下会白底白字。
+ */
 ::selection {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
+}
+
+/* 输入框 / 文本域：Chromium 在无 `::selection` 时使用系统高亮，这里与正文保持同一条规则 */
+input::selection,
+textarea::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
 /* ============================ Scrollbar ============================ */

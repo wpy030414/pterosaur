@@ -31,10 +31,15 @@
   outline-offset: 2px;
 }
 
+/* 封面框：尺寸只由本框（1:1 / 16:9）决定，封面在框内裁剪。
+ * `min-width: 0` + `overflow: hidden` 兜住扁平子项的固有尺寸——栅格列宽由列轨给出，
+ * 封面图（尤其非方形的磁带封面）不得反过来把卡片 / 列撑宽或撑高。 */
 .card__art {
   position: relative;
   aspect-ratio: 1;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card__cover {

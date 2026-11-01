@@ -45,22 +45,28 @@
   flex: 1;
 }
 
-/* ---------- 未登录：登录按钮 ---------- */
+/* ---------- 未登录：登录按钮 ----------
+ * 透明底 + 描边：与底栏的图标按钮同族、不抢占视觉，悬停时以淡色填充回应。
+ * 描边取 `--separator-strong`（两套主题各有对应强度），底色留空以透出侧栏实色。 */
 .sidebar-footer__login {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
+  border: 1px solid var(--separator-strong);
   border-radius: 20px;
-  background: var(--bg-elevated-2);
+  background: transparent;
   color: var(--text);
   font-size: 12.5px;
   font-weight: 600;
-  transition: background-color var(--dur-fast) var(--ease);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 
 .sidebar-footer__login:hover {
-  background: var(--bg-active);
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
 }
 
 .sidebar-footer__login:focus-visible {
