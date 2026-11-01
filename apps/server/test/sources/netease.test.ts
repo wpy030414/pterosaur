@@ -8,6 +8,7 @@ import {
   qrLoginUrl,
   qrCheck,
   qrCreate,
+  parseUserCookie,
 } from '../../src/sources/netease.js'
 import { NETEASE_IMAGE_HOST } from '@pterosaur/shared/image'
 
@@ -390,5 +391,29 @@ describe('扫码登录（现行网页协议）', () => {
     })
     const bad = await qrCheck('k-4')
     expect(bad.code).toBe(800)
+  })
+})
+
+describe('parseUserCookie', () => {
+  it('从整段 cookie 里只挑会话必需项，丢弃统计类', () => {
+    expect(
+      parseUserCookie('MUSIC_U=abc; Hm_lvt=1; __csrf=c; NMTID=n; x=y'),
+    ).toBe('MUSIC_U=abc; __csrf=c; NMTID=n')
+  })
+
+  it('直接粘贴 MUSIC_U 的值（裸值）时补上键名', () => {
+    expect(parseUserCookie('  00DE8Be5D54B  ')).toBe('MUSIC_U=00DE8Be5D54B')
+  })
+
+  it('支持换行分隔，并去掉值尾部的空白', () => {
+    expect(parseUserCookie('MUSIC_U = abc \n__csrf=c')).toBe(
+      'MUSIC_U=abc; __csrf=c',
+    )
+  })
+
+  it('重复项只取第一个；没有会话项时返回空串', () => {
+    expect(parseUserCookie('MUSIC_U=a; MUSIC_U=b')).toBe('MUSIC_U=a')
+    expect(parseUserCookie('Hm_lvt=1')).toBe('')
+    expect(parseUserCookie('')).toBe('')
   })
 })

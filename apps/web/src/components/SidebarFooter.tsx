@@ -1,19 +1,13 @@
 import { useEffect, useState } from 'react'
 import { User, LogOut, Settings, Cloud } from 'lucide-react'
 import { useAuth, activeSource } from '../store/auth.js'
-import type { MusicSource } from '@pterosaur/shared/types'
 import { useSync } from '../store/sync.js'
 import { useSettingsDialog } from '../store/ui.js'
 import { coverAt, COVER_SMALL } from '@pterosaur/shared/image'
 import { Cover } from './Cover.js'
 import './SidebarFooter.css'
 
-/** 会员计划标签：网易云 → `Plan N`，B 站 → `Plan B`。 */
-const PLAN_LETTER: Record<MusicSource, string> = {
-  netease: 'N',
-  bilibili: 'B',
-}
-const planOf = (src: MusicSource): string => `Plan ${PLAN_LETTER[src]}`
+// 计划标签（`Plan N` / `Plan B`）已不再展示：它不反映真实会员状态，且 B 站已无登录入口。
 
 /**
  * 侧边栏底部操作栏：设置 / 账户。
@@ -100,11 +94,8 @@ export function SidebarFooter() {
                   rounded
                   size={36}
                 />
-                <div>
-                  <div className="sidebar-footer__menu-name">
-                    {account.nickname}
-                  </div>
-                  <div className="sidebar-footer__menu-plan">{planOf(src)}</div>
+                <div className="sidebar-footer__menu-name">
+                  {account.nickname}
                 </div>
               </div>
 

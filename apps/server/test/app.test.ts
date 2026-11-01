@@ -140,6 +140,62 @@ describe('扫码登录 803 响应', () => {
   })
 })
 
+describe('粘贴 cookie 登录', () => {
+  const postCookie = (body: unknown) =>
+    app.request('/api/auth/netease/cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  it('校验有效后只下发会话 cookie，并清理其它源会话（单活动账号）', async () => {
+    loginStatusMock.mockResolvedValue({ logged: true, nickname: 'tester' })
+
+    const res = await postCookie({
+      cookie: 'MUSIC_U=abc; Hm_lvt_xx=1; __csrf=c',
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      ok: boolean
+      data: { logged: boolean; loginable?: boolean }
+    }
+    expect(body.data.logged).toBe(true)
+    expect(body.data.loginable).toBe(true)
+    // 验证时透传的是清洗后的会话项，统计类 cookie 被丢弃
+    expect(loginStatusMock.mock.calls.at(-1)?.[0]).toBe('MUSIC_U=abc; __csrf=c')
+
+    const names = res.headers.getSetCookie().map(cookieName)
+    expect(names).toContain('MUSIC_U')
+    expect(names).toContain('__csrf')
+    expect(names).not.toContain('Hm_lvt_xx')
+    const biliNames: readonly string[] = BILIBILI_SESSION_COOKIE_NAMES
+    expect(names.some((n) => biliNames.includes(n))).toBe(true)
+  })
+
+  it('cookie 无效时回 401 且不下发任何 cookie', async () => {
+    loginStatusMock.mockResolvedValue({ logged: false })
+
+    const res = await postCookie({ cookie: 'MUSIC_U=bad' })
+    expect(res.status).toBe(401)
+    expect(res.headers.getSetCookie()).toEqual([])
+  })
+
+  it('未识别到会话项时回 400', async () => {
+    const res = await postCookie({ cookie: 'Hm_lvt_xx=1' })
+    expect(res.status).toBe(400)
+    expect(loginStatusMock).not.toHaveBeenCalled()
+  })
+
+  it('B 站不支持 cookie 登录，回 501', async () => {
+    const res = await app.request('/api/auth/bilibili/cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookie: 'SESSDATA=x' }),
+    })
+    expect(res.status).toBe(501)
+  })
+})
+
 describe('服务端缺省凭证（NETEASE_COOKIE）', () => {
   afterEach(() => {
     vi.unstubAllEnvs()

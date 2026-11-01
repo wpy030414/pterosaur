@@ -226,6 +226,10 @@ export const api = {
       { key },
     ),
 
+  /** 用粘贴的 cookie 登录（后端校验后下发会话 cookie）；cookie 失效时抛 401 ApiError。 */
+  cookieLogin: (source: MusicSource, cookie: string) =>
+    post<LoginStatus>(`${API_BASE}/auth/${source}/cookie`, { cookie }),
+
   logout: (source: MusicSource) =>
     post<LoginStatus>(`${API_BASE}/auth/${source}/logout`),
 

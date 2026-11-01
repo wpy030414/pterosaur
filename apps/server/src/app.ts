@@ -639,6 +639,53 @@ export function createApp({
   app.get('/api/auth/:source/qr/check', authQrCheckHandler)
   app.get('/api/auth/qr/check', authQrCheckHandler)
 
+  /**
+   * 用**用户自带的 cookie** 登录：请求体 `{ cookie: string }`（浏览器 DevTools 里整段粘贴）。
+   *
+   * 扫码登录会撞上游设备风控（8821，见 `sources/neteaseDevice.ts`），本入口绕开风控：
+   * 由用户在自己已登录的浏览器里导出会话 cookie，后端验证有效后**只下发会话必需项**，
+   * 与扫码 803 完全同一条落库路径（cookie 写进浏览器 → 后续请求经 `credentialOf` 透传）。
+   * 仅对声明了 `parseUserCookie` 的源开放，否则回 501。
+   */
+  const authCookieHandler = async (c: Context) => {
+    const ctx = ctxAdapter(c)
+    if (!ctx) return c.json(fail('未知音源'), 404)
+    const parse = ctx.adapter.parseUserCookie
+    if (!parse) return c.json(fail('该音源不支持 cookie 登录'), 501)
+    const body = (await c.req.json().catch(() => null)) as {
+      cookie?: unknown
+    } | null
+    const raw = typeof body?.cookie === 'string' ? body.cookie : ''
+    const cookieHeader = parse(raw)
+    if (!cookieHeader) {
+      return c.json(fail('未识别到有效 cookie（需包含 MUSIC_U）'), 400)
+    }
+    try {
+      const status = await ctx.adapter.loginStatus(cookieHeader)
+      if (!status.logged) {
+        return c.json(fail('cookie 已失效或不属于网易云账号'), 401)
+      }
+      forwardSessionCookies(
+        c,
+        ctx.adapter,
+        cookieHeader.split('; ').map((kv) => `${kv}; Path=/`),
+      )
+      // 单活动账号：登入某源时清掉其它源的会话 cookie（与扫码 803 一致，见 ADR-027）
+      for (const other of ALL_SOURCES) {
+        if (other === ctx.source) continue
+        const oa = adapterOf(other)
+        if (oa) clearCookies(c, oa.logoutCookieNames)
+      }
+      return c.json(
+        ok<LoginStatus>({ ...status, loginable: Boolean(ctx.adapter.qrKey) }),
+      )
+    } catch (e) {
+      throw failure(502, '验证 cookie 失败', e)
+    }
+  }
+  app.post('/api/auth/:source/cookie', authCookieHandler)
+  app.post('/api/auth/cookie', authCookieHandler)
+
   const authLogoutHandler = (c: Context) => {
     const ctx = ctxAdapter(c)
     if (!ctx) return c.json(fail('未知音源'), 404)

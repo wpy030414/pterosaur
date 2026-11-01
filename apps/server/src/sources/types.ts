@@ -154,5 +154,10 @@ export interface SourceAdapter {
   qrCheck?(this: void, key: string, cred?: string): Promise<QrCheckResult>
   /** 生成二维码**内容 URL**（供终端自行渲染）。 */
   qrLoginUrl?(this: void, key: string, cred?: string): Promise<string>
+  /**
+   * 把用户自带的 cookie 串清洗成可直接验证的 Cookie 头值（只留会话必需项）。
+   * 缺省即该源不支持「cookie 登录」，路由回 501。
+   */
+  parseUserCookie?(this: void, raw: string): string
   userPlaylists?(this: void, uid: string, cred?: string): Promise<Playlist[]>
 }

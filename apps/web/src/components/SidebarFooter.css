@@ -132,13 +132,6 @@
   font-weight: 600;
 }
 
-.sidebar-footer__menu-plan {
-  font-size: 11px;
-  color: var(--accent);
-  font-weight: 600;
-  margin-top: 2px;
-}
-
 .sidebar-footer__menu-item {
   display: flex;
   align-items: center;

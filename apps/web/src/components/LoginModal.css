@@ -148,6 +148,57 @@
   text-align: center;
 }
 
+/* ---------- 粘贴 Cookie ---------- */
+.login-modal__cookie {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-modal__cookie-steps {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.login-modal__cookie-steps kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-family: inherit;
+  font-size: 11.5px;
+}
+
+.login-modal__cookie-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  border: 1px solid var(--separator);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.login-modal__cookie-submit {
+  align-self: flex-end;
+  padding: 8px 22px;
+  border-radius: 20px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-modal__cookie-submit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .login-modal__error {
   margin-top: 14px;
   padding: 9px 12px;

@@ -829,6 +829,33 @@ export async function qrCheck(
   }
 }
 
+/**
+ * 解析用户自带的 cookie 串（浏览器 DevTools 里复制粘贴）。
+ *
+ * 接受三种形态：`k=v; k=v`、`MUSIC_U=xxx`、以及**只粘 MUSIC_U 的值本身**
+ * （DevTools 的值列可直接复制，值里不含 `=` 与 `;`，形如 `00DE8…` 的长串）。
+ * 只保留**会话必需**的 {@link SESSION_COOKIE_NAMES}，其余（clientlog / 统计类）丢弃——
+ * 它们对鉴权无意义，只会把 Cookie 头撑大。
+ */
+export function parseUserCookie(raw: string): string {
+  const text = raw.trim()
+  if (!text) return ''
+  // 裸值：没有 `=`，也没有 `;` 分隔 → 视为 MUSIC_U 的值
+  if (!text.includes('=') && !/[;\n\r]/.test(text)) return `MUSIC_U=${text}`
+  const picked: string[] = []
+  for (const part of text.split(/[;\n\r]+/)) {
+    const item = part.trim()
+    const eq = item.indexOf('=')
+    if (eq <= 0) continue // 无 `=` / 空名：不是合法的 cookie 片段
+    const name = item.slice(0, eq).trim()
+    const value = item.slice(eq + 1).trim()
+    if (!SESSION_COOKIE_NAMES.includes(name) || !value) continue
+    if (!picked.some((p) => p.startsWith(`${name}=`)))
+      picked.push(`${name}=${value}`)
+  }
+  return picked.join('; ')
+}
+
 /** 查询登录状态。 */
 export async function loginStatus(cookie?: string): Promise<LoginStatus> {
   if (!cookie) return { logged: false }
@@ -899,6 +926,7 @@ export const neteaseAdapter: SourceAdapter = {
   qrCreate,
   qrLoginUrl,
   qrCheck,
+  parseUserCookie,
   loginStatus,
   userPlaylists,
   cookieHeaderFromSetCookies,
