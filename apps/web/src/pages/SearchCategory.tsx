@@ -14,6 +14,7 @@ import type {
   Track,
 } from '@pterosaur/shared/types'
 import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
+import { CardList } from '../components/CardList.js'
 import { TrackList } from '../components/TrackList.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { CassetteCard } from '../components/CassetteCard.js'
@@ -200,7 +201,7 @@ function CategoryList({
   if (cat === 'artists') {
     const artists = items.flatMap((i) => (i.kind === 'artists' ? [i.item] : []))
     return artists.length ? (
-      <div className="card-grid">
+      <CardList>
         {artists.map((a) => (
           <ArtistCard
             key={keyOf(a)}
@@ -212,7 +213,7 @@ function CategoryList({
             }
           />
         ))}
-      </div>
+      </CardList>
     ) : (
       <Empty text="没有找到相关艺术家" />
     )
@@ -221,7 +222,7 @@ function CategoryList({
   if (cat === 'albums') {
     const albums = items.flatMap((i) => (i.kind === 'albums' ? [i.item] : []))
     return albums.length ? (
-      <div className="card-grid">
+      <CardList>
         {albums.map((album) => (
           <AlbumCard
             key={keyOf(album)}
@@ -229,7 +230,7 @@ function CategoryList({
             onClick={() => navigate(`/album/${album.source}/${album.id}`)}
           />
         ))}
-      </div>
+      </CardList>
     ) : (
       <Empty text="没有找到相关专辑" />
     )
@@ -249,7 +250,7 @@ function CategoryList({
     )
   }
   return (
-    <div className="card-grid">
+    <CardList>
       {playlists.map((p) =>
         cat === 'cassette' ? (
           <CassetteCard
@@ -265,6 +266,6 @@ function CategoryList({
           />
         ),
       )}
-    </div>
+    </CardList>
   )
 }

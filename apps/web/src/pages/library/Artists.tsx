@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { User } from 'lucide-react'
 import { useLibrary } from '../../store/library.js'
 import { useViewNavigate } from '../../hooks/useViewNavigate.js'
+import { CardList } from '../../components/CardList.js'
 import { ArtistCard } from '../../components/EntityCards.js'
 import { Empty } from '../../components/States.js'
 import '../Detail.css'
@@ -33,7 +34,7 @@ export function ArtistsPage() {
         </section>
       ) : (
         <section className="section">
-          <div className="card-grid">
+          <CardList>
             {savedArtists.map((artist) => (
               <ArtistCard
                 key={artist.id}
@@ -45,7 +46,7 @@ export function ArtistsPage() {
                 }
               />
             ))}
-          </div>
+          </CardList>
         </section>
       )}
     </div>

@@ -5,8 +5,8 @@ vi.mock('../../src/hooks/usePlayCollection.js', () => ({
 }))
 import { PlaylistCard } from '../../src/components/PlaylistCard.js'
 import { CassetteCard } from '../../src/components/CassetteCard.js'
-import { AlbumCard } from '../../src/components/EntityCards.js'
-import type { Album, Playlist } from '@pterosaur/shared/types'
+import { AlbumCard, ArtistCard } from '../../src/components/EntityCards.js'
+import type { Album, Artist, Playlist } from '@pterosaur/shared/types'
 
 const playlist = (trackCount?: number): Playlist => ({
   source: 'netease',
@@ -101,5 +101,27 @@ describe('预览卡不显示副标题（播放量 / 简介 / 创建者）', () =
     )
     expect(container.querySelector('.card__subtitle')).toBeNull()
     expect(screen.queryByText('by UP 主')).toBeNull()
+  })
+})
+
+describe('艺术家卡片：封面不放任何角标按钮', () => {
+  const artist: Artist = { source: 'netease', id: 'ar1', name: '甲' }
+
+  it('只有播放文字以外的按钮都不存在：封面内没有任何 button', () => {
+    const { container } = render(
+      <ArtistCard artist={artist} onClick={() => {}} />,
+    )
+    const art = container.querySelector('.card__art--circle')!
+    expect(art.querySelectorAll('button')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /收藏|播放/ })).toBeNull()
+  })
+
+  it('卡片本体点击仍进入详情页', () => {
+    const onClick = vi.fn()
+    const { container } = render(
+      <ArtistCard artist={artist} onClick={onClick} />,
+    )
+    container.querySelector<HTMLElement>('.card--artist')!.click()
+    expect(onClick).toHaveBeenCalled()
   })
 })

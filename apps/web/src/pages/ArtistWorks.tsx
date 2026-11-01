@@ -10,6 +10,7 @@ import {
   isMusicSource,
   type MusicSource,
 } from '@pterosaur/shared/types'
+import { CardList } from '../components/CardList.js'
 import { AlbumCard } from '../components/EntityCards.js'
 import { TrackList } from '../components/TrackList.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
@@ -128,7 +129,7 @@ export function ArtistWorksPage({ kind }: { kind: WorksKind }) {
           onPlayRow={(_, index) => playTracks(tracks, index)}
         />
       ) : (
-        <div className="card-grid">
+        <CardList>
           {(works as Album[]).map((album) => (
             <AlbumCard
               key={keyOf(album)}
@@ -136,7 +137,7 @@ export function ArtistWorksPage({ kind }: { kind: WorksKind }) {
               onClick={() => navigate(`/album/${album.source}/${album.id}`)}
             />
           ))}
-        </div>
+        </CardList>
       )}
     </div>
   )

@@ -325,3 +325,114 @@
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- 横向形态（layout="row"）：紧凑行，供 Rail 横排 ---------- */
+/*
+ * 排布：区块内按行流进一列（4 行），列数由 Rail 决定——
+ * `Rail layout="grid"` 把本容器放进多列网格（`--song-cell` 列宽），
+ * `Rail layout="row"` 则只是单列横滚。
+ */
+.track-list--row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(4, auto);
+  /* 列宽由 JS 按与 CardList 相同的规则算出（见 listLayout.ts）；未测量时先按最小宽兜底 */
+  grid-auto-columns: var(--song-cell, 201px);
+  align-content: start;
+  /* 列距与 CardList 一致（listLayout 的 GAP），保证两者逐列对齐 */
+  column-gap: 16px;
+  row-gap: 2px;
+}
+
+/*
+ * 横向紧凑行：顶部一条分隔线 + **左封面 / 右文字**，整行可点播放。
+ * 行本身**不设 hover 背景**，反馈只落在封面上（悬停时中间浮现播放图标）。
+ */
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 网格项默认 min-width: auto，内容一长就把列撑宽 / 溢出；必须显式归零 */
+  min-width: 0;
+  /* 顶部横线做分隔（不加内边距，内容紧贴分隔线） */
+  border-top: 1px solid var(--separator);
+}
+
+.song-row__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  /* 不加左右内边距：封面与顶部分隔线贴齐列边缘 */
+  padding: 6px 0;
+  text-align: left;
+}
+
+/* 封面（44px）：悬停时中间浮现播放图标 */
+.song-row__cover {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.song-row__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.song-row:hover .song-row__overlay,
+.song-row__main:focus-visible .song-row__overlay {
+  opacity: 1;
+}
+
+/* 曲名 / 艺术家：均 12px，单行省略，两行紧贴 */
+.song-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.song-row__title,
+.song-row__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.song-row__title {
+  font-weight: 400;
+}
+
+.song-row__artist {
+  color: var(--text-secondary);
+}
+
+/* 艺术家可点击跳转 */
+.song-row__artist-link {
+  color: inherit;
+}
+
+.song-row__artist-link:hover,
+.song-row__artist-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.song-row--current .song-row__title {
+  color: var(--accent);
+}

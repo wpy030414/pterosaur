@@ -6,6 +6,7 @@ import { useViewNavigate } from '../hooks/useViewNavigate.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
 import type { Playlist } from '@pterosaur/shared/types'
 import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
+import { CardList } from '../components/CardList.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { Loading, ErrorState, Empty } from '../components/States.js'
 import './Browse.css'
@@ -42,7 +43,7 @@ export function GenrePage() {
         ) : list.error ? (
           <ErrorState message={list.error} onRetry={list.reload} />
         ) : list.data?.length ? (
-          <div className="card-grid">
+          <CardList>
             {list.data.map((p) => (
               <PlaylistCard
                 key={keyOf(p)}
@@ -50,7 +51,7 @@ export function GenrePage() {
                 onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
               />
             ))}
-          </div>
+          </CardList>
         ) : (
           <Empty
             text={`「${name}」下暂时没有歌单`}

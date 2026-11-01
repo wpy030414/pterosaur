@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client.js'
 import { useAsync } from '../hooks/useAsync.js'
 import { useViewNavigate } from '../hooks/useViewNavigate.js'
-import { playerCommands } from '../store/player.js'
 import { useLibrary } from '../store/library.js'
 import { useAuth, activeMusicSource } from '../store/auth.js'
 import type { Album, Playlist, Track } from '@pterosaur/shared/types'
@@ -11,7 +10,7 @@ import { PlaylistCard } from '../components/PlaylistCard.js'
 import { AlbumCard } from '../components/EntityCards.js'
 import { Rail } from '../components/Rail.js'
 import { RailMore } from '../components/RailMore.js'
-import { SongRow } from '../components/SongRow.js'
+import { TrackList } from '../components/TrackList.js'
 import { Loading, ErrorState } from '../components/States.js'
 import './Home.css'
 import './Home.css'
@@ -40,7 +39,6 @@ const HOT_LIMIT = 24
 export function Home() {
   const navigate = useViewNavigate()
   const recent = useLibrary((s) => s.recent)
-  const playTracks = playerCommands.playTracks
   const status = useAuth((s) => s.status)
   // 推荐跟随活动账号（未登录用缺省源）。
   const source = activeMusicSource(status) ?? DEFAULT_SOURCE
@@ -114,7 +112,11 @@ export function Home() {
       </header>
 
       {/* ---------- 推荐歌单 ---------- */}
-      <Rail title="推荐歌单" subtitle="根据热门与个性化推荐为你挑选">
+      <Rail
+        title="推荐歌单"
+        subtitle="根据热门与个性化推荐为你挑选"
+        layout="cards"
+      >
         {recommend.loading ? (
           <div className="rail__placeholder">
             <Loading text="加载推荐…" />
@@ -136,20 +138,19 @@ export function Home() {
 
       {/* ---------- 新歌精选（横向多列紧凑行） ---------- */}
       {songs.length > 0 && (
-        <Rail title="新歌精选" subtitle="刚刚发布的新作" itemWidth={324} grid>
-          {songs.map((t) => (
-            <SongRow
-              key={keyOf(t)}
-              track={t}
-              onPlay={() => playTracks(songs, songs.indexOf(t))}
-            />
-          ))}
+        <Rail
+          title="新歌精选"
+          subtitle="刚刚发布的新作"
+          itemWidth={324}
+          layout="grid"
+        >
+          <TrackList layout="row" tracks={songs} />
         </Rail>
       )}
 
       {/* ---------- 本周新发行（专辑） ---------- */}
       {newAlbums.data?.length ? (
-        <Rail title="本周新发行" subtitle="最近发布的专辑">
+        <Rail title="本周新发行" subtitle="最近发布的专辑" layout="cards">
           {newAlbums.data.map((a) => (
             <AlbumCard
               key={keyOf(a)}
@@ -165,6 +166,7 @@ export function Home() {
         <Rail
           title="歌单已更新"
           subtitle="编辑精选，持续更新"
+          layout="cards"
           action={<RailMore to="/radio" label="歌单已更新" />}
         >
           {updated.data.map((p) => (
@@ -183,28 +185,21 @@ export function Home() {
           title="正在流行中"
           subtitle="当下最热门的歌曲"
           itemWidth={324}
-          grid
+          layout="grid"
         >
-          {hot.map((t) => (
-            <SongRow
-              key={keyOf(t)}
-              track={t}
-              onPlay={() => playTracks(hot, hot.indexOf(t))}
-            />
-          ))}
+          <TrackList layout="row" tracks={hot} />
         </Rail>
       )}
 
       {/* ---------- 继续收听 ---------- */}
       {recent.length > 0 && (
-        <Rail title="继续收听" subtitle="最近播放过的曲目" itemWidth={324} grid>
-          {recent.slice(0, RECENT_LIMIT).map((t) => (
-            <SongRow
-              key={keyOf(t)}
-              track={t}
-              onPlay={() => playTracks(recent, recent.indexOf(t))}
-            />
-          ))}
+        <Rail
+          title="继续收听"
+          subtitle="最近播放过的曲目"
+          itemWidth={324}
+          layout="grid"
+        >
+          <TrackList layout="row" tracks={recent.slice(0, RECENT_LIMIT)} />
         </Rail>
       )}
     </div>

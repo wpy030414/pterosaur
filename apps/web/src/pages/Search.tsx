@@ -20,8 +20,7 @@ import { Loading, ErrorState, Empty } from '../components/States.js'
 import { AppLink } from '../components/AppLink.js'
 import { Rail } from '../components/Rail.js'
 import { RailMore } from '../components/RailMore.js'
-import { SongRow } from '../components/SongRow.js'
-import { playerCommands } from '../store/player.js'
+import { TrackList } from '../components/TrackList.js'
 import './Search.css'
 import {
   CASSETTE_SOURCE,
@@ -238,7 +237,6 @@ function SearchLanding({ source }: { source: MusicSource }) {
 
 function SearchResults({ q, source }: { q: string; source: MusicSource }) {
   const navigate = useViewNavigate()
-  const playTracks = playerCommands.playTracks
 
   // 音乐四类（歌曲 / 艺术家 / 专辑 / 歌单）一次取齐；磁带走 CASSETTE_SOURCE（B 站），
   // 两者并行，各自的分区只管自己那条结果。
@@ -329,7 +327,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         <Rail
           title="歌曲"
           itemWidth={324}
-          grid
+          layout="grid"
           action={
             !musicError && hasMore('songs', songs.length) ? (
               <RailMore to={categoryPath('songs', q)} label="歌曲" />
@@ -341,13 +339,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
               <ErrorState message={musicError} onRetry={musicReload} />
             </div>
           ) : (
-            songs.map((t, i) => (
-              <SongRow
-                key={keyOf(t)}
-                track={t}
-                onPlay={() => playTracks(songs, i)}
-              />
-            ))
+            <TrackList layout="row" tracks={songs} />
           )}
         </Rail>
       )}
@@ -358,6 +350,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         (musicError || artists.length > 0) && (
           <Rail
             title="艺术家"
+            layout="cards"
             action={
               !musicError && hasMore('artists', artists.length) ? (
                 <RailMore to={categoryPath('artists', q)} label="艺术家" />
@@ -390,6 +383,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         (musicError || albums.length > 0) && (
           <Rail
             title="专辑"
+            layout="cards"
             action={
               !musicError && hasMore('albums', albums.length) ? (
                 <RailMore to={categoryPath('albums', q)} label="专辑" />
@@ -418,6 +412,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         (musicError || playlists.length > 0) && (
           <Rail
             title="歌单"
+            layout="cards"
             action={
               !musicError && hasMore('playlists', playlists.length) ? (
                 <RailMore to={categoryPath('playlists', q)} label="歌单" />
@@ -446,6 +441,7 @@ function SearchResults({ q, source }: { q: string; source: MusicSource }) {
         (cassette.error || cassettes.length > 0) && (
           <Rail
             title="磁带"
+            layout="cards"
             action={
               !cassette.error && hasMore('cassette', cassettes.length) ? (
                 <RailMore to={categoryPath('cassette', q)} label="磁带" />

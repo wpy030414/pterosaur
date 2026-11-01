@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Disc3 } from 'lucide-react'
 import { useLibrary } from '../../store/library.js'
 import { useViewNavigate } from '../../hooks/useViewNavigate.js'
+import { CardList } from '../../components/CardList.js'
 import { AlbumCard } from '../../components/EntityCards.js'
 import { Empty } from '../../components/States.js'
 import '../Detail.css'
@@ -32,7 +33,7 @@ export function AlbumsPage() {
         </section>
       ) : (
         <section className="section">
-          <div className="card-grid">
+          <CardList>
             {savedAlbums.map((album) => (
               <AlbumCard
                 key={album.id}
@@ -40,7 +41,7 @@ export function AlbumsPage() {
                 onClick={() => navigate(`/album/${album.source}/${album.id}`)}
               />
             ))}
-          </div>
+          </CardList>
         </section>
       )}
     </div>

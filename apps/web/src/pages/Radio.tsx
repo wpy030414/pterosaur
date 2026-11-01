@@ -4,6 +4,7 @@ import { useAuth, activeMusicSource } from '../store/auth.js'
 import type { MusicSource, Playlist } from '@pterosaur/shared/types'
 import { DEFAULT_SOURCE, keyOf } from '@pterosaur/shared/types'
 import { usePaginatedQuery } from '../hooks/usePaginatedQuery.js'
+import { CardList } from '../components/CardList.js'
 import { PlaylistCard } from '../components/PlaylistCard.js'
 import { Loading, ErrorState } from '../components/States.js'
 import './Browse.css'
@@ -69,7 +70,7 @@ function UpdatedPlaylists({
   return (
     <section className="section">
       {items.length ? (
-        <div className="card-grid">
+        <CardList>
           {items.map((p) => (
             <PlaylistCard
               key={keyOf(p)}
@@ -77,7 +78,7 @@ function UpdatedPlaylists({
               onClick={() => navigate(`/playlist/${p.source}/${p.id}`)}
             />
           ))}
-        </div>
+        </CardList>
       ) : (
         <p className="section__end">暂时没有可播放的歌单</p>
       )}

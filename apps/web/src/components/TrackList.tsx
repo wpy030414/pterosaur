@@ -1,3 +1,4 @@
+import { useCallback, useLayoutEffect, useRef } from 'react'
 import { Play, Pause, Star, MoreHorizontal, Clock } from 'lucide-react'
 import type { Track } from '@pterosaur/shared/types'
 import {
@@ -16,22 +17,31 @@ import { Cover } from './Cover.js'
 import { IconButton } from './IconButton.js'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu.js'
 import { expandGroups } from '../lib/cassette.js'
+import { columnsFor, rowAvailable } from './listLayout.js'
 import './TrackList.css'
 
 interface TrackListProps {
   tracks: Track[]
-  /** 是否显示表头（序号/标题/专辑/时长） */
+  /**
+   * 排布形态：
+   * - `column`（缺省）：纵向表格行（序号 / 标题 / 艺术家 / 专辑 / 时长）；
+   * - `row`：横向紧凑行（封面 + 曲名 / 艺术家），单排或网格均横向排开，
+   *   须放进 `Rail` 使用——此时表格专属的 `showHeader` / `showIndex` / `showCover` /
+   *   `showArtist` / `showAlbum` / `showSummary` 不生效。
+   */
+  layout?: 'column' | 'row'
+  /** 是否显示表头（序号/标题/专辑/时长），仅 `layout="column"` */
   showHeader?: boolean
-  /** 是否显示序号列 */
+  /** 是否显示序号列，仅 `layout="column"` */
   showIndex?: boolean
-  /** 是否显示专辑列（磁带等「无专辑」语境的列表可关掉，标题列随之加宽） */
+  /** 是否显示专辑列（磁带等「无专辑」语境的列表可关掉，标题列随之加宽），仅 `layout="column"` */
   showAlbum?: boolean
   /**
-   * 是否显示行内的大封面（默认显示）。
+   * 是否显示行内的大封面（默认显示），仅 `layout="column"`。
    * 专辑详情页等「歌名 / 艺术家已在页头交代」的语境可关掉，行更紧凑。
    */
   showCover?: boolean
-  /** 是否显示艺术家列（位于标题列之后）。专辑页可关掉（整页同一张专辑、同一批艺术家）。 */
+  /** 是否显示艺术家列（位于标题列之后），仅 `layout="column"`。专辑页可关掉。 */
   showArtist?: boolean
   /** 空状态文案 */
   emptyText?: string
@@ -42,22 +52,26 @@ interface TrackListProps {
   /**
    * 是否在列表末尾显示尾注（`共 N 项，X 小时 Y 分钟`）。
    * 歌单 / 专辑 / 磁带等「整页即一个集合」的详情页开启；首页分区等片段列表保持关闭。
+   * 仅 `layout="column"`。
    */
   showSummary?: boolean
 }
 
 /**
- * 曲目列表（Apple Music 风格表格行）。
+ * 曲目列表——纵向表格行 / 横向紧凑行的**唯一**容器（发现流与新歌精选的紧凑行
+ * 也走本组件，`layout="row"`）。
  *
  * - 单击行：以该列表为队列播放；
- * - 播放中且为当前曲目：显示跳动音柱 + 高亮；
- * - 桌面：艺术家与专辑各占一列（艺术家列紧随标题列），行内名称可点击跳转到对应的
- *   艺术家页 / 专辑页（缺 id 时降级为纯文本）；
- * - 移动端（≤768px）：收起艺术家 / 专辑列，艺术家改作标题下方副标题、专辑不展示；
- * - 行内提供喜欢、添加到歌单操作。
+ * - 播放中且为当前曲目：高亮（纵向另显示跳动音柱）；
+ * - 纵向（`layout="column"`）：桌面艺术家与专辑各占一列（艺术家列紧随标题列），行内名称可点击
+ *   跳转到对应的艺术家页 / 专辑页（缺 id 时降级为纯文本）；移动端（≤768px）收起这两列，
+ *   艺术家改作标题下方副标题；
+ * - 横向（`layout="row"`）：封面 + 曲名 / 艺术家 + 悬浮播放键，行高紧凑，供 `Rail` 横排；
+ * - 行内提供喜欢、添加到歌单操作（横向形态不提供）。
  */
 export function TrackList({
   tracks,
+  layout: requestedLayout = 'column',
   showHeader = true,
   showIndex = true,
   showAlbum = true,
@@ -68,6 +82,7 @@ export function TrackList({
   onPlayRow,
   showSummary = false,
 }: TrackListProps) {
+  const isRow = requestedLayout === 'row'
   const queue = usePlayerQueue((s) => s.queue)
   const current = usePlaybackSession((s) => s.current)
   const isPlaying = usePlaybackSession((s) => s.isPlaying)
@@ -142,6 +157,87 @@ export function TrackList({
     })()
   }
 
+  /** 播放中高亮判定：含磁带（B 站）「整视频 ↔ 分P」的前缀匹配。 */
+  const isCurrentTrack = (t: Track) =>
+    current
+      ? keyOf(current) === keyOf(t) ||
+        (current.source === 'bilibili' &&
+          t.source === 'bilibili' &&
+          current.id.split(':')[0] === t.id)
+      : false
+
+  /*
+   * ---------- 横向：紧凑行 ----------
+   * 与原始紧凑行一致：**左封面 + 右曲名 / 艺术家**，整行可点播放。
+   * 本版增加：顶部一条分隔线；曲名 / 艺术家均 12px 且紧贴；艺术家名可点击跳转；
+   * 行本身不设 hover 背景，改为悬停时封面中央浮现播放图标。
+   */
+  /*
+   * 横向列宽与 CardList **完全同源**（共用 `columnsFor`）：在 Rail 可视宽内排满同样的
+   * 列数、同样的列宽，故两者在同宽窗口下逐列对齐。
+   */
+  const rowRef = useRef<HTMLDivElement | null>(null)
+  const measureRow = useCallback(() => {
+    const el = rowRef.current
+    if (!el) return
+    const { cols, cell } = columnsFor(rowAvailable(el.parentElement), true)
+    el.style.setProperty('--song-cols', String(cols))
+    el.style.setProperty('--song-cell', `${cell}px`)
+  }, [])
+  useLayoutEffect(() => {
+    if (!isRow) return
+    const el = rowRef.current
+    const scroller = el?.parentElement
+    measureRow()
+    if (!scroller || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measureRow)
+    ro.observe(scroller)
+    return () => ro.disconnect()
+  }, [isRow, measureRow])
+
+  if (isRow) {
+    return (
+      <div
+        ref={rowRef}
+        className={`track-list track-list--row${className ? ` ${className}` : ''}`}
+        role="list"
+      >
+        {tracks.map((t, i) => (
+          <div
+            key={`${keyOf(t)}-${i}`}
+            className={`song-row${isCurrentTrack(t) ? ' song-row--current' : ''}`}
+            role="listitem"
+          >
+            <button
+              type="button"
+              className="song-row__main"
+              onClick={() => handleRowPlay(i)}
+              aria-label={`播放 ${t.title}`}
+            >
+              <span className="song-row__cover">
+                <Cover
+                  src={coverAt(t.cover, COVER_SMALL)}
+                  alt={t.title}
+                  radius="sm"
+                  size={44}
+                />
+                <span className="song-row__overlay" aria-hidden>
+                  <Play size={16} fill="currentColor" strokeWidth={0} />
+                </span>
+              </span>
+              <span className="song-row__text">
+                <span className="song-row__title ellipsis">{t.title}</span>
+                <span className="song-row__artist">
+                  {artistNode(t, openEntity, stopKey, 'song-row__artist-link')}
+                </span>
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div
       className={`track-list${showAlbum ? '' : ' track-list--no-album'}${showCover ? '' : ' track-list--no-cover'}${className ? ` ${className}` : ''}`}
@@ -162,13 +258,8 @@ export function TrackList({
 
       {tracks.map((t, i) => {
         // 磁带（B 站）的「一对多」：队列里是分P（`bvid:cid`），列表行却是整视频（`bvid`）——
-        // 故再以 bvid 前缀匹配，保证播放某分P 时对应视频行同样高亮。
-        const isCurrent = current
-          ? keyOf(current) === keyOf(t) ||
-            (current.source === 'bilibili' &&
-              t.source === 'bilibili' &&
-              current.id.split(':')[0] === t.id)
-          : false
+        // 故再以 bvid 前缀匹配，保证播放某分P 时对应视频行同样高亮（见 isCurrentTrack）。
+        const isCurrent = isCurrentTrack(t)
         const isCurrentPlaying = isCurrent && isPlaying
         const isFav = favorites.some((f) => keyOf(f) === keyOf(t))
         return (
@@ -310,6 +401,7 @@ function artistNode(
   t: Track,
   openEntity: (e: React.SyntheticEvent, to: string) => void,
   stopKey: (e: React.KeyboardEvent) => void,
+  className?: string,
 ) {
   if (!t.artistRefs?.length) return t.artist
   return t.artistRefs.map((a, ai) => (
@@ -317,7 +409,7 @@ function artistNode(
       {ai > 0 && ARTIST_SEPARATOR}
       <button
         type="button"
-        className="track-link"
+        className={`track-link${className ? ` ${className}` : ''}`}
         onClick={(e) =>
           openEntity(
             e,

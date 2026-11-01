@@ -47,7 +47,6 @@
 
 .rail__scroller {
   display: flex;
-  gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x proximity;
@@ -55,12 +54,10 @@
   scrollbar-width: none;
   -ms-overflow-style: none;
   /*
-   * 给卡片悬浮投影 / 缩放留出空间；左右各 10px 专门兜住封面外投影（16px 模糊），
-   * 否则首尾卡片的阴影会被 overflow-x 裁平。负 margin 抵消 padding 的布局占位，
-   * 使可视边缘仍与页面左右内边距对齐。
+   * 左右**不留内边距**：第一列必须与页面内容左边距对齐，且列的横向位置要和 CardList
+   * 逐列重合（两者同宽同列距）。卡片悬停投影由卡片自身承担，不在滚动容器里留白兜底。
    */
-  margin-inline: -10px;
-  padding: 4px 10px 6px;
+  padding: 4px 0 6px;
 }
 
 .rail__scroller::-webkit-scrollbar {
@@ -68,14 +65,14 @@
 }
 
 /*
- * 卡片在横向区内固定宽度：网格里是 auto-fill，这里必须显式给宽，
- * 否则 flex 会把它们压扁。
+ * 子项排布交给统一的列表容器（CardList / TrackList），Rail 只负责滚动与翻页：
+ * 卡片型分区包一层 `CardList layout="row"`，曲目型分区由 `TrackList layout="row"`
+ * 自己横向排。二者都要在滚动容器里保持「按内容宽展开、不被压扁」。
  */
-.rail__scroller > * {
-  flex: 0 0 208px;
-  min-width: 0;
-  width: 208px;
-  scroll-snap-align: start;
+.rail__scroller > .card-list,
+.rail__scroller > .track-list {
+  flex: 0 0 auto;
+  min-width: min-content;
 }
 
 /*
@@ -106,6 +103,7 @@
 
 .rail__scroller--grid > * {
   flex: none;
+  min-width: 0;
   width: auto;
 }
 
@@ -180,11 +178,6 @@
 @media (max-width: 768px) {
   .rail__scroller--grid {
     column-gap: 12px;
-  }
-
-  .rail__scroller:not(.rail__scroller--grid) > * {
-    flex-basis: 148px;
-    width: 148px;
   }
 
   .rail__title {

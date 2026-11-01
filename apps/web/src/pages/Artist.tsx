@@ -15,7 +15,7 @@ import {
   type MusicSource,
 } from '@pterosaur/shared/types'
 import { AlbumCard } from '../components/EntityCards.js'
-import { SongRow } from '../components/SongRow.js'
+import { TrackList } from '../components/TrackList.js'
 import { Rail } from '../components/Rail.js'
 import { RailMore } from '../components/RailMore.js'
 import { ArtistInfoDialog } from '../components/ArtistInfoDialog.js'
@@ -193,20 +193,14 @@ export function ArtistPage() {
           <Rail
             title="歌曲排行"
             itemWidth={324}
-            grid
+            layout="grid"
             action={
               tracks.length >= TOP_TRACKS_LIMIT ? (
                 <RailMore to={allTracksTo} label="歌曲排行" />
               ) : undefined
             }
           >
-            {topTracks.map((t, i) => (
-              <SongRow
-                key={keyOf(t)}
-                track={t}
-                onPlay={() => playTracks(topTracks, i)}
-              />
-            ))}
+            <TrackList layout="row" tracks={topTracks} />
           </Rail>
         )}
 
@@ -215,6 +209,7 @@ export function ArtistPage() {
         {fullAlbums.length > 0 && (
           <Rail
             title="专辑"
+            layout="cards"
             action={
               fullAlbums.length >= WORKS_LIMIT ? (
                 <RailMore
@@ -238,6 +233,7 @@ export function ArtistPage() {
         {singles.length > 0 && (
           <Rail
             title="单曲与 EP"
+            layout="cards"
             action={
               singles.length >= WORKS_LIMIT ? (
                 <RailMore
