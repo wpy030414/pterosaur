@@ -29,7 +29,9 @@
   top: 0;
   left: 0;
   right: 0;
-  height: clamp(380px, 52vw, 620px);
+  /* 图高：大图与渐隐层共用——渐隐层的纵向半径、色标位置与下探量都按它换算 */
+  --hero-h: clamp(380px, 52vw, 620px);
+  height: var(--hero-h);
   pointer-events: none;
 }
 
@@ -47,29 +49,62 @@
 }
 
 /*
- * 渐隐层：以**图片上边界中点为圆心画圆**、圆外逐渐模糊成页面底色（代表色），而不是一条直线。
+ * 渐隐层：图底逐渐模糊成页面底色（代表色）。过渡边界随窗口形势分两种：
  *
- * 圆的**半径 = 图片高度**：横纵半径都取 `clamp(380px, 52vw, 620px)`，正圆，圆心到图片
- * 「下边界中点」的距离恰在圆周上。圆心横向取 `calc(50vw - 130px)`（主内容区中点：视口宽减
- * 侧栏 260px 的一半），纵向在图片顶边。图层略向下多出 12% 图高，过渡带跨过图下沿与底色接续。
+ * 1. **寻常宽度**（主内容区没有余量、页面盒铺满两栏之间的整块）：边界是一条**水平直线**，
+ *    即普通的纵向线性渐变——自图片顶边起算，34% 图高以内全透明，到 96% 图高收敛为纯底色。
+ *    色标用 `--hero-h` 的倍数写成绝对长度（本层比图高多出 12%，百分比会按那一高度解析）。
+ *
+ * 2. **超宽屏**（主内容区宽于页面盒上限、页面盒居中、两侧露出留白）：改用**椭圆**，椭圆
+ *    恰好过图片左上角、下边界中点、右上角三点。三点关于竖中线对称，故取椭圆中心在图片
+ *    上边界中点（`50% 0%`）；横向半径＝图片半宽（`50%`）、纵向半径＝图片高度（`--hero-h`）
+ *    时三点同时落在椭圆上——左右上角在过中心的水平直径上，距中心恰一个横向半径；下边界
+ *    中点距中心恰一个纵向半径。见下方 `min-width: 1861px`。
+ *
+ * 坐标一律相对**渐变盒本身**（本层与大图同为页面盒宽），`50%` 恒是大图水平中点。
+ * 不要改回按视口算（`calc(50vw - 130px)`）：那在超宽屏下会随视口向右漂移。
  */
 .artist-hero__scrim {
   position: absolute;
-  inset: 0 0 calc(clamp(380px, 52vw, 620px) * -0.12);
-  background:
-    /* 下沿收边：直线只负责最后几个像素，避免弧线在图片边缘留下细边 */
-    linear-gradient(to bottom, transparent 88%, var(--art-surface) 100%),
-    radial-gradient(
-      clamp(380px, 52vw, 620px) clamp(380px, 52vw, 620px) at calc(50vw - 130px)
-        0%,
-      transparent 0%,
-      transparent 34%,
-      color-mix(in srgb, var(--art-surface) 18%, transparent) 56%,
-      color-mix(in srgb, var(--art-surface) 55%, transparent) 76%,
-      color-mix(in srgb, var(--art-surface) 85%, transparent) 88%,
-      var(--art-surface) 96%
-    );
+  /* 下探 12% 图高：过渡带的实底段跨过图下沿，与页面底色接续 */
+  inset: 0 0 calc(var(--hero-h) * -0.12);
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--hero-h) * 0.34),
+    color-mix(in srgb, var(--art-surface) 18%, transparent)
+      calc(var(--hero-h) * 0.56),
+    color-mix(in srgb, var(--art-surface) 55%, transparent)
+      calc(var(--hero-h) * 0.76),
+    color-mix(in srgb, var(--art-surface) 85%, transparent)
+      calc(var(--hero-h) * 0.88),
+    var(--art-surface) calc(var(--hero-h) * 0.96)
+  );
   pointer-events: none;
+}
+
+/*
+ * 超宽屏：页面盒被 `max-width: 1600px` 限住并居中，两侧出现留白，直线渐隐会让大图左右
+ * 下角与留白之间露出短板；改用过三点的椭圆，把四角一并收进底色。
+ *
+ * 阈值 = 页面盒上限 1600px + 侧栏 260px（`--sidebar-width`）。媒体查询里不能用自定义属性，
+ * 这两个字面量须与 `.artist-page` 的 `max-width` 及 tokens.css 的侧栏宽同步。
+ */
+@media (min-width: 1861px) {
+  .artist-hero__scrim {
+    background:
+      /* 下沿收边：直线只负责最后几个像素，避免弧线在图片边缘留下细边 */
+      linear-gradient(to bottom, transparent 88%, var(--art-surface) 100%),
+      radial-gradient(
+        50% var(--hero-h) at 50% 0%,
+        transparent 0%,
+        transparent 34%,
+        color-mix(in srgb, var(--art-surface) 18%, transparent) 56%,
+        color-mix(in srgb, var(--art-surface) 55%, transparent) 76%,
+        color-mix(in srgb, var(--art-surface) 85%, transparent) 88%,
+        var(--art-surface) 96%
+      );
+  }
 }
 
 /*
@@ -85,7 +120,7 @@
   --bg-active: color-mix(in srgb, var(--art-ink) 11%, transparent);
   /*
    * 新建层叠上下文：大图与渐隐层是页面里的绝对定位层，姓名、按钮与分区标题同为定位 /
-   * 非定位元素时按文档序与之交错，标题在这条弧形渐隐带附近会被「压住」一半。
+   * 非定位元素时按文档序与之交错，标题在这条渐隐带附近会被「压住」一半。
    * 页面根自成一个层后，全部内容整体叠在大图之上，标题任何位置都不会被切。
    */
   isolation: isolate;
@@ -210,22 +245,9 @@
 
 @media (max-width: 768px) {
   .artist-hero {
-    height: 400px;
-  }
-
-  /* 移动端无侧栏：圆心回到主内容区正中，半径随图高（400px） */
-  .artist-hero__scrim {
-    background:
-      linear-gradient(to bottom, transparent 88%, var(--art-surface) 100%),
-      radial-gradient(
-        400px 400px at 50% 0%,
-        transparent 0%,
-        transparent 34%,
-        color-mix(in srgb, var(--art-surface) 18%, transparent) 56%,
-        color-mix(in srgb, var(--art-surface) 55%, transparent) 76%,
-        color-mix(in srgb, var(--art-surface) 85%, transparent) 88%,
-        var(--art-surface) 96%
-      );
+    /* 移动端图更矮：色标距离随之缩短，渐隐形状（水平直线）不变 */
+    --hero-h: 400px;
+    height: var(--hero-h);
   }
 
   .artist-head {
