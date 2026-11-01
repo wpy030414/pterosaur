@@ -5,6 +5,7 @@ import {
   currentPlayMode,
   audioSrc,
   playerCommands,
+  restoreSession,
 } from '../../src/store/player.js'
 import { usePlayerQueue } from '../../src/store/playerQueue.js'
 import { usePlaybackSession } from '../../src/store/playbackSession.js'
@@ -38,6 +39,7 @@ beforeEach(() => {
     muted: false,
     repeat: 'all',
     shuffle: false,
+    lastKey: null,
   })
   usePlaybackSession.setState({
     current: null,
@@ -575,5 +577,61 @@ describe('playerQueue 持久化载荷', () => {
     expect(persisted).not.toHaveProperty('position')
     expect(persisted).not.toHaveProperty('isPlaying')
     expect(persisted).not.toHaveProperty('expanded')
+  })
+
+  it('partialize 带上播放锚点 lastKey（刷新后据此恢复当前曲）', () => {
+    playerCommands.playTracks(SONGS, 2)
+    const options = usePlayerQueue.persist.getOptions()
+    const persisted = options.partialize!(usePlayerQueue.getState()) as {
+      lastKey?: unknown
+    }
+    expect(persisted.lastKey).toBe('netease:3')
+    playerCommands.next()
+    const after = options.partialize!(usePlayerQueue.getState()) as {
+      lastKey?: unknown
+    }
+    expect(after.lastKey).toBe('netease:4')
+  })
+})
+
+describe('刷新后恢复播放会话', () => {
+  it('按 lastKey 恢复当前曲而不自动播放（index 已漂移时以 lastKey 为准）', () => {
+    playerCommands.playTracks(SONGS, 0)
+    playerCommands.playIndex(3)
+    // 模拟：队列增删让 index 漂移到别处，刷新后只能靠 lastKey 找回
+    usePlaybackSession.setState({ current: null })
+    usePlayerQueue.setState({ index: 0 })
+    restoreSession()
+    expect(usePlaybackSession.getState().current?.id).toBe('4')
+    expect(usePlayerQueue.getState().index).toBe(3)
+    expect(usePlaybackSession.getState().isPlaying).toBe(false)
+    expect(usePlaybackSession.getState().position).toBe(0)
+  })
+
+  it('lastKey 已不在队列中时退回 index；队列为空则什么都不做', () => {
+    usePlayerQueue.setState({
+      queue: SONGS,
+      baseQueue: SONGS,
+      index: 1,
+      lastKey: 'netease:999',
+    })
+    restoreSession()
+    expect(usePlaybackSession.getState().current?.id).toBe('2')
+
+    usePlayerQueue.setState({
+      queue: [],
+      baseQueue: [],
+      index: -1,
+      lastKey: null,
+    })
+    usePlaybackSession.setState({ current: null })
+    restoreSession()
+    expect(usePlaybackSession.getState().current).toBeNull()
+  })
+
+  it('清空队列同时清掉 lastKey', () => {
+    playerCommands.playTracks(SONGS, 0)
+    playerCommands.clearQueue()
+    expect(usePlayerQueue.getState().lastKey).toBeNull()
   })
 })

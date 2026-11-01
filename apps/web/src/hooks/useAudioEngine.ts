@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { keyOf, type AudioLevel } from '@pterosaur/shared/types'
+import { keyOf, type AudioLevel, type Track } from '@pterosaur/shared/types'
 import { COVER_LARGE } from '@pterosaur/shared/image'
 import { advanceOnEnd, audioSrc, playerCommands } from '../store/player.js'
 import { usePlayerQueue } from '../store/playerQueue.js'
@@ -47,10 +47,19 @@ export function useAudioEngine(): void {
   const watchdogRef = useRef<Watchdog | null>(null)
   // 重载豁免位：load()（弱网恢复 / 换档）会派发一次 pause，需豁免其回写；跨 effect 经 ref 互通
   const recoveringRef = useRef(false)
-  // 已加载曲目的 `source:id`，用于区分「换曲」（重置进度）与「同曲换档」（保留进度）
+  /**
+   * 已加载曲目的 `source:id`，仅用于给本地副本（`savedSrcRef`）做归属校验。
+   *
+   * 不要用它判定「同曲」：查询本地副本是异步的，key 若在查询期间提前写成新值，
+   * 「是否相同」就恒为真——同曲与否由 {@link loadSource} 按对象与队列下标判定。
+   */
   const loadedKeyRef = useRef('')
+  /** 最近一次换源 effect 看到的曲目对象（判定「同曲」不只看 id，见 `loadSource`）。 */
+  const loadedTrackRef = useRef<Track | null>(null)
+  /** 最近一次 `loadSource` 时队列的下标（换曲判定用，见 `loadSource`）。 */
+  const loadedIndexRef = useRef<number | null>(null)
 
-  /** 当前曲的本地副本地址（离线时优先用它）；在线 / 未保存时为 null。 */
+  /** 当前曲的本地副本地址（已保存就优先用它，在线亦然）；未保存时为 null。 */
   const savedSrcRef = useRef<{ key: string; url: string } | null>(null)
   /** 最近一次换源所用的音质档位（离线 / 在线切换时重建流地址要用同一个档）。 */
   const levelRef = useRef<AudioLevel>('exhigh')
@@ -67,15 +76,26 @@ export function useAudioEngine(): void {
 
   /**
    * 换源：**已保存就用本地 `blob:`**（在线亦然，省服务器与流量，见 ADR-060），否则用流地址。
-   * 同曲换档 / 在线离线切换都保留播放位置。
+   * 同曲换源（换档 / 在线离线切换 / 换曲兜底）都保留播放位置；**换曲**一律从头播。
+   *
+   * 换曲不能再只看 `source:id`：同一首歌在队列里重复出现时，从邻近的那一条「重播」也是
+   * 换曲。但此时任务提交尚未完成，播放会话的 `current` 仍是旧对象（同 id、旧下标），
+   * 「对象变了」会误判。所以只有「曲目对象没变」或「对象变了但队列下标也没动」才算同曲
+   * 换源——前者覆盖换档，后者覆盖 `reorderForShuffle` 这类只换对象不换下标的重排。
    *
    * 本地起播兜底：读整曲需要先把字节从 IndexedDB 取出，慢盘 / 大文件时可能迟迟没有元数据。
    * 超过 {@link LOCAL_START_TIMEOUT_MS} 仍未就绪就退回流地址；断网时无路可退，只能等。
    */
-  const loadSource = (streamSrc: string, sameTrack: boolean) => {
+  const loadSource = (streamSrc: string, sameObject: boolean) => {
     const audio = audioEl.current
     if (!audio) return
     const key = loadedKeyRef.current
+    // 先在「是否同曲」处读下标：队列可能在下一次 setCurrent 前已改（见下方注释）
+    const queueIndex = usePlayerQueue.getState().index
+    const sameTrack =
+      !!key &&
+      (sameObject ||
+        (queueIndex === loadedIndexRef.current && audio.hasAttribute('src')))
     const saved =
       savedSrcRef.current?.key === key ? savedSrcRef.current.url : null
     const src = pickPlaybackSrc(saved, streamSrc)
@@ -94,6 +114,9 @@ export function useAudioEngine(): void {
       : new URL(src, window.location.origin).href
     if (audio.src === abs) return
     clearLocalFallback()
+    // 真正换源：记下归属，本地副本按它校验
+    loadedKeyRef.current = key
+    loadedIndexRef.current = queueIndex
     if (src.startsWith('blob:') && navigator.onLine) {
       const fallbackSrc = streamSrc
       localFallbackRef.current = setTimeout(() => {
@@ -114,6 +137,8 @@ export function useAudioEngine(): void {
     const resumeAt = sameTrack ? audio.currentTime : 0
     audio.src = abs
     if (sameTrack) {
+      // 重载期间 audio 暂停，rAF 不会回写；先把断点放回会话，进度条不跳回 0
+      getState().setPosition(resumeAt)
       // 同曲换档：重载并保留位置（与弱网恢复同一手法），并豁免 load 触发的 pause
       recoveringRef.current = true
       audio.load()
@@ -136,7 +161,7 @@ export function useAudioEngine(): void {
     }
   }
 
-  // current / level 变化 -> 换源（同曲换档时保留播放位置）
+  // current / level 变化 -> 换源（同曲换源时保留播放位置，换曲则从头）
   //
   // 必须 useLayoutEffect 且排在「播放态」effect 之前：两处都对同一个 React 提交起反应，
   // 普通 effect 的执行顺序会把盘给 play() 先于 load() 落到媒体元素上。
@@ -144,9 +169,13 @@ export function useAudioEngine(): void {
   const level = useSettings((s) => s.level)
   useLayoutEffect(() => {
     levelRef.current = level
+    // 换曲用 setTrack 与重新开单对象区分（见 loadSource 的 sameTrack 判定）
+    const sameObject = current === loadedTrackRef.current
+    loadedTrackRef.current = current
     if (!current) {
       loadedKeyRef.current = ''
       savedSrcRef.current = null
+      loadedIndexRef.current = null
       getState().setBuffering(false)
       const audio = audioEl.current
       if (audio) {
@@ -156,14 +185,12 @@ export function useAudioEngine(): void {
       return
     }
     const key = keyOf(current)
-    const sameTrack = key === loadedKeyRef.current
-    loadedKeyRef.current = key
     let cancelled = false
 
     const apply = (savedUrl: string | null) => {
       if (cancelled) return
       savedSrcRef.current = savedUrl ? { key, url: savedUrl } : null
-      loadSource(audioSrc(current, level), sameTrack)
+      loadSource(audioSrc(current, level), sameObject)
       // 离线且未保存：明确告知，而不是让 <audio> 报一个含糊的「播放出错」
       if (!navigator.onLine && !savedUrl) {
         getState().setPlaying(false)
@@ -253,7 +280,13 @@ export function useAudioEngine(): void {
     }
     // 换源 effect 调过 load() 后，媒体管线回到 HAVE_NOTHING，此刻 play() 会被 load
     // 算法吸收——只发一次 play 事件随即 emptied/loadstart，之后没有任何东西重新发起播放。
-    const playbackStarted = () => !audio.error && audio.readyState >= 1
+    // 故「未就绪」时必须等 loadedmetadata 再播。
+    //
+    // 就绪判定看 readyState（换源 effect 与本 effect 在同一轮提交里、且排在前面，读到的是
+    // 换源之后的状态）。**不要**再用加载序号判断：换源一旦完成序号就推进了，用「序号还是
+    // 不是本轮的值」会把「已加载完」误判成「加载在途」，于是去等一个早已派发过的
+    // loadedmetadata，表现为点播放毫无反应。
+    const readyToPlay = () => !audio.error && audio.readyState >= 1
     // 起播超时兜底：弱网下 play() 可能长时间不 settle，超时后回到暂停态并提示，
     // 避免 UI 停在「播放中」而实际无声（迟到的 resolve 会因 isPlaying 已为 false 被暂停）
     let timer = 0
@@ -261,7 +294,7 @@ export function useAudioEngine(): void {
       started = audio.play()
     }
     let started: Promise<void>
-    if (!playbackStarted()) {
+    if (audio.hasAttribute('src') && !readyToPlay()) {
       started = new Promise<void>((resolve, reject) => {
         const onReady = () => {
           try {
@@ -275,7 +308,20 @@ export function useAudioEngine(): void {
         audio.addEventListener('loadedmetadata', onReady, { once: true })
       })
     } else {
-      started = audio.play()
+      // 还没有任何源挂在 audio 上（刷新后恢复的当前曲、或此前只置了 current 没走换源）：
+      // 没有任何加载在途，等 loadedmetadata 会永远等下去。主动查一次本地副本再起播。
+      started = lookupSavedAudio(current.source, current.id, levelRef.current)
+        .catch(() => null)
+        .then((savedUrl) => {
+          savedSrcRef.current = savedUrl
+            ? { key: keyOf(current), url: savedUrl }
+            : null
+          loadSource(audioSrc(current, levelRef.current), true)
+          // 起播失败（AbortError：被随后的 pause / 换源打断）是预期内的，不当作就绪
+          return audio.play().catch((e: unknown) => {
+            if (!(e instanceof DOMException && e.name === 'AbortError')) throw e
+          })
+        })
     }
     timer = window.setTimeout(() => {
       getState().setPlaying(false)

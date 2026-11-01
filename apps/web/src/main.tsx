@@ -4,6 +4,7 @@ import { AppRouter } from './components/AppRouter.js'
 import App from './App.js'
 import { useLibrary } from './store/library.js'
 import { usePlayerQueue } from './store/playerQueue.js'
+import { restoreSession } from './store/player.js'
 import './styles/global.css'
 
 const rootEl = document.getElementById('root')
@@ -54,6 +55,8 @@ async function bootstrap(): Promise<void> {
       '空队列',
     ),
   ])
+  // 队列已就绪：把播放会话的当前曲目对齐回上次播放的那首（不自动播放）
+  restoreSession()
 
   createRoot(rootEl as HTMLElement).render(
     <StrictMode>

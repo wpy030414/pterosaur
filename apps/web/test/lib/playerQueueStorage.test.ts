@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { StorageValue } from 'zustand/middleware'
 import type { Track } from '@pterosaur/shared/types'
 import type { QueueState } from '../../src/store/playerQueue.js'
-import { LIBRARY_STORE, idbClear } from '../../src/lib/idb.js'
+import { LIBRARY_STORE, idbClear, idbPut } from '../../src/lib/idb.js'
 import {
   PLAYER_QUEUE_STORE_KEY,
   flushPlayerQueueWrites,
@@ -30,6 +30,7 @@ const queueState = (ids: string[]): QueueState => ({
   muted: true,
   repeat: 'one',
   shuffle: true,
+  lastKey: null,
 })
 
 const envelope = (state: QueueState): StorageValue<QueueState> => ({
@@ -84,10 +85,26 @@ describe('playerQueueStorage', () => {
     expect(localStorage.getItem('pterosaur-player')).toBeNull() // 迁移后清除
     expect(got?.state.queue.map((t) => t.id)).toEqual(['7'])
     expect(got?.state.volume).toBe(0.3)
-    // 播放态不是持久化字段
     expect(got?.state).not.toHaveProperty('isPlaying')
     expect(got?.state).not.toHaveProperty('position')
     expect(got?.state).not.toHaveProperty('expanded')
+    // 旧载荷没有播放锚点：按同下标补全为队列里当前那首
+    expect(got?.state.lastKey).toBe('netease:7')
+  })
+
+  it('旧 IDB 记录缺 lastKey 时按同下标补全并回写', async () => {
+    const { lastKey: _ignored, ...withoutAnchor } = queueState(['3', '4'])
+    await idbPut(
+      LIBRARY_STORE,
+      { state: { ...withoutAnchor, index: 1 }, version: 0 },
+      NAME,
+    )
+
+    const got = await playerQueueStorage.getItem(NAME)
+    expect(got?.state.lastKey).toBe('netease:4')
+    // 回写后再次读取不再走补全分支，读到的仍是同一个锚点
+    const again = await playerQueueStorage.getItem(NAME)
+    expect(again?.state.lastKey).toBe('netease:4')
   })
 
   it('旧键内容损坏时删除旧键、正常返回 null（不反复重试）', async () => {

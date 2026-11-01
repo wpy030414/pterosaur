@@ -65,6 +65,11 @@ export interface QueueState {
   muted: boolean
   repeat: RepeatMode
   shuffle: boolean
+  /**
+   * 上次播放到的曲目（`source:id`）。刷新后据此把播放会话恢复到队列里同一首
+   * （`index` 可能因队列随后的增删而指向别处）；只作恢复锚点，不参与查重。
+   */
+  lastKey: string | null
 }
 
 export interface QueueActions {
@@ -144,6 +149,7 @@ export const usePlayerQueue = create<PlayerQueueStore>()(
       muted: false,
       repeat: 'all',
       shuffle: false,
+      lastKey: null,
 
       setQueue: (patch) => set(patch),
       // 音量降到 0 视为静音，与播放条的音量图标一致
@@ -169,6 +175,7 @@ export const usePlayerQueue = create<PlayerQueueStore>()(
         muted: s.muted,
         repeat: s.repeat,
         shuffle: s.shuffle,
+        lastKey: s.lastKey,
       }),
       // hydration 由 main.tsx 在首帧前显式完成（IDB 读取是异步的）
       skipHydration: true,

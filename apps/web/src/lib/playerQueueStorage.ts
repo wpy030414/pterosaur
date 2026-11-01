@@ -1,4 +1,5 @@
 import type { PersistStorage, StorageValue } from 'zustand/middleware'
+import { keyOf } from '@pterosaur/shared/types'
 import type { QueueState } from '../store/playerQueue.js'
 import { LIBRARY_STORE, idbDelete, idbGet, idbPut } from './idb.js'
 import { coalesceWrites } from './coalesceWrites.js'
@@ -37,8 +38,8 @@ function isStorageValue(v: unknown): v is StorageValue<unknown> {
   return !!state && typeof state === 'object'
 }
 
-/** 从旧版 localStorage 载荷中挑出队列与偏好字段。 */
-function migrateLegacy(raw: unknown): QueueState | null {
+/** 从旧版 localStorage 载荷中挑出队列与偏好字段（不含播放锚点，由 `fillAnchor` 补）。 */
+function migrateLegacy(raw: unknown): Omit<QueueState, 'lastKey'> | null {
   if (!isStorageValue(raw)) return null
   const s = raw.state as LegacyPlayerState
   if (!Array.isArray(s.queue) || !Array.isArray(s.baseQueue)) return null
@@ -53,13 +54,28 @@ function migrateLegacy(raw: unknown): QueueState | null {
   }
 }
 
+/**
+ * 为旧载荷补上播放锚点 `lastKey`：没有该字段时取同下标的曲目。
+ * 返回是否做了补全（调用方据此决定是否回写）。
+ */
+function fillAnchor(value: StorageValue<QueueState>): boolean {
+  const state: Partial<QueueState> = value.state
+  if (state.lastKey !== undefined) return false
+  const anchor =
+    state.queue && typeof state.index === 'number'
+      ? state.queue[state.index]
+      : undefined
+  state.lastKey = anchor ? keyOf(anchor) : null
+  return true
+}
+
 const base: PersistStorage<QueueState> = {
   async getItem(name) {
     // 1) 一次性迁移：旧 localStorage -> IDB，并删除旧键（键的存亡即幂等标记）
     if (typeof localStorage !== 'undefined') {
       const legacy = localStorage.getItem(LEGACY_KEY)
       if (legacy) {
-        let migrated: QueueState | null = null
+        let migrated: Omit<QueueState, 'lastKey'> | null = null
         try {
           migrated = migrateLegacy(JSON.parse(legacy))
         } catch {
@@ -68,18 +84,21 @@ const base: PersistStorage<QueueState> = {
         localStorage.removeItem(LEGACY_KEY)
         if (migrated) {
           const value: StorageValue<QueueState> = {
-            state: migrated,
+            state: migrated as QueueState,
             version: 0,
           }
+          fillAnchor(value)
           await idbPut(LIBRARY_STORE, value, name)
           return value
         }
       }
     }
 
-    // 2) 常规读取
+    // 2) 常规读取（旧记录缺 `lastKey` 时按同下标补全，并就地回写一次）
     const value = await idbGet<StorageValue<QueueState>>(LIBRARY_STORE, name)
-    return value ?? null
+    if (!value) return null
+    if (fillAnchor(value)) void idbPut(LIBRARY_STORE, value, name)
+    return value
   },
 
   setItem: (name, value) => idbPut(LIBRARY_STORE, value, name),

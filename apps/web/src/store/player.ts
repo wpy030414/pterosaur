@@ -50,8 +50,12 @@ export interface PlayerCommands {
 /** 把队列下标推进到 `nextIndex` 并开始播放该曲。 */
 function goTo(nextIndex: number): void {
   const { queue: list } = queue()
-  usePlayerQueue.setState({ index: nextIndex })
-  session().startTrack(list[nextIndex] ?? null)
+  const track = list[nextIndex] ?? null
+  usePlayerQueue.setState({
+    index: nextIndex,
+    lastKey: track ? keyOf(track) : null,
+  })
+  session().startTrack(track)
 }
 
 export const playerCommands: PlayerCommands = {
@@ -60,8 +64,10 @@ export const playerCommands: PlayerCommands = {
     const base = [...tracks]
     const start = Math.min(Math.max(startIndex, 0), base.length - 1)
     const built = buildQueue(base, start, queue().shuffle)
+    const track = built.queue[built.index] ?? null
     usePlayerQueue.getState().setQueue(built)
-    session().startTrack(built.queue[built.index] ?? null)
+    usePlayerQueue.setState({ lastKey: track ? keyOf(track) : null })
+    session().startTrack(track)
     session().setDuration(0)
   },
 
@@ -190,6 +196,7 @@ export const playerCommands: PlayerCommands = {
 
   clearQueue: () => {
     usePlayerQueue.getState().setQueue({ queue: [], baseQueue: [], index: -1 })
+    usePlayerQueue.setState({ lastKey: null })
     session().reset()
   },
 
@@ -226,6 +233,26 @@ export const playerCommands: PlayerCommands = {
       usePlaybackSession.setState({ current: nextCurrent })
     }
   },
+}
+
+/**
+ * 刷新后恢复播放会话的「当前曲目」（**不自动播放**）。
+ *
+ * 队列是持久化的，而播放瞬时态不持久化——以前重开后播放条空空如也，点播放却从队列恢复出
+ * 上一首。这里按 `lastKey` 把 `current` 对齐回上次播放的那首（队列随后的增删会让 `index`
+ * 漂移，故不按下标），由 `main.tsx` 在队列 hydration 之后调用。
+ */
+export function restoreSession(): void {
+  const s = queue()
+  if (!s.queue.length) return
+  let at = s.lastKey ? s.queue.findIndex((t) => keyOf(t) === s.lastKey) : -1
+  if (at < 0) at = s.index >= 0 && s.index < s.queue.length ? s.index : 0
+  const track = s.queue[at]
+  if (!track) return
+  if (at !== s.index) usePlayerQueue.setState({ index: at })
+  // 只恢复「停在谁身上」；刷新后不自动续播，播放由用户发起。不是「换曲」：引擎此时
+  // 尚未加载任何源，点播放会走正常的起播路径
+  usePlaybackSession.setState({ current: track, isPlaying: false })
 }
 
 /** 由当前曲目派生音频源地址（同源代理，支持 Range）；`level` 为音质档位（缺省时由后端兜底）。 */
